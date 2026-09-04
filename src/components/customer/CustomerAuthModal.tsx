@@ -169,7 +169,7 @@ export default function CustomerAuthModal({
                   <Phone size={15} className="absolute left-3 top-3 text-[#8c827a]" />
                   <input
                     type="tel"
-                    placeholder="e.g. 9825012345"
+                    placeholder="e.g. 9501698356"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-[#d6ccc2] rounded-lg focus:outline-none focus:border-[#0d4f3c]"

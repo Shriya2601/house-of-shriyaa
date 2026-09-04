@@ -29,6 +29,7 @@ import {
   Info,
   Layers,
   LogOut,
+  Mail,
   MapPin,
   Menu,
   MessageCircle,
@@ -1355,34 +1356,58 @@ function InteractiveModal({
         );
       }
 
-      case "settings":
-      case "notifications":
-      case "privacy":
       case "support":
-      default:
         return (
-          <div className="space-y-3 text-xs text-[#1e1b18]">
-            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl space-y-2">
-              <strong className="text-sm font-serif block text-[#0d4f3c]">Atelier Client Care Concierge</strong>
-              <p className="text-[#706458] leading-relaxed">
-                Our master stylists and weavers are available Monday through Sunday to assist with bespoke customizations, bridal inquiries, and expedited dispatches.
+          <div className="space-y-4 text-xs text-[#1e1b18] py-2">
+            <div className="p-4 bg-white border border-[#ebe2d8] rounded-xl space-y-3">
+              <p className="text-[#1e1b18] font-medium leading-relaxed text-sm">
+                Customer Support Executive is available from Monday to Sunday,
               </p>
-              <div className="pt-2 border-t border-[#f5efeb] flex flex-col gap-1.5 font-medium">
-                <span>✦ WhatsApp Concierge: <strong>{siteContent?.whatsappNumber || "+91 98765 00000"}</strong></span>
-                <span>✦ Email Atelier: <strong>{siteContent?.contactEmail || "care@houseofshriya.com"}</strong></span>
-                <span>✦ Surat Atelier Flagship: <strong>Ring Road Textile Hub, Surat, Gujarat</strong></span>
+              <div className="pt-2 border-t border-[#f5efeb] flex flex-col gap-2.5 text-sm">
+                <a
+                  href="https://wa.me/919501698356"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 text-[#0d4f3c] font-semibold hover:underline"
+                >
+                  <MessageCircle size={17} className="text-[#25D366] shrink-0" />
+                  <span>9501698356</span>
+                </a>
+                <a
+                  href="mailto:houseofshriya.in@gmail.com"
+                  className="flex items-center gap-2.5 text-[#0d4f3c] font-semibold hover:underline"
+                >
+                  <Mail size={17} className="text-[#c5a059] shrink-0" />
+                  <span>houseofshriya.in@gmail.com</span>
+                </a>
               </div>
             </div>
 
             <a
-              href={whatsappUrl}
+              href="https://wa.me/919501698356"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-2.5 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+              className="w-full py-2.5 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
             >
               <MessageCircle size={16} />
-              <span>Need Help? / Open WhatsApp</span>
+              <span>Open WhatsApp</span>
             </a>
+          </div>
+        );
+
+      case "settings":
+      case "notifications":
+      case "privacy":
+      default:
+        return (
+          <div className="space-y-3 text-xs text-[#1e1b18] p-2">
+            <p className="text-[#706458]">Your atelier preferences are active and secured.</p>
+            <button
+              onClick={onClose}
+              className="w-full py-2 rounded-full bg-[#0d4f3c] text-white font-semibold mt-2"
+            >
+              Close
+            </button>
           </div>
         );
     }
@@ -1407,8 +1432,9 @@ function InteractiveModal({
       case "shipping_policy":
         return "Shipping Policy";
       case "support":
+        return "Contact Us";
       default:
-        return "Client Support & Concierge";
+        return "Atelier Concierge";
     }
   };
 
@@ -2269,7 +2295,7 @@ function ProductCard({
 
           <a
             data-editable="true"
-            href={`https://wa.me/919825087654?text=${whatsappMsg}`}
+            href={`https://wa.me/919501698356?text=${whatsappMsg}`}
             target="_blank"
             rel="noopener noreferrer"
             className="whatsapp-button"

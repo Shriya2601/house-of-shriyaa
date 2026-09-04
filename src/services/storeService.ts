@@ -46,9 +46,9 @@ export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSi
   announcementVisible: true,
   brandTagline: "Heirloom Indian couture, thoughtfully woven and made to measure in Surat.",
   brandDescription: "Every piece at House of Shriya carries the cadence of authentic Banarasi looms, handspun Chanderi silks, and meticulous needlework perfected across generations.",
-  contactPhone: "+91 98250 87654",
-  contactEmail: "care@houseofshriya.com",
-  whatsappNumber: "+919825087654",
+  contactPhone: "+91 95016 98356",
+  contactEmail: "houseofshriya.in@gmail.com",
+  whatsappNumber: "+919501698356",
   atelierCity: "Surat, Gujarat, India",
   footerNote: "© House of Shriya. Made for your forever wardrobe. SURAT · WORLDWIDE SHIPPING",
   heroSlides: [

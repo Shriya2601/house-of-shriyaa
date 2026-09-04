@@ -5,14 +5,14 @@ import { useStore } from "../../context/StoreContext";
 export const WHATSAPP_HELP_MESSAGE =
   "Hi House of Shriya! I need some help with my order/product. Could you please assist me?";
 
-export function getWhatsAppHelpUrl(phoneNumber = "919825087654"): string {
+export function getWhatsAppHelpUrl(phoneNumber = "919501698356"): string {
   const cleanPhone = phoneNumber.replace(/[^0-9]/g, "");
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(WHATSAPP_HELP_MESSAGE)}`;
+  return `https://wa.me/${cleanPhone || "919501698356"}?text=${encodeURIComponent(WHATSAPP_HELP_MESSAGE)}`;
 }
 
 export default function WhatsAppHelpButton() {
   const { siteContent } = useStore();
-  const phone = siteContent?.whatsappNumber || "919825087654";
+  const phone = siteContent?.whatsappNumber || "919501698356";
   const whatsappUrl = getWhatsAppHelpUrl(phone);
 
   return (

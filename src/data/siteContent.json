@@ -1,79 +1,79 @@
 {
-  "announcementText": "Explore Velvet Drop · Free Express Delivery on ₹1,999+",
+  "announcementText": "· Free Express Delivery on ₹1,999+ · ",
   "announcementCta": "Explore Velvet Drop",
   "announcementVisible": true,
   "brandTagline": "Heirloom Indian couture, thoughtfully woven and made to measure in Surat.",
   "brandDescription": "Every piece at House of Shriya carries the cadence of authentic Banarasi looms, handspun Chanderi silks, and meticulous needlework perfected across generations.",
-  "contactPhone": "+91 98250 87654",
-  "contactEmail": "care@houseofshriya.com",
-  "whatsappNumber": "+919825087654",
+  "contactPhone": "+91 95016 98356",
+  "contactEmail": "houseofshriya.in@gmail.com",
+  "whatsappNumber": "+919501698356",
   "atelierCity": "Surat, Gujarat, India",
   "footerNote": "© House of Shriya. Made for your forever wardrobe. SURAT · WORLDWIDE SHIPPING",
   "heroSlides": [
     {
-      "eyebrow": "DAILY / Festive Couture",
       "number": "01",
-      "collection": "Velvet Marigold Edit",
       "title": "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
-      "description": "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
-      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
-      "season": "AUTUMN/FESTIVE 2026",
-      "caption": "Gul-e-Noor Emerald Alia Cut Suit Set",
-      "mood": "Emerald & Saffron Weaves",
       "ctaText": "Explore Festive Edit",
-      "ctaTarget": "catalog-section"
+      "season": "AUTUMN/FESTIVE 2026",
+      "description": "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
+      "mood": "Emerald & Saffron Weaves",
+      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+      "collection": "Velvet Marigold Edit",
+      "eyebrow": "DAILY / Festive Couture",
+      "ctaTarget": "catalog-section",
+      "caption": "Gul-e-Noor Emerald Alia Cut Suit Set"
     },
     {
-      "eyebrow": "Artisan Heirlooms",
-      "number": "02",
-      "collection": "Kashmir to Kashi",
-      "title": "Pure Banarasi Booti & Kashmiri Tilla Embroidered Lengths",
-      "description": "Unstitched 3-piece regal fabric lengths tailored for custom sizing from XS to 5XL with soft butter silk lining.",
+      "ctaTarget": "catalog-section",
       "image": "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=900&q=85",
+      "collection": "Kashmir to Kashi",
       "season": "ROYAL HERITAGE 2026",
-      "caption": "Kashmiri Tilla Saffron Katan Weave",
-      "mood": "Antique Zari & Handlooms",
       "ctaText": "Discover Unstitched",
-      "ctaTarget": "catalog-section"
+      "number": "02",
+      "description": "Unstitched 3-piece regal fabric lengths tailored for custom sizing from XS to 5XL with soft butter silk lining.",
+      "eyebrow": "Artisan Heirlooms",
+      "caption": "Kashmiri Tilla Saffron Katan Weave",
+      "title": "Pure Banarasi Booti & Kashmiri Tilla Embroidered Lengths",
+      "mood": "Antique Zari & Handlooms"
     },
     {
-      "eyebrow": "Modern Pret & Daily Chic",
-      "number": "03",
       "collection": "Mulmul & Youthful Co-ords",
-      "title": "Featherlight Cotton Suits & Chic College Peplum Ensembles",
-      "description": "Effortless silhouettes with deep functional pockets, breathable Bagru blocks, and modern tailored fits.",
-      "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+      "ctaTarget": "catalog-section",
       "season": "DAILY CHIC 2026",
-      "caption": "Lilac Blossom Breathable Chanderi Set",
-      "mood": "Pastel Silks & Easy Linens",
+      "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+      "description": "Effortless silhouettes with deep functional pockets, breathable Bagru blocks, and modern tailored fits.",
       "ctaText": "Shop Daily Chic",
-      "ctaTarget": "catalog-section"
+      "number": "03",
+      "mood": "Pastel Silks & Easy Linens",
+      "eyebrow": "Modern Pret & Daily Chic",
+      "caption": "Lilac Blossom Breathable Chanderi Set",
+      "title": "Featherlight Cotton Suits & Chic College Peplum Ensembles"
     }
   ],
   "features": [
     {
       "id": "f1",
+      "iconName": "Crown",
       "title": "Heritage Craftsmanship",
-      "text": "Artisanal hand-woven heirlooms",
-      "iconName": "Crown"
+      "text": "Artisanal hand-woven heirlooms"
     },
     {
-      "id": "f2",
-      "title": "100% Pure Handlooms",
       "text": "Authentic Banarasi & Chanderi",
-      "iconName": "Sparkles"
+      "id": "f2",
+      "iconName": "Sparkles",
+      "title": "100% Pure Handlooms"
     },
     {
-      "id": "f3",
-      "title": "Instant UPI & COD",
+      "iconName": "Check",
       "text": "Zero-hassle secure checkout",
-      "iconName": "Check"
+      "title": "Instant UPI & COD",
+      "id": "f3"
     },
     {
-      "id": "f4",
-      "title": "Worldwide Express",
+      "iconName": "PackageCheck",
       "text": "Fast insured courier delivery",
-      "iconName": "PackageCheck"
+      "id": "f4",
+      "title": "Worldwide Express"
     }
   ],
   "catalogTitle": "Curated Boutique Catalog",
@@ -81,8 +81,8 @@
   "navLinks": [
     {
       "id": "nav-1",
-      "label": "Catalog",
-      "href": "catalog-section"
+      "href": "catalog-section",
+      "label": "Catalog"
     },
     {
       "id": "nav-2",
@@ -91,18 +91,19 @@
     },
     {
       "id": "nav-3",
-      "label": "Our Story",
-      "href": "/our-story"
+      "href": "/our-story",
+      "label": "Our Story"
     },
     {
-      "id": "nav-4",
       "label": "Craftsmanship",
+      "id": "nav-4",
       "href": "/craftsmanship"
     },
     {
-      "id": "nav-5",
       "label": "Journal",
+      "id": "nav-5",
       "href": "/journal"
     }
-  ]
+  ],
+  "updatedAt": "2026-09-04T16:45:46.294Z"
 }

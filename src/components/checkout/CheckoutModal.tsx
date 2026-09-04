@@ -223,7 +223,7 @@ export default function CheckoutModal() {
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2 max-w-md mx-auto">
                 <a
-                  href={`https://wa.me/919825087654?text=${encodeURIComponent(
+                  href={`https://wa.me/919501698356?text=${encodeURIComponent(
                     `Namaste House of Shriya! I just placed order ${placedOrder.orderNumber} for ₹${placedOrder.total}. Please confirm my bespoke sizing.`
                   )}`}
                   target="_blank"
@@ -312,7 +312,7 @@ export default function CheckoutModal() {
                     <input
                       type="tel"
                       required
-                      placeholder="e.g. 98250 12345"
+                      placeholder="e.g. 95016 98356"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full text-xs px-3 py-2.5 bg-white border border-[#d6ccc2] rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"

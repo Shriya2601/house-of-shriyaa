@@ -45,7 +45,14 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
   try {
     ensureGitRepo(rootDir);
 
-    const token = (customToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
+    // Check custom token, env, or saved token in .git/github_token
+    let token = (customToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
+    const tokenFilePath = path.join(rootDir, ".git", "github_token");
+    if (!token && fs.existsSync(tokenFilePath)) {
+      try {
+        token = fs.readFileSync(tokenFilePath, "utf-8").trim();
+      } catch {}
+    }
 
     let originUrl = DEFAULT_REPO_URL;
     try {
@@ -61,6 +68,12 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
         authUrl = cleanBase.replace("https://", `https://${token}@`);
       }
       const output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+
+      // Persist token in .git/github_token so future background saves automatically push
+      try {
+        fs.writeFileSync(tokenFilePath, token, "utf-8");
+      } catch {}
+
       return { success: true, output };
     } else {
       const output = execSync("git push -u origin main", { cwd: rootDir, stdio: "pipe" }).toString();
@@ -79,7 +92,7 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       errorMsg.includes("No such device or address")
     ) {
       friendlyError =
-        "GitHub authentication required: HTTPS push to 'https://github.com/kshriya2626/house-of-shriya.git' requires credentials. You can use Google AI Studio's 'Share to GitHub' option, or set GITHUB_TOKEN in your environment variables to enable direct one-click pushes.";
+        "GitHub authentication required: HTTPS push to 'https://github.com/kshriya2626/house-of-shriya.git' requires credentials. Please enter your GitHub Personal Access Token (PAT with 'repo' scope) in the field above to push directly, or use AI Studio's 'Share to GitHub' menu.";
     }
 
     return {
@@ -217,12 +230,12 @@ export function gitSyncPlugin(): Plugin {
               fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
 
               // Attempt push if token is available
-              if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
-                const pushRes = pushToRemote(rootDir);
-                remotePushed = pushRes.success;
-                if (!pushRes.success) {
-                  pushError = pushRes.error || "Push failed";
-                }
+              const tokenToUse = (data.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
+              const pushRes = pushToRemote(rootDir, tokenToUse);
+              if (pushRes.success) {
+                remotePushed = true;
+              } else if (tokenToUse) {
+                pushError = pushRes.error || "Push failed";
               }
             } catch (gitErr: any) {
               console.warn("Git command error:", gitErr);

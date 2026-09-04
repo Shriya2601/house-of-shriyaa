@@ -45,6 +45,13 @@ export default function CanvaDeploymentModal() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DeploymentStatusData | null>(null);
   const [remoteUrl, setRemoteUrl] = useState("https://github.com/kshriya2626/house-of-shriya.git");
+  const [githubToken, setGithubToken] = useState(() => {
+    try {
+      return localStorage.getItem("gh_pat_token") || "";
+    } catch {
+      return "";
+    }
+  });
   const [isUpdatingRemote, setIsUpdatingRemote] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [pushResult, setPushResult] = useState<{ success?: boolean; message?: string } | null>(null);
@@ -105,20 +112,28 @@ export default function CanvaDeploymentModal() {
       // Always flush latest Canva edits to disk before pushing
       await saveChanges();
 
+      const tokenToSend = githubToken.trim();
+      if (tokenToSend) {
+        try {
+          localStorage.setItem("gh_pat_token", tokenToSend);
+        } catch {}
+      }
+
       const res = await fetch("/api/git-push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tokenToSend }),
       });
       const json = await res.json();
       if (json.success) {
         setPushResult({
           success: true,
-          message: "Pushed successfully to GitHub origin/main! Cloudflare will now deploy the latest build.",
+          message: "Pushed successfully to GitHub origin/main! Cloudflare Pages will now automatically build and deploy the latest commits.",
         });
       } else {
         setPushResult({
           success: false,
-          message: json.error || "Remote push requires credentials or SSH key.",
+          message: json.error || "Remote push requires a GitHub Personal Access Token (PAT).",
         });
       }
       await fetchStatus();
@@ -245,6 +260,33 @@ export default function CanvaDeploymentModal() {
               >
                 {isUpdatingRemote ? "Updating..." : "Update Remote"}
               </button>
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] text-stone-300 font-medium flex items-center gap-1.5">
+                  <span>GitHub Personal Access Token (PAT)</span>
+                  <span className="text-[10px] text-amber-300/80 bg-amber-400/10 px-1.5 py-0.5 rounded">Required for push</span>
+                </label>
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=HouseOfShriyaDeploy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-emerald-400 hover:underline"
+                >
+                  Generate token on GitHub ↗
+                </a>
+              </div>
+              <input
+                type="password"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                className="w-full px-3 py-2 bg-black/40 border border-[#2c3d35] rounded-lg text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+              />
+              <p className="text-[10px] text-stone-400 leading-relaxed">
+                GitHub requires an authenticated token (classic with <code className="text-amber-300">repo</code> scope) to push changes from the cloud workspace to your repository. Saved securely in your local browser session.
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
