@@ -23,19 +23,22 @@ export function isInsideAIStudioEditor(): boolean {
   const hostname = window.location.hostname;
 
   // Shared preview domains (*ais-pre-*.run.app) or production domains MUST hide Edit Mode
-  if (hostname.includes("ais-pre-")) {
+  if (hostname.includes("ais-pre-") || hostname.includes("pages.dev") || hostname.includes("houseofshriya")) {
     return false;
   }
 
-  // Check if embedded in an iframe (Google AI Studio editor embeds the dev preview inside an iframe)
+  // Always enable in dev container environments (both inside iframe and in new tab)
+  if (
+    hostname.includes("ais-dev-") ||
+    hostname.includes("localhost") ||
+    hostname.includes("127.0.0.1")
+  ) {
+    return true;
+  }
+
+  // Check if embedded in Google AI Studio editor iframe
   try {
     const isEmbeddedInIframe = window.self !== window.top;
-    if (!isEmbeddedInIframe) {
-      // Top-level tab means the user clicked "Open in new tab" / customer is viewing directly -> HIDE
-      return false;
-    }
-
-    // Check ancestor origins / referrer for Google AI Studio
     const ancestor =
       (window.location as any).ancestorOrigins?.[0] || document.referrer || "";
 
@@ -44,15 +47,10 @@ export function isInsideAIStudioEditor(): boolean {
         ancestor.includes("ai.studio") ||
         ancestor.includes("aistudio.google.com") ||
         ancestor.includes("google.com");
-      return isStudio;
+      if (isStudio) return true;
     }
 
-    // Inside dev container iframe (ais-dev-* or localhost)
-    return (
-      hostname.includes("ais-dev-") ||
-      hostname.includes("localhost") ||
-      hostname.includes("127.0.0.1")
-    );
+    return isEmbeddedInIframe;
   } catch {
     return false;
   }

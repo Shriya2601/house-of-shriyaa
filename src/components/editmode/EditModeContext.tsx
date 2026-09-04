@@ -119,9 +119,40 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // AUTOMATIC DEBOUNCED AUTO-SAVE TO PROJECT SOURCE FILES:
-  // Whenever any edit is made in Canva / Edit Mode, immediately write to src/data/*.json on disk
+  // AUTOMATIC DEBOUNCED AUTO-SAVE TO PROJECT SOURCE FILES & GITHUB:
+  // Whenever any edit is made in Canva / Edit Mode, write to src/data/*.json on disk and sync to Git
   const isFirstMount = useRef(true);
+  const prevDataRef = useRef({
+    siteContentStr: JSON.stringify(siteContent),
+    productsStr: JSON.stringify(products),
+    brandStylesStr: JSON.stringify(brandStyles),
+    customOverridesStr: JSON.stringify(customOverrides),
+  });
+
+  // Automatically detect any modification across modals, toolbar, or brand kit
+  useEffect(() => {
+    if (isFirstMount.current) return;
+    const currentSiteContentStr = JSON.stringify(siteContent);
+    const currentProductsStr = JSON.stringify(products);
+    const currentBrandStylesStr = JSON.stringify(brandStyles);
+    const currentOverridesStr = JSON.stringify(customOverrides);
+
+    if (
+      currentSiteContentStr !== prevDataRef.current.siteContentStr ||
+      currentProductsStr !== prevDataRef.current.productsStr ||
+      currentBrandStylesStr !== prevDataRef.current.brandStylesStr ||
+      currentOverridesStr !== prevDataRef.current.customOverridesStr
+    ) {
+      setHasUnsavedChanges(true);
+      prevDataRef.current = {
+        siteContentStr: currentSiteContentStr,
+        productsStr: currentProductsStr,
+        brandStylesStr: currentBrandStylesStr,
+        customOverridesStr: currentOverridesStr,
+      };
+    }
+  }, [siteContent, products, brandStyles, customOverrides]);
+
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
@@ -132,6 +163,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
 
     const timer = setTimeout(async () => {
       try {
+        const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
         const repoRes = await fetch("/api/save-repo-changes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -140,12 +172,18 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
             products,
             brandStyles,
             customOverrides,
+            token: savedToken,
             commitMessage: `chore(canva): auto-sync storefront edits to source files (${new Date().toLocaleTimeString()})`,
           }),
         });
         if (repoRes.ok) {
+          const repoData = await repoRes.json();
           setHasUnsavedChanges(false);
-          setLastActionDescription("✓ Changes auto-saved to project source files");
+          if (repoData.remotePushed) {
+            setLastActionDescription(`✓ Auto-synced & pushed to GitHub main (${repoData.commitHash?.slice(0, 7) || ""})`);
+          } else {
+            setLastActionDescription("✓ Changes auto-saved to project source files & local Git");
+          }
         }
       } catch (err) {
         console.warn("Auto-save notice:", err);
@@ -389,6 +427,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
     try {
       // 1. Save directly to GitHub repository files on disk and commit to Git
       try {
+        const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
         const repoRes = await fetch("/api/save-repo-changes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -397,13 +436,17 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
             products,
             brandStyles,
             customOverrides,
+            token: savedToken,
             commitMessage: `chore(canva): storefront design & catalog updates (${new Date().toLocaleDateString()})`,
           }),
         });
         if (repoRes.ok) {
           const repoData = await repoRes.json();
           if (repoData.commitHash) {
-            gitCommitMsg = ` · Git: ${repoData.commitHash}`;
+            gitCommitMsg = ` · Git: ${repoData.commitHash.slice(0, 7)}`;
+          }
+          if (repoData.remotePushed) {
+            gitCommitMsg += " · Pushed to GitHub main";
           }
         }
       } catch (repoErr) {

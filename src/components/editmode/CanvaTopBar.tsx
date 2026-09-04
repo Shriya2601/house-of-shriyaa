@@ -203,7 +203,13 @@ export default function CanvaTopBar() {
 
             {/* Save & Publish */}
             <button
-              onClick={saveChanges}
+              onClick={async () => {
+                const token = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
+                const ok = await saveChanges();
+                if (ok && !token) {
+                  setActiveModal("deployModal");
+                }
+              }}
               disabled={isSaving}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md font-semibold text-xs shadow-md transition-all ${
                 saveSuccess
@@ -212,7 +218,7 @@ export default function CanvaTopBar() {
                   ? "bg-gradient-to-r from-[#d4af37] to-[#b88c29] text-[#090e0c] hover:brightness-110"
                   : "bg-white/20 text-white hover:bg-white/30"
               }`}
-              title="Save all changes to Cloud Firestore"
+              title="Save changes to repository source files and push to GitHub"
             >
               {isSaving ? (
                 <>

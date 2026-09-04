@@ -67,7 +67,28 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
         const cleanBase = originUrl.replace(/https:\/\/[^@]+@/, "https://");
         authUrl = cleanBase.replace("https://", `https://${token}@`);
       }
-      const output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+      
+      let output = "";
+      try {
+        output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+      } catch (pushErr: any) {
+        const pushStderr = (pushErr.stderr ? pushErr.stderr.toString() : pushErr.message || "").trim();
+        if (
+          pushStderr.includes("fetch first") ||
+          pushStderr.includes("rejected") ||
+          pushStderr.includes("non-fast-forward") ||
+          pushStderr.includes("Updates were rejected")
+        ) {
+          try {
+            execSync(`git pull "${authUrl}" main --rebase`, { cwd: rootDir, stdio: "pipe" });
+            output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+          } catch {
+            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+          }
+        } else {
+          throw pushErr;
+        }
+      }
 
       // Persist token in .git/github_token so future background saves automatically push
       try {
@@ -295,6 +316,9 @@ export function gitSyncPlugin(): Plugin {
               }
             }
 
+            const tokenFilePath = path.join(rootDir, ".git", "github_token");
+            const hasSavedToken = fs.existsSync(tokenFilePath) && !!fs.readFileSync(tokenFilePath, "utf-8").trim();
+
             res.setHeader("Content-Type", "application/json");
             res.end(
               JSON.stringify({
@@ -305,7 +329,7 @@ export function gitSyncPlugin(): Plugin {
                 remotes: remotes || `origin ${DEFAULT_REPO_URL} (push)`,
                 status: status || "Clean (up to date)",
                 config,
-                hasGithubToken: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN),
+                hasGithubToken: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || hasSavedToken),
                 cloudflarePages: {
                   project: "house-of-shriya",
                   buildOutputDir: "dist",
