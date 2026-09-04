@@ -11,6 +11,7 @@ export interface Product {
   badges: string[];
   image: string;
   hoverImage: string;
+  images?: string[]; // Up to 10 product images uploaded from device
   category: string;
   fabricType: string;
   tags: string[];
@@ -226,4 +227,14 @@ export interface DailyCreditsState {
     suitName: string;
     action: string;
   }[];
+}
+
+export interface UploadedAsset {
+  id: string;
+  name: string;
+  dataUrl: string;
+  size: number;
+  type: string;
+  productId?: string;
+  createdAt: string;
 }

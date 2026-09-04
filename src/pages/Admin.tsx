@@ -74,6 +74,7 @@ import {
   defaultSiteContent,
 } from "../services/storeService";
 import { User } from "firebase/auth";
+import { ProductImageUploader } from "../components/admin/ProductImageUploader";
 
 export default function Admin() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -417,7 +418,13 @@ export default function Admin() {
   // Product Saving
   const handleOpenProductModal = (product?: Product) => {
     if (product) {
-      setEditingProduct({ ...product });
+      const initialImages = Array.isArray(product.images) && product.images.length > 0
+        ? product.images.filter(Boolean)
+        : [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
+      setEditingProduct({
+        ...product,
+        images: initialImages.length > 0 ? initialImages : [product.image || ""].filter(Boolean),
+      });
     } else {
       setEditingProduct({
         name: "",
@@ -429,8 +436,9 @@ export default function Admin() {
         savings: "Save 33%",
         description: "Handcrafted pure fabric with intricate artisanal border detailing.",
         badges: ["New Drop"],
-        image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
-        hoverImage: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=900&q=80",
+        image: "",
+        hoverImage: "",
+        images: [],
         inStock: true,
         sizes: ["Unstitched Fabric", "XS", "S", "M", "L", "XL", "2XL"],
       });
@@ -441,9 +449,24 @@ export default function Admin() {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct || !editingProduct.name) return;
+
+    const currentImgs = Array.isArray(editingProduct.images) && editingProduct.images.length > 0
+      ? editingProduct.images.filter(Boolean)
+      : (editingProduct.image ? [editingProduct.image] : []);
+
+    if (currentImgs.length === 0) {
+      alert("Please upload at least one image from your device for this suit piece.");
+      return;
+    }
+
     setSavingProduct(true);
     try {
-      await saveProduct(editingProduct);
+      await saveProduct({
+        ...editingProduct,
+        images: currentImgs.slice(0, 10),
+        image: currentImgs[0],
+        hoverImage: currentImgs[1] || currentImgs[0],
+      });
       setIsProductModalOpen(false);
       setEditingProduct(null);
     } catch (err) {
@@ -1799,6 +1822,11 @@ export default function Admin() {
                             </span>
                           )}
                         </div>
+                        <div className="absolute bottom-2.5 right-2.5">
+                          <span className="bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                            📷 {product.images && product.images.length > 0 ? product.images.length : 1}/10
+                          </span>
+                        </div>
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
@@ -1977,39 +2005,24 @@ export default function Admin() {
                         />
                       </div>
 
-                      {/* Image URLs */}
-                      <div className="space-y-2">
-                        <label className="block font-bold text-[#1e1b18]">Main Image URL *</label>
-                        <input
-                          type="url"
-                          required
-                          placeholder="https://..."
-                          value={editingProduct.image || ""}
-                          onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
-                          className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                        />
-                        {editingProduct.image && (
-                          <div className="flex items-center gap-3 bg-[#faf8f5] p-2 rounded-lg border border-[#e5ded6]">
-                            <img
-                              src={editingProduct.image}
-                              alt="Preview"
-                              className="w-14 h-16 object-cover rounded border"
-                            />
-                            <span className="text-[11px] text-[#6b6257]">Image Preview verified</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-[#1e1b18] mb-1">Hover Image URL</label>
-                        <input
-                          type="url"
-                          placeholder="https://..."
-                          value={editingProduct.hoverImage || ""}
-                          onChange={(e) => setEditingProduct({ ...editingProduct, hoverImage: e.target.value })}
-                          className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                        />
-                      </div>
+                      {/* Device Image Upload System (Up to 10 Images, Multiple Selection, Preview, Replace, Remove) */}
+                      <ProductImageUploader
+                        images={
+                          Array.isArray(editingProduct.images) && editingProduct.images.length > 0
+                            ? editingProduct.images
+                            : [editingProduct.image, ...(editingProduct.hoverImage && editingProduct.hoverImage !== editingProduct.image ? [editingProduct.hoverImage] : [])].filter(Boolean)
+                        }
+                        onChange={(newImages) => {
+                          setEditingProduct({
+                            ...editingProduct,
+                            images: newImages,
+                            image: newImages[0] || "",
+                            hoverImage: newImages[1] || newImages[0] || "",
+                          });
+                        }}
+                        productId={editingProduct.id}
+                        productTitle={editingProduct.name || "Suit Piece"}
+                      />
 
                       {/* Stock Toggle */}
                       <div className="flex items-center gap-3 pt-2">

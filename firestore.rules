@@ -35,6 +35,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Uploaded Media & Product Images
+    match /uploaded_assets/{assetId} {
+      allow read, write: if true;
+    }
+
     // Default fallback
     match /{document=**} {
       allow read, write: if true;

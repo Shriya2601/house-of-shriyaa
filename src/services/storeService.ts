@@ -212,7 +212,19 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     colRef,
     (snapshot) => {
       if (!snapshot.empty) {
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
+        const list = snapshot.docs.map((d) => {
+          const data = d.data();
+          const imagesList: string[] = Array.isArray(data.images) && data.images.length > 0
+            ? data.images
+            : [data.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80", ...(data.hoverImage && data.hoverImage !== data.image ? [data.hoverImage] : [])];
+          return {
+            id: d.id,
+            ...data,
+            images: imagesList.slice(0, 10),
+            image: imagesList[0] || data.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+            hoverImage: imagesList[1] || data.hoverImage || imagesList[0] || data.image,
+          } as Product;
+        });
         callback(list);
       } else {
         callback(defaultProducts);
@@ -228,6 +240,16 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<string> {
   const id = product.id || `hos-${Date.now()}`;
   const docRef = doc(db, "products", id);
+
+  // Synchronize up to 10 images array with primary image and hover image
+  const rawImages = Array.isArray(product.images) && product.images.length > 0
+    ? product.images.filter(Boolean)
+    : (product.image ? [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])] : []);
+
+  const sanitizedImages = rawImages.slice(0, 10);
+  const primaryImage = sanitizedImages[0] || product.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
+  const secondaryImage = sanitizedImages[1] || product.hoverImage || primaryImage;
+
   const data: Product = {
     id,
     name: product.name || "Untitled Suit Set",
@@ -239,8 +261,9 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     originalPrice: product.originalPrice?.startsWith("₹") ? product.originalPrice : `₹${product.originalPrice || "4,499"}`,
     savings: product.savings || "Save 30%",
     badges: product.badges || ["New Drop"],
-    image: product.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
-    hoverImage: product.hoverImage || product.image || "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=900&q=80",
+    image: primaryImage,
+    hoverImage: secondaryImage,
+    images: sanitizedImages.length > 0 ? sanitizedImages : [primaryImage],
     category: product.category || "All Collections",
     fabricType: product.fabricType || "Pure Chanderi Silk",
     tags: product.tags || [product.category || "Party Wear"],

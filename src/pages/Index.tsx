@@ -2036,8 +2036,18 @@ function ProductCard({
 }) {
   const [quickView, setQuickView] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string>("Unstitched Fabric");
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
+
+  const productImages = useMemo(() => {
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      return product.images.filter(Boolean);
+    }
+    return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
+  }, [product.images, product.image, product.hoverImage]);
+
+  const activeImage = productImages[activeImageIndex] || product.image;
 
   const handleAddToCart = () => {
     addToCart(product as Product, selectedSize);
@@ -2085,7 +2095,7 @@ function ProductCard({
           as="img"
           type="image"
           label={`${product.name} Photo`}
-          src={product.image}
+          src={activeImage}
           alt={product.name}
           productId={product.id}
           className="product-image-primary"
@@ -2093,7 +2103,7 @@ function ProductCard({
         <img
           data-editable="true"
           className="product-image-hover"
-          src={product.hoverImage || product.image}
+          src={product.hoverImage || activeImage}
           alt=""
           loading="lazy"
         />
@@ -2164,6 +2174,33 @@ function ProductCard({
             <p className="text-xs text-[#554a40] mb-2">
               <strong>Fabric:</strong> {product.fabricType || "Pure Surat Handloom Silk"} · <strong>Fit:</strong> {product.cut || "Classic"}
             </p>
+
+            {productImages.length > 1 && (
+              <div className="mb-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[0.65rem] text-[#8c827a] uppercase font-bold">
+                    Gallery ({activeImageIndex + 1} of {productImages.length}):
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {productImages.map((img, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setActiveImageIndex(i)}
+                      className={`relative w-8 h-10 rounded overflow-hidden border transition-all shrink-0 ${
+                        activeImageIndex === i
+                          ? "border-[#0d4f3c] ring-1 ring-[#0d4f3c]"
+                          : "border-[#d6ccc2] opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={img} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[0.68rem] text-[#8c827a] uppercase font-bold">Select Size:</span>
               {["Unstitched Fabric", "S", "M", "L", "XL"].map((s) => (
