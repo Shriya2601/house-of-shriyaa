@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/kshriya2626/house-of-shriya.git",
+  "branch": "main",
+  "cloudflareProject": "house-of-shriya",
+  "buildOutputDir": "dist",
+  "buildCommand": "npm run build",
+  "lastDeployCommit": "13de043",
+  "lastDeployTime": "2026-09-03T11:46:23.101Z",
+  "autoSyncToGit": true
+}

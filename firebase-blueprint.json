@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "site_content": {
+      "title": "Site Content & CMS",
+      "description": "Global website editable content including announcement ribbon, hero slides, brand story, atelier details, and footer.",
+      "fields": {
+        "announcementText": { "type": "string", "description": "Announcement bar headline text" },
+        "announcementCta": { "type": "string", "description": "Announcement bar CTA text" },
+        "announcementVisible": { "type": "boolean", "description": "Whether announcement bar is displayed" },
+        "heroSlides": { "type": "array", "description": "List of hero slider banners" },
+        "brandTagline": { "type": "string", "description": "Main brand tagline" },
+        "brandDescription": { "type": "string", "description": "Brand story and introduction" },
+        "contactPhone": { "type": "string", "description": "Atelier contact phone" },
+        "contactEmail": { "type": "string", "description": "Customer support email" },
+        "whatsappNumber": { "type": "string", "description": "WhatsApp concierge phone number" },
+        "featureItems": { "type": "array", "description": "Heritage features listed on storefront" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last CMS update" }
+      }
+    },
+    "products": {
+      "title": "Product Catalog",
+      "description": "Handcrafted Indian couture and suit catalog items.",
+      "fields": {
+        "name": { "type": "string", "description": "Product name" },
+        "description": { "type": "string", "description": "Product fabric weave description" },
+        "color": { "type": "string", "description": "Color name" },
+        "rating": { "type": "string", "description": "Customer star rating" },
+        "reviews": { "type": "string", "description": "Review count" },
+        "price": { "type": "string", "description": "Selling price string e.g. ₹3,899" },
+        "originalPrice": { "type": "string", "description": "Original MRP price string e.g. ₹5,499" },
+        "savings": { "type": "string", "description": "Savings percent e.g. Save 29%" },
+        "badges": { "type": "array", "description": "Tag badges e.g. Bestseller, New Drop" },
+        "image": { "type": "string", "description": "Primary high-res image URL" },
+        "hoverImage": { "type": "string", "description": "Secondary hover image URL" },
+        "category": { "type": "string", "description": "Category slug or name" },
+        "fabricType": { "type": "string", "description": "Fabric classification" },
+        "tags": { "type": "array", "description": "Search and filter tags" },
+        "inStock": { "type": "boolean", "description": "Inventory availability status" },
+        "sizes": { "type": "array", "description": "Available size options" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      }
+    },
+    "categories": {
+      "title": "Product Categories",
+      "description": "Category taxonomy for filtering and navigation.",
+      "fields": {
+        "name": { "type": "string", "description": "Category display label" },
+        "slug": { "type": "string", "description": "URL slug" },
+        "description": { "type": "string", "description": "Category description" },
+        "itemCount": { "type": "number", "description": "Number of items in category" },
+        "sortOrder": { "type": "number", "description": "Display order" }
+      }
+    },
+    "orders": {
+      "title": "Customer Orders",
+      "description": "Real live orders placed through checkout by customers.",
+      "fields": {
+        "orderNumber": { "type": "string", "description": "Unique order reference (e.g. HOS-2026-1001)" },
+        "customer": { "type": "object", "description": "Customer name, email, phone" },
+        "shippingAddress": { "type": "object", "description": "Full delivery address, city, state, pincode" },
+        "items": { "type": "array", "description": "List of ordered items with quantity, price, size, selected fabric" },
+        "subtotal": { "type": "number", "description": "Items subtotal amount in INR" },
+        "shippingFee": { "type": "number", "description": "Delivery fee in INR" },
+        "total": { "type": "number", "description": "Total order amount in INR" },
+        "paymentMethod": { "type": "string", "description": "Payment mode (COD, UPI, Card)" },
+        "paymentStatus": { "type": "string", "description": "Payment status (Pending, Paid)" },
+        "orderStatus": { "type": "string", "description": "Fulfillment status (pending, confirmed, shipped, delivered, cancelled)" },
+        "trackingNumber": { "type": "string", "description": "Courier AWB tracking number" },
+        "notes": { "type": "string", "description": "Customer or admin notes" },
+        "createdAt": { "type": "string", "description": "Order placement ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Status change ISO timestamp" }
+      }
+    },
+    "admin_settings": {
+      "title": "Admin Configuration & Credentials",
+      "description": "Secure store administration credentials and boutique settings.",
+      "fields": {
+        "username": { "type": "string", "description": "Admin login username" },
+        "passwordHash": { "type": "string", "description": "Salted SHA-256 password hash" },
+        "salt": { "type": "string", "description": "Cryptographic salt" },
+        "updatedAt": { "type": "string", "description": "Timestamp of last credential update" },
+        "lastLoginAt": { "type": "string", "description": "Timestamp of most recent successful login" }
+      }
+    }
+  }
+}

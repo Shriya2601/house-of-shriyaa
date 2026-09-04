@@ -1,0 +1,2427 @@
+import React, { createElement, useEffect, useMemo, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { motion } from "motion/react";
+import { Product } from "../types";
+import { useStore } from "../context/StoreContext";
+import { useEditMode, CanvaEditable } from "../components/editmode";
+import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
+import CustomerAuthModal from "../components/customer/CustomerAuthModal";
+import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
+import { customerSignOut, findOrderByOrderNumber } from "../services/storeService";
+import { SavedAddress, Order } from "../types";
+import {
+  ArrowRight,
+  Bell,
+  Bookmark,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  CreditCard,
+  Crown,
+  Edit3,
+  Gift,
+  GraduationCap,
+  Heart,
+  HelpCircle,
+  Home,
+  Info,
+  Layers,
+  LogOut,
+  MapPin,
+  Menu,
+  MessageCircle,
+  Package,
+  PackageCheck,
+  Plus,
+  Search,
+  Settings,
+  ShieldAlert,
+  ShieldCheck,
+  Shirt,
+  ShoppingBag,
+  Sparkles,
+  Star,
+  Tag,
+  Trash2,
+  Truck,
+  User,
+  UserRound,
+  X,
+  Zap,
+} from "lucide-react";
+
+type BuilderTextProps = {
+  key?: React.Key;
+  id?: string;
+  as?: ElementType;
+  text?: string;
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+  fieldPath?: string;
+  label?: string;
+  type?: "text" | "heading" | "button" | "brand";
+};
+
+function BuilderText({
+  as: Tag = "span",
+  id,
+  text,
+  className,
+  style,
+  children,
+  fieldPath,
+  label,
+  type = "text",
+}: BuilderTextProps) {
+  const generatedId =
+    id ||
+    (typeof text === "string"
+      ? `txt_${text.slice(0, 24).toLowerCase().replace(/[^a-z0-9]/g, "_")}`
+      : `el_${Math.random().toString(36).slice(2, 7)}`);
+
+  return (
+    <CanvaEditable
+      id={generatedId}
+      as={Tag}
+      text={text}
+      className={className}
+      style={style}
+      fieldPath={fieldPath}
+      type={type}
+      label={label || (typeof text === "string" ? text.slice(0, 24) : undefined)}
+    >
+      {children}
+    </CanvaEditable>
+  );
+}
+
+const imageUrls = {
+  silk: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+  chanderi: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=900&q=85",
+  fabric: "https://images.unsplash.com/photo-1607083206869-4c7672e72a8a?auto=format&fit=crop&w=800&q=80",
+  luxury: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=900&q=85",
+  festive: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=900&q=85",
+  daily: "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+  college: "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
+};
+
+const products: Product[] = [
+  {
+    id: "hos-001",
+    name: "Gul-e-Noor Emerald Anarkali Suit Set",
+    description: "Pure Chanderi Silk with Hand-woven Golden Booti",
+    color: "Royal Emerald",
+    rating: "4.9",
+    reviews: "38",
+    price: "₹3,899",
+    originalPrice: "₹5,499",
+    savings: "Save 29%",
+    badges: ["Bestseller", "New Drop", "Stitched & Unstitched"],
+    image: imageUrls.silk,
+    hoverImage: imageUrls.festive,
+    category: "Party Wear",
+    fabricType: "Satin & Silk",
+    tags: ["Party Wear", "Satin Wear", "Festive Wear"],
+    activeWishlist: true,
+  },
+  {
+    id: "hos-002",
+    name: "Kashmiri Saffron Tilla Silk Unstitched Suit",
+    description: "Pure Katan Weave Handloom Silk with Zari Dupatta",
+    color: "Saffron Mustard",
+    rating: "4.8",
+    reviews: "29",
+    price: "₹2,999",
+    originalPrice: "₹4,200",
+    savings: "Save 29%",
+    badges: ["Bestseller", "Unstitched Fabric"],
+    image: imageUrls.luxury,
+    hoverImage: imageUrls.chanderi,
+    category: "Festive Wear",
+    fabricType: "Pure Silk",
+    tags: ["Festive Wear", "Satin Wear", "All Collections"],
+    activeWishlist: false,
+  },
+  {
+    id: "hos-003",
+    name: "Rooh-e-Gulab Velvet Sharara Suit Set",
+    description: "Ultra-plush Micro Velvet 9000 with Soft Gold Sheen",
+    color: "Royal Wine",
+    rating: "5.0",
+    reviews: "19",
+    price: "₹4,699",
+    originalPrice: "₹6,599",
+    savings: "Save 29%",
+    badges: ["New Drop", "Seasonal Drop"],
+    image: imageUrls.chanderi,
+    hoverImage: imageUrls.silk,
+    category: "Seasonal Drop",
+    fabricType: "Micro Velvet 9000",
+    tags: ["Seasonal Drop", "Party Wear", "Festive Wear"],
+    activeWishlist: false,
+  },
+  {
+    id: "hos-004",
+    name: "Lilac Blossom Hand-Block Chanderi Daily Set",
+    description: "100% Breathable Chanderi Cotton Blend",
+    color: "Pastel Lilac",
+    rating: "4.9",
+    reviews: "54",
+    price: "₹1,899",
+    originalPrice: "₹2,699",
+    savings: "Save 30%",
+    badges: ["Bestseller", "Daily Chic"],
+    image: imageUrls.daily,
+    hoverImage: imageUrls.luxury,
+    category: "Cotton Suits",
+    fabricType: "Chanderi Cotton",
+    tags: ["Cotton Suits", "Daily & College Wear"],
+    activeWishlist: false,
+  },
+  {
+    id: "hos-005",
+    name: "Aura Peaches & Indigo College Co-ord Suit",
+    description: "Soft Organic Slub Cotton with Deep Side Pockets",
+    color: "Peach & Indigo",
+    rating: "4.9",
+    reviews: "42",
+    price: "₹1,499",
+    originalPrice: "₹2,199",
+    savings: "Save 32%",
+    badges: ["Gen-Z Favorite", "New Drop"],
+    image: imageUrls.college,
+    hoverImage: imageUrls.daily,
+    category: "Daily & College Wear",
+    fabricType: "Organic Cotton",
+    tags: ["Daily & College Wear", "Cotton Suits"],
+    activeWishlist: true,
+  },
+  {
+    id: "hos-006",
+    name: "Noor-e-Bahar Ivory Mirror-Work Alia Cut Suit",
+    description: "Pure Viscose Georgette with Butter Silk Inner Lining",
+    color: "Royal Ivory",
+    rating: "5.0",
+    reviews: "31",
+    price: "₹3,499",
+    originalPrice: "₹4,899",
+    savings: "Save 29%",
+    badges: ["Bestseller", "Alia Cut"],
+    image: imageUrls.festive,
+    hoverImage: imageUrls.silk,
+    category: "Party Wear",
+    fabricType: "Viscose Georgette",
+    tags: ["Party Wear", "Satin Wear", "Festive Wear"],
+    activeWishlist: false,
+  },
+  {
+    id: "hos-007",
+    name: "Banarasi Katan Brocade Unstitched Royal Suit",
+    description: "Authentic Banarasi Katan Handloom Silk with Zardozi Borders",
+    color: "Royal Crimson",
+    rating: "4.9",
+    reviews: "24",
+    price: "₹3,299",
+    originalPrice: "₹4,799",
+    savings: "Save 31%",
+    badges: ["Bestseller", "Pure Handloom"],
+    image: imageUrls.chanderi,
+    hoverImage: imageUrls.luxury,
+    category: "Festive Wear",
+    fabricType: "Banarasi Katan",
+    tags: ["Festive Wear", "Satin Wear", "Seasonal Drop"],
+    activeWishlist: false,
+  },
+  {
+    id: "hos-008",
+    name: "Sage Garden Mulmul Breezy Stitched Kurti Pant",
+    description: "100% Organic Mulmul Cotton with Hand Block Print",
+    color: "Sage Green",
+    rating: "4.8",
+    reviews: "26",
+    price: "₹1,799",
+    originalPrice: "₹2,499",
+    savings: "Save 28%",
+    badges: ["Pure Mulmul", "Summer Edit"],
+    image: imageUrls.daily,
+    hoverImage: imageUrls.college,
+    category: "Cotton Suits",
+    fabricType: "Pure Mulmul",
+    tags: ["Cotton Suits", "Daily & College Wear"],
+    activeWishlist: false,
+  },
+];
+
+const slides = [
+  {
+    eyebrow: "DAILY / Festive Couture",
+    number: "01",
+    collection: "Velvet Marigold Edit",
+    title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
+    description: "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
+    image: imageUrls.silk,
+    season: "AUTUMN/FESTIVE 2026",
+    caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
+    mood: "Emerald & Saffron Weaves",
+  },
+  {
+    eyebrow: "Artisan Heirlooms",
+    number: "02",
+    collection: "Kashmir to Kashi",
+    title: "Pure Banarasi Booti & Kashmiri Tilla Embroidered Lengths",
+    description: "Unstitched 3-piece regal fabric lengths tailored for custom sizing from XS to 5XL with soft butter silk lining.",
+    image: imageUrls.luxury,
+    season: "ROYAL HERITAGE 2026",
+    caption: "Kashmiri Tilla Saffron Katan Weave",
+    mood: "Antique Zari & Handlooms",
+  },
+  {
+    eyebrow: "Modern Pret & Daily Chic",
+    number: "03",
+    collection: "Mulmul & Youthful Co-ords",
+    title: "Featherlight Cotton Suits & Chic College Peplum Ensembles",
+    description: "Effortless silhouettes with deep functional pockets, breathable Bagru blocks, and modern tailored fits.",
+    image: imageUrls.daily,
+    season: "DAILY CHIC 2026",
+    caption: "Lilac Blossom Breathable Chanderi Set",
+    mood: "Pastel Silks & Easy Linens",
+  },
+];
+
+function LogoMark({ small = false }: { small?: boolean }) {
+  return (
+    <span data-editable="true" className={small ? "logo-mark-small" : "logo-mark"}>
+      <Crown size={small ? 14 : 28} strokeWidth={1.75} />
+    </span>
+  );
+}
+
+function IntroOverlay({ onEnter }: { onEnter: () => void }) {
+  return <SimpleIntroScreen onComplete={onEnter} />;
+}
+
+// Navigation Drawer Component (Myntra-style E-Commerce Side Menu)
+function NavigationDrawer({
+  isOpen,
+  onClose,
+  onSelectCategory,
+  onOpenModal,
+  onOpenAuth,
+  wishlistCount,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelectCategory: (category: string) => void;
+  onOpenModal: (type: string) => void;
+  onOpenAuth: () => void;
+  wishlistCount: number;
+}) {
+  if (!isOpen) return null;
+  const { currentUser, customerProfile, customerOrders, siteContent } = useStore();
+  const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
+
+  const initials = currentUser
+    ? (customerProfile?.fullName || currentUser.displayName || currentUser.email || "P")
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "HS";
+
+  return (
+    <>
+      <div className="nav-drawer-backdrop" onClick={onClose} />
+      <aside className="nav-drawer" aria-label="E-Commerce Navigation Menu">
+        {/* Drawer Header */}
+        <div className="nav-drawer-header">
+          <div className="nav-drawer-top-row">
+            <div className="flex items-center gap-2">
+              <LogoMark small />
+              <div>
+                <span className="text-[0.6rem] uppercase tracking-widest text-[#d4af37] font-bold block">HAUTE COUTURE</span>
+                <strong className="text-sm font-serif text-[#faf8f5] tracking-wider block">House of Shriya</strong>
+              </div>
+            </div>
+            <button
+              className="nav-drawer-close"
+              aria-label="Close navigation menu"
+              onClick={onClose}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {currentUser ? (
+            <div className="nav-user-card flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="nav-user-avatar">{initials}</div>
+                <div className="nav-user-info">
+                  <strong>{customerProfile?.fullName || currentUser.displayName || currentUser.email?.split("@")[0] || "Patron"}</strong>
+                  <span><Sparkles size={11} /> Atelier Patron · Tier {customerProfile?.tier || "Gold"}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await customerSignOut();
+                  onClose();
+                }}
+                className="text-[0.65rem] text-[#faf8f5]/70 hover:text-white px-2 py-1 bg-white/10 hover:bg-white/20 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut size={12} />
+                <span>Logout</span>
+              </button>
+            </div>
+          ) : (
+            <div className="nav-user-card flex items-center justify-between">
+              <div>
+                <strong className="text-xs text-[#faf8f5] block font-serif">Welcome to Atelier</strong>
+                <span className="text-[0.68rem] text-[#faf8f5]/70 block mt-0.5">Sign in for orders & bespoke sizing</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenAuth();
+                }}
+                className="text-xs bg-[#d4af37] hover:bg-[#b89528] text-[#0d4f3c] font-bold px-3 py-1.5 rounded-full shadow transition-all cursor-pointer"
+              >
+                Sign In / Register
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Drawer Content */}
+        <div className="nav-drawer-content">
+          {/* SECTION 1: SHOP */}
+          <div className="nav-section">
+            <div className="nav-section-title">
+              <span>Shop</span>
+              <Layers size={13} />
+            </div>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("All Collections");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Sparkles size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">All Collections</span>
+                  <span className="nav-item-sub">Explore full handcrafted catalog</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">8 Pieces</span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Cotton Suits");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Shirt size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Cotton Suits</span>
+                  <span className="nav-item-sub">Pure Mulmul & Hand-block sets</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Daily Wear Suits");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Sparkles size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Daily Wear Suits</span>
+                  <span className="nav-item-sub">Comfortable modal & linen sets</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Co-ord Sets");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Layers size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Co-ord Sets</span>
+                  <span className="nav-item-sub">Contemporary tunics & palazzos</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Satin Wear");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Crown size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Satin Wear</span>
+                  <span className="nav-item-sub">Glossy silks & evening ensembles</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Party Wear");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Sparkles size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Party Wear</span>
+                  <span className="nav-item-sub">Alia cut, Anarkalis & Shararas</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">Trending</span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Festive Wear");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Tag size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Festive Wear</span>
+                  <span className="nav-item-sub">Banarasi Katan & Kashmiri Tilla</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Daily & College Wear");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><GraduationCap size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Daily & College Wear</span>
+                  <span className="nav-item-sub">Youthful co-ords & breezy kurtis</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onSelectCategory("Seasonal Drop");
+                onClose();
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Zap size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Seasonal Drop</span>
+                  <span className="nav-item-sub">Velvet 9000 & Festive Angrakha</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">Limited</span>
+            </button>
+          </div>
+
+          {/* SECTION 2: MY ORDERS */}
+          <div className="nav-section">
+            <div className="nav-section-title">
+              <span>My Orders</span>
+              <Package size={13} />
+            </div>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("order_history");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Clock size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Order History</span>
+                  <span className="nav-item-sub">Past bookings & invoices</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">
+                {customerOrders.length > 0 ? `${customerOrders.length} ${customerOrders.length === 1 ? "Order" : "Orders"}` : "0 Orders"}
+              </span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("track_order");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Truck size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Track Order</span>
+                  <span className="nav-item-sub">Live shipment & courier status</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">Tracking</span>
+            </button>
+          </div>
+
+          {/* SECTION 3: MY ACCOUNT */}
+          <div className="nav-section">
+            <div className="nav-section-title">
+              <span>My Account</span>
+              <User size={13} />
+            </div>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                if (!currentUser) {
+                  onOpenAuth();
+                } else {
+                  onOpenModal("profile");
+                }
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><UserRound size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Profile</span>
+                  <span className="nav-item-sub">Measurements, sizing & contact info</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                if (!currentUser) {
+                  onOpenAuth();
+                } else {
+                  onOpenModal("addresses");
+                }
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><MapPin size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Saved Addresses</span>
+                  <span className="nav-item-sub">Delivery locations & pincodes</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">{customerProfile?.savedAddresses?.length || 0} Saved</span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onSelectCategory("Wishlist");
+                document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Heart size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Wishlist</span>
+                  <span className="nav-item-sub">Saved bespoke couture pieces</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">{wishlistCount} Saved</span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("payments");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><CreditCard size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Payment Methods</span>
+                  <span className="nav-item-sub">UPI & Cards (COD Disabled)</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+          </div>
+
+          {/* SECTION 4: SETTINGS */}
+          <div className="nav-section">
+            <div className="nav-section-title">
+              <span>Settings</span>
+              <Settings size={13} />
+            </div>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("settings");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Settings size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Account Settings</span>
+                  <span className="nav-item-sub">Security, password & preferences</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("notifications");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Bell size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Notifications</span>
+                  <span className="nav-item-sub">WhatsApp & VIP drop alerts</span>
+                </div>
+              </div>
+              <span className="nav-item-badge">Active</span>
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("privacy");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><ShieldCheck size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Privacy & Security</span>
+                  <span className="nav-item-sub">100% encrypted & protected</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                onOpenModal("support");
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><HelpCircle size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">Help & Support</span>
+                  <span className="nav-item-sub">Atelier styling concierge 24/7</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <Link
+              to="/our-story"
+              className="nav-item-btn"
+              onClick={onClose}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon"><Info size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title">About House of Shriya</span>
+                  <span className="nav-item-sub">Our Surat heritage & handloom journey</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Drawer Footer */}
+        <div className="nav-drawer-footer">
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2.5 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+          >
+            <MessageCircle size={16} />
+            <span>Need Help? / Open WhatsApp</span>
+          </a>
+          <div className="text-center text-[0.62rem] text-[#8c827a] mt-2">
+            <span>House of Shriya · 100% Authentic Handlooms</span>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// Interactive Information Modal System
+function InteractiveModal({
+  type,
+  onClose,
+  onOpenAuth,
+}: {
+  type: string | null;
+  onClose: () => void;
+  onOpenAuth?: () => void;
+}) {
+  const { currentUser, customerProfile, customerOrders, siteContent, updateProfile } = useStore();
+  const [trackSearchQuery, setTrackSearchQuery] = useState("");
+  const [searchedOrder, setSearchedOrder] = useState<Order | null>(null);
+  const [trackError, setTrackError] = useState("");
+  const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [newAddr, setNewAddr] = useState<Omit<SavedAddress, "id">>({
+    label: "Home",
+    fullName: customerProfile?.fullName || "",
+    phone: customerProfile?.phone || "",
+    addressLine1: "",
+    city: "",
+    state: "",
+    pincode: "",
+    isDefault: false,
+  });
+
+  const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
+
+  if (!type) return null;
+
+  const handleTrackSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trackSearchQuery.trim()) return;
+    setTrackError("");
+    try {
+      const found = await findOrderByOrderNumber(trackSearchQuery.trim());
+      if (found) {
+        setSearchedOrder(found);
+      } else {
+        setSearchedOrder(null);
+        setTrackError(`No order found matching "${trackSearchQuery.trim()}". Please verify your order number.`);
+      }
+    } catch {
+      setTrackError("Unable to locate order. Please check order number.");
+    }
+  };
+
+  const handleSaveNewAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customerProfile || !newAddr.addressLine1 || !newAddr.pincode) return;
+    const addressToAdd: SavedAddress = {
+      ...newAddr,
+      id: "addr_" + Date.now(),
+    };
+    const updated = [...(customerProfile.savedAddresses || []), addressToAdd];
+    await updateProfile({ savedAddresses: updated });
+    setIsAddingAddress(false);
+  };
+
+  const handleDeleteAddress = async (id: string) => {
+    if (!customerProfile) return;
+    const updated = (customerProfile.savedAddresses || []).filter((a) => a.id !== id);
+    await updateProfile({ savedAddresses: updated });
+  };
+
+  const renderContent = () => {
+    switch (type) {
+      case "track_order": {
+        const orderToDisplay = searchedOrder || (customerOrders.length > 0 ? customerOrders[0] : null);
+
+        return (
+          <div className="space-y-4">
+            <form onSubmit={handleTrackSearch} className="flex gap-2">
+              <input
+                type="text"
+                value={trackSearchQuery}
+                onChange={(e) => setTrackSearchQuery(e.target.value)}
+                placeholder="Enter Order # (e.g. HOS-XXXXXX)"
+                className="flex-1 px-3 py-2 text-xs border border-[#ebe2d8] rounded-lg bg-white text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-[#0d4f3c] text-white text-xs font-bold rounded-lg hover:bg-[#083427] transition-colors"
+              >
+                Track
+              </button>
+            </form>
+
+            {trackError && (
+              <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                {trackError}
+              </p>
+            )}
+
+            {orderToDisplay ? (
+              <div className="space-y-3 pt-1">
+                <div className="bg-[#f7f2eb] p-3.5 rounded-xl border border-[#e8dfd5] flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-[#8c6d37] font-bold block">ORDER #{orderToDisplay.orderNumber}</span>
+                    <strong className="text-sm text-[#1e1b18] font-serif">
+                      {orderToDisplay.items[0]?.name || "Bespoke Couture Order"}
+                    </strong>
+                    <span className="text-xs text-[#706458] block mt-0.5">
+                      {orderToDisplay.items.length} {orderToDisplay.items.length === 1 ? "item" : "items"} · Total: ₹{orderToDisplay.totalAmount.toLocaleString()}
+                    </span>
+                  </div>
+                  <span className="bg-[#0d4f3c] text-[#faf8f5] text-xs font-bold px-2.5 py-1 rounded-full capitalize">
+                    {orderToDisplay.status.replace("_", " ")}
+                  </span>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-[#0d4f3c] text-white flex items-center justify-center shrink-0 text-xs">
+                      ✓
+                    </div>
+                    <div>
+                      <strong className="text-xs text-[#1e1b18] block">Order Placed & Confirmed</strong>
+                      <span className="text-[0.7rem] text-[#706458]">
+                        {new Date(orderToDisplay.createdAt).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })} · Atelier Verification
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-[#0d4f3c] text-white flex items-center justify-center shrink-0 text-xs">
+                      ✓
+                    </div>
+                    <div>
+                      <strong className="text-xs text-[#1e1b18] block">Handloom Artisan Inspection Passed</strong>
+                      <span className="text-[0.7rem] text-[#706458]">Surat Atelier Flagship Quality Check</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-[#0d4f3c] text-white flex items-center justify-center shrink-0 text-xs">
+                      <Truck size={14} />
+                    </div>
+                    <div>
+                      <strong className="text-xs text-[#1e1b18] block">Dispatched via Premium Express Carrier</strong>
+                      <span className="text-[0.7rem] text-[#0d4f3c] font-medium">
+                        Delivery to: {orderToDisplay.customerAddress.city}, {orderToDisplay.customerAddress.pincode}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs text-[#706458] space-y-2">
+                <p>No active shipments found. Enter an order number above or sign in to track your bookings.</p>
+                {!currentUser && onOpenAuth && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAuth();
+                    }}
+                    className="inline-block mt-2 px-4 py-1.5 bg-[#0d4f3c] text-white rounded-full font-bold text-xs"
+                  >
+                    Sign In to View Orders
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      case "order_history": {
+        if (!currentUser) {
+          return (
+            <div className="text-center py-8 space-y-3 text-xs">
+              <Package size={36} className="mx-auto text-[#c5a059]" />
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
+                <p className="text-[#706458] mt-1">Sign in with your account to view your past couture orders and invoices.</p>
+              </div>
+              {onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth();
+                  }}
+                  className="px-5 py-2 bg-[#0d4f3c] hover:bg-[#083427] text-white font-bold rounded-full text-xs shadow transition-all"
+                >
+                  Sign In / Register
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        if (customerOrders.length === 0) {
+          return (
+            <div className="text-center py-8 space-y-3 text-xs">
+              <Package size={36} className="mx-auto text-[#c5a059]" />
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">No Orders Yet</strong>
+                <p className="text-[#706458] mt-1">You haven't placed any orders yet. Discover our latest couture collection!</p>
+              </div>
+              <button
+                onClick={() => {
+                  onClose();
+                  document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+              >
+                Browse Collections
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-3">
+            {customerOrders.map((order) => (
+              <div key={order.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <strong className="text-[#8c6d37]">Order #{order.orderNumber}</strong>
+                  <span className="text-[#0d4f3c] font-bold capitalize">{order.status.replace("_", " ")}</span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#1e1b18]">
+                    {order.items.map((i) => i.name).join(", ")}
+                  </p>
+                  <span className="text-[0.7rem] text-[#706458] block mt-0.5">
+                    Placed on {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-[#f5efeb] text-xs">
+                  <span className="text-[#706458]">Total: ₹{order.totalAmount.toLocaleString()} ({order.paymentMethod.toUpperCase()})</span>
+                  <button
+                    onClick={() => {
+                      setSearchedOrder(order);
+                      setTrackSearchQuery(order.orderNumber);
+                    }}
+                    className="text-[#0d4f3c] font-bold hover:underline"
+                  >
+                    Track Package →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      case "profile": {
+        if (!currentUser) {
+          return (
+            <div className="text-center py-8 space-y-3 text-xs">
+              <User size={36} className="mx-auto text-[#c5a059]" />
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
+                <p className="text-[#706458] mt-1">Please sign in to access your bespoke sizing profile and patron privileges.</p>
+              </div>
+              {onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth();
+                  }}
+                  className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                >
+                  Sign In / Register
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        const initials = (customerProfile?.fullName || currentUser.displayName || currentUser.email || "P")
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+
+        return (
+          <div className="space-y-3.5 text-xs">
+            <div className="flex items-center gap-3 p-3 bg-[#f5efeb] rounded-xl">
+              <div className="w-11 h-11 rounded-full bg-[#0d4f3c] text-[#d4af37] flex items-center justify-center font-serif text-base font-bold">
+                {initials}
+              </div>
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">
+                  {customerProfile?.fullName || currentUser.displayName || "Atelier Patron"}
+                </strong>
+                <span className="text-[#8c6d37]">
+                  {currentUser.email || "No email"} {customerProfile?.phone ? `· +91 ${customerProfile.phone}` : ""}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl space-y-1.5">
+              <strong className="text-xs text-[#1e1b18] block">Bespoke Sizing Profile</strong>
+              <div className="grid grid-cols-2 gap-2 text-[#706458]">
+                <span>Standard Size: <strong>{customerProfile?.sizingProfile?.size || "M (38\")"}</strong></span>
+                <span>Cut Preference: <strong>{customerProfile?.sizingProfile?.cutPreference || "Alia Cut / Anarkali"}</strong></span>
+                <span>Pant Length: <strong>{customerProfile?.sizingProfile?.pantLength || "38 inches"}</strong></span>
+                <span>Dupatta Drape: <strong>{customerProfile?.sizingProfile?.dupattaLength || "2.5m Handloom"}</strong></span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl flex items-center justify-between">
+              <div>
+                <strong className="text-xs text-[#1e1b18] block">VIP Atelier Tier</strong>
+                <span className="text-[#706458]">
+                  {customerProfile?.tier || "Gold"} Heirloom Member ({customerOrders.length * 500 + 1000} points)
+                </span>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-[#f4ecd8] text-[#7a4e12] font-bold">
+                {customerProfile?.tier || "Gold"}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await customerSignOut();
+                onClose();
+              }}
+              className="w-full py-2 bg-rose-50 border border-rose-200 text-rose-700 font-bold rounded-lg hover:bg-rose-100 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        );
+      }
+
+      case "addresses": {
+        if (!currentUser) {
+          return (
+            <div className="text-center py-8 space-y-3 text-xs">
+              <MapPin size={36} className="mx-auto text-[#c5a059]" />
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">Sign In to View Addresses</strong>
+                <p className="text-[#706458] mt-1">Save your shipping addresses for seamless 1-click checkout.</p>
+              </div>
+              {onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth();
+                  }}
+                  className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                >
+                  Sign In / Register
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        const addresses = customerProfile?.savedAddresses || [];
+
+        return (
+          <div className="space-y-3">
+            {addresses.map((addr) => (
+              <div
+                key={addr.id}
+                className={`p-3.5 bg-white rounded-xl border ${
+                  addr.isDefault ? "border-2 border-[#0d4f3c]" : "border-[#ebe2d8]"
+                } space-y-1 text-xs relative`}
+              >
+                <div className="flex justify-between items-center">
+                  <strong className="text-sm text-[#1e1b18] flex items-center gap-1.5">
+                    <MapPin size={14} className="text-[#0d4f3c]" /> {addr.label} ({addr.fullName})
+                  </strong>
+                  <div className="flex items-center gap-2">
+                    {addr.isDefault && (
+                      <span className="bg-[#0d4f3c] text-white text-[0.65rem] px-2 py-0.5 rounded-full font-bold">
+                        Default
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAddress(addr.id)}
+                      className="text-rose-500 hover:text-rose-700 p-1"
+                      title="Delete address"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[#706458]">{addr.addressLine1}, {addr.city}, {addr.state} - {addr.pincode}</p>
+                <span className="text-[#1e1b18] font-semibold block pt-1">Phone: +91 {addr.phone}</span>
+              </div>
+            ))}
+
+            {isAddingAddress ? (
+              <form onSubmit={handleSaveNewAddress} className="bg-[#fcfaf7] p-3.5 rounded-xl border border-[#ebe2d8] space-y-2 text-xs">
+                <strong className="text-xs text-[#1e1b18] block">Add New Delivery Address</strong>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    required
+                    value={newAddr.fullName}
+                    onChange={(e) => setNewAddr({ ...newAddr, fullName: e.target.value })}
+                    className="p-2 border border-[#ebe2d8] rounded bg-white"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone (10 digits)"
+                    required
+                    value={newAddr.phone}
+                    onChange={(e) => setNewAddr({ ...newAddr, phone: e.target.value })}
+                    className="p-2 border border-[#ebe2d8] rounded bg-white"
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Street / Flat / Colony"
+                  required
+                  value={newAddr.addressLine1}
+                  onChange={(e) => setNewAddr({ ...newAddr, addressLine1: e.target.value })}
+                  className="w-full p-2 border border-[#ebe2d8] rounded bg-white"
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="City"
+                    required
+                    value={newAddr.city}
+                    onChange={(e) => setNewAddr({ ...newAddr, city: e.target.value })}
+                    className="p-2 border border-[#ebe2d8] rounded bg-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="State"
+                    required
+                    value={newAddr.state}
+                    onChange={(e) => setNewAddr({ ...newAddr, state: e.target.value })}
+                    className="p-2 border border-[#ebe2d8] rounded bg-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="PIN Code"
+                    required
+                    value={newAddr.pincode}
+                    onChange={(e) => setNewAddr({ ...newAddr, pincode: e.target.value })}
+                    className="p-2 border border-[#ebe2d8] rounded bg-white"
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 bg-[#0d4f3c] text-white font-bold rounded-lg"
+                  >
+                    Save Address
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingAddress(false)}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 font-bold rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAddingAddress(true)}
+                className="w-full py-2.5 border-2 border-dashed border-[#c5a059] text-[#8c6d37] font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 hover:bg-[#fdfbf7] transition-colors"
+              >
+                <Plus size={14} />
+                <span>Add New Address</span>
+              </button>
+            )}
+          </div>
+        );
+      }
+
+      case "payments": {
+        return (
+          <div className="space-y-3 text-xs">
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#f5efeb] flex items-center justify-center text-[#0d4f3c]">
+                  <CreditCard size={17} />
+                </div>
+                <div>
+                  <strong className="text-xs text-[#1e1b18] block">Instant UPI Payment</strong>
+                  <span className="text-[#706458]">Google Pay, PhonePe, Paytm, BHIM & Any UPI ID</span>
+                </div>
+              </div>
+              <span className="text-[#0d4f3c] font-bold">Supported ✓</span>
+            </div>
+
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#f5efeb] flex items-center justify-center text-[#7a4e12]">
+                  <CreditCard size={17} />
+                </div>
+                <div>
+                  <strong className="text-xs text-[#1e1b18] block">Credit & Debit Cards</strong>
+                  <span className="text-[#706458]">Visa, MasterCard, RuPay, American Express & Net Banking</span>
+                </div>
+              </div>
+              <span className="text-[#0d4f3c] font-bold">Supported ✓</span>
+            </div>
+
+            {/* Cash on Delivery is strictly disabled per store policy and user request */}
+            <div className="p-3 bg-[#faf7f5] border border-[#e8dfd5] rounded-xl flex items-center justify-between opacity-80">
+              <div>
+                <strong className="text-xs text-[#706458] block">Cash on Delivery (COD)</strong>
+                <span className="text-[0.68rem] text-[#8c827a]">
+                  Disabled for bespoke handcrafted couture to maintain zero transit waste.
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-[#f0eae1] text-[#706458] text-[0.68rem] font-bold">
+                Disabled
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      case "shipping_policy": {
+        return (
+          <div className="space-y-3 text-xs text-[#1e1b18]">
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl space-y-2">
+              <strong className="text-sm font-serif block text-[#0d4f3c]">Atelier Shipping & Delivery Policy</strong>
+              <p className="text-[#706458] leading-relaxed">
+                Every House of Shriya ensemble undergoes artisanal quality checks before dispatch.
+              </p>
+              <div className="pt-2 border-t border-[#f5efeb] space-y-1.5 text-[#706458]">
+                <p>✦ <strong>Domestic Shipping:</strong> Delivered within 4–7 business days via air cargo.</p>
+                <p>✦ <strong>Bespoke Custom Tailoring:</strong> Requires 5–10 business days crafting time.</p>
+                <p>✦ <strong>Packaging:</strong> Sealed in heirloom bridal-grade garment bags.</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 rounded-full bg-[#0d4f3c] text-white font-bold"
+            >
+              Close
+            </button>
+          </div>
+        );
+      }
+
+      case "settings":
+      case "notifications":
+      case "privacy":
+      case "support":
+      default:
+        return (
+          <div className="space-y-3 text-xs text-[#1e1b18]">
+            <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl space-y-2">
+              <strong className="text-sm font-serif block text-[#0d4f3c]">Atelier Client Care Concierge</strong>
+              <p className="text-[#706458] leading-relaxed">
+                Our master stylists and weavers are available Monday through Sunday to assist with bespoke customizations, bridal inquiries, and expedited dispatches.
+              </p>
+              <div className="pt-2 border-t border-[#f5efeb] flex flex-col gap-1.5 font-medium">
+                <span>✦ WhatsApp Concierge: <strong>{siteContent?.whatsappNumber || "+91 98765 00000"}</strong></span>
+                <span>✦ Email Atelier: <strong>{siteContent?.contactEmail || "care@houseofshriya.com"}</strong></span>
+                <span>✦ Surat Atelier Flagship: <strong>Ring Road Textile Hub, Surat, Gujarat</strong></span>
+              </div>
+            </div>
+
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+            >
+              <MessageCircle size={16} />
+              <span>Need Help? / Open WhatsApp</span>
+            </a>
+          </div>
+        );
+    }
+  };
+
+  const getTitle = () => {
+    switch (type) {
+      case "track_order":
+        return "Live Order Tracking";
+      case "order_history":
+        return "My Order History";
+      case "profile":
+        return "My Atelier Profile";
+      case "addresses":
+        return "Saved Addresses";
+      case "payments":
+        return "Payment Methods";
+      case "notifications":
+        return "Notification Preferences";
+      case "privacy":
+        return "Privacy & Security";
+      case "shipping_policy":
+        return "Shipping Policy";
+      case "support":
+      default:
+        return "Client Support & Concierge";
+    }
+  };
+
+  return (
+    <div className="interactive-modal-backdrop" onClick={onClose}>
+      <div className="interactive-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="interactive-modal-header">
+          <strong className="text-sm font-serif text-[#faf8f5] tracking-wider">{getTitle()}</strong>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div className="interactive-modal-body">{renderContent()}</div>
+      </div>
+    </div>
+  );
+}
+
+function StoreHeader({
+  onPookie,
+  onOpenDrawer,
+  onOpenAuth,
+  searchQuery,
+  onSearchChange,
+  wishlistCount,
+  onSelectCategory,
+}: {
+  onPookie: () => void;
+  onOpenDrawer: () => void;
+  onOpenAuth?: () => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  wishlistCount: number;
+  onSelectCategory?: (category: string) => void;
+}) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const { siteContent, totalCartCount, setIsCartOpen, currentUser, customerProfile } = useStore();
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  return (
+    <header className="store-header">
+      {siteContent?.announcementVisible !== false && (
+        <div className="announcement-bar">
+          <button
+            data-editable="true"
+            onClick={() => scrollTo("catalog-section")}
+            className="announcement-cta"
+          >
+            <BuilderText
+              as="span"
+              id="announcement_bar_text"
+              fieldPath="announcementText"
+              label="Announcement Bar"
+              text={
+                siteContent?.announcementText
+                  ? `${siteContent.announcementText} · ${siteContent.announcementCta || "Shop Now"}`
+                  : "Explore Velvet Drop · Free Express Delivery on ₹1,999+"
+              }
+            />
+            <ArrowRight size={13} className="shrink-0 inline ml-1" />
+          </button>
+        </div>
+      )}
+
+      <div className="header-main">
+        {/* Left Side: Three-line hamburger menu button prominently placed beside Search */}
+        <div className="header-left">
+          <button
+            data-editable="true"
+            className="icon-button header-menu-btn"
+            aria-label="Open Navigation Menu"
+            title="Open E-Commerce Menu"
+            onClick={onOpenDrawer}
+          >
+            <Menu size={20} />
+          </button>
+
+          <div className={`search-box ${searchOpen ? "search-box-open" : ""}`}>
+            <Search size={15} />
+            <input
+              data-editable="true"
+              aria-label="Search products"
+              placeholder="Search suits, silks, fabrics..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+            />
+          </div>
+
+          <button
+            data-editable="true"
+            className="icon-button mobile-search"
+            aria-label="Search"
+            onClick={() => setSearchOpen(!searchOpen)}
+          >
+            <Search size={18} />
+          </button>
+
+          <button
+            data-editable="true"
+            className="header-pill track-pill"
+            onClick={onOpenDrawer}
+          >
+            <Truck size={14} /> <BuilderText as="span" id="nav_track_order" label="Track Order Pill" text="Track Order" />
+          </button>
+        </div>
+
+        {/* Center: Brand Lockup */}
+        <Link to="/" className="brand-lockup" aria-label="House of Shriya home">
+          <LogoMark small />
+          <span className="brand-title">
+            <BuilderText as="span" id="brand_title_header" label="Brand Logo Title" type="brand" text="House of Shriya" />
+          </span>
+        </Link>
+
+        {/* Right Side: Quick Action Pills & Icons */}
+        <div className="header-right">
+          <button data-editable="true" className="refer-pill" onClick={onOpenDrawer}>
+            <Gift size={14} />
+            <span data-editable="true"><BuilderText as="span" text="Refer & Earn" /> <BuilderText as="b" text="₹100" /></span>
+          </button>
+          
+          <button
+            data-editable="true"
+            className="pookie-pill"
+            onClick={onPookie}
+            aria-label="Ask Pookie Styling Concierge"
+            title="Ask Pookie Styling Concierge"
+          >
+            <Sparkles size={15} className="pookie-icon" />
+            <span className="pookie-label">
+              <BuilderText as="span" className="pookie-ask" text="Ask" />{" "}
+              <BuilderText as="span" text="Pookie" />
+            </span>
+            <i />
+          </button>
+
+          <button
+            data-editable="true"
+            className="icon-button header-action wishlist-header-btn"
+            aria-label={`Wishlist with ${wishlistCount} saved items`}
+            title={`Wishlist (${wishlistCount} saved items)`}
+            onClick={() => {
+              if (onSelectCategory) {
+                onSelectCategory("Wishlist");
+              }
+              scrollTo("catalog-section");
+            }}
+          >
+            <Heart size={18} />
+            <span
+              className={`wishlist-badge ${wishlistCount === 0 ? "wishlist-badge-empty" : ""}`}
+              id="header-wishlist-badge"
+              aria-label={`${wishlistCount} saved items`}
+              title={`${wishlistCount} saved items`}
+            >
+              {wishlistCount}
+            </span>
+          </button>
+
+          {currentUser ? (
+            <button
+              data-editable="true"
+              className="icon-button header-action account-action"
+              aria-label="My Account"
+              onClick={onOpenDrawer}
+              title={customerProfile?.fullName || currentUser.displayName || "My Account"}
+            >
+              <UserRound size={18} />
+              <span className="max-w-[70px] truncate">
+                {customerProfile?.fullName?.split(" ")[0] || currentUser.displayName?.split(" ")[0] || "Account"}
+              </span>
+            </button>
+          ) : (
+            <button
+              data-editable="true"
+              className="icon-button header-action account-action"
+              aria-label="Customer Login"
+              onClick={onOpenAuth || onOpenDrawer}
+              title="Sign In / Register"
+            >
+              <UserRound size={18} />
+              <span>Login</span>
+            </button>
+          )}
+
+          <button
+            data-editable="true"
+            className="bag-button"
+            aria-label={`Shopping Bag with ${totalCartCount} items`}
+            title="Open Shopping Bag"
+            onClick={() => setIsCartOpen(true)}
+          >
+            <ShoppingBag size={17} />
+            <BuilderText as="span" text={String(totalCartCount)} />
+          </button>
+        </div>
+      </div>
+
+      {/* Dynamic Header Navigation Links from CMS */}
+      {siteContent?.navLinks && siteContent.navLinks.length > 0 && (
+        <nav className="header-nav-bar hidden md:flex items-center justify-center gap-6 py-2 px-4 border-t border-[#e8dfd5]/60 text-xs font-medium text-[#5a544c] bg-[#faf8f5]/80 backdrop-blur-xs">
+          {siteContent.navLinks.map((nav) => (
+            <button
+              key={nav.id}
+              onClick={() => {
+                if (nav.href.startsWith("category:")) {
+                  const cat = nav.href.replace("category:", "");
+                  if (onSelectCategory) {
+                    onSelectCategory(cat);
+                  } else {
+                    scrollTo("catalog-section");
+                  }
+                } else if (nav.href.startsWith("#")) {
+                  scrollTo(nav.href.substring(1));
+                } else {
+                  scrollTo("catalog-section");
+                }
+              }}
+              className="hover:text-[#0d4f3c] transition-colors tracking-wide hover:underline cursor-pointer"
+            >
+              {nav.label}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {searchOpen && (
+        <div className="mobile-search-bar">
+          <Search size={16} className="text-[#c5a059] shrink-0" />
+          <input
+            data-editable="true"
+            type="text"
+            placeholder="Search suits, silks, fabrics..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                setSearchOpen(false);
+              }
+            }}
+          />
+          <button
+            onClick={() => setSearchOpen(false)}
+            aria-label="Close search"
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+    </header>
+  );
+}
+
+function Hero({ onPookie }: { onPookie: () => void }) {
+  const { siteContent } = useStore();
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  const activeSlides = useMemo(() => {
+    if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
+      return siteContent.heroSlides.map((s, idx) => ({
+        eyebrow: s.eyebrow || "DAILY / Festive Couture",
+        number: `0${idx + 1}`,
+        collection: s.collection || "Handcrafted Heirloom",
+        title: s.title || "Pure Handloom Silks & Bespoke Suits",
+        description: s.description || "Crafted in Surat with 100% pure fabrics and delicate artisan detailing.",
+        image: s.image || imageUrls.silk,
+        season: s.season || "AUTUMN/FESTIVE 2026",
+        caption: s.caption || "Atelier Handloom Couture",
+        mood: s.mood || "Emerald & Gold Weaves",
+        ctaText: s.ctaText || "Explore Festive Edit",
+      }));
+    }
+    return slides;
+  }, [siteContent]);
+
+  const slideIndex = activeSlide % activeSlides.length;
+  const slide = activeSlides[slideIndex] || activeSlides[0];
+
+  return (
+    <section className="hero-section">
+      <div className="hero-glow hero-glow-left" />
+      <div className="hero-glow hero-glow-right" />
+      <div className="hero-dots" />
+      <BuilderText as="div" className="hero-word" text="SHRIYA" />
+      <div className="site-container hero-container">
+        <div className="hero-meta">
+          <div data-editable="true">
+            <span className="ping-dot" />
+            <BuilderText as="strong" text="HOUSE OF SHRIYA" />
+            <i><BuilderText as="span" text="·" /></i>
+          </div>
+          <div className="hero-meta-pills"><BuilderText as="span" text="Pure Fabrics" /><BuilderText as="span" text="Bespoke Fit" /><BuilderText as="span" text="100% handloom" /></div>
+        </div>
+        <div className="hero-grid">
+          <div className="hero-copy" key={slide.number}>
+            <div data-editable="true" className="hero-eyebrow">
+              <Sparkles size={13} />{" "}
+              <BuilderText
+                as="span"
+                id={`hero_slide_${slideIndex}_eyebrow`}
+                fieldPath={`heroSlides[${slideIndex}].eyebrow`}
+                label="Hero Eyebrow"
+                text={slide.eyebrow}
+              />
+            </div>
+            <BuilderText
+              as="p"
+              id={`hero_slide_${slideIndex}_collection`}
+              className="hero-collection"
+              fieldPath={`heroSlides[${slideIndex}].collection`}
+              label="Hero Collection"
+              text={slide.collection}
+            />
+            <BuilderText
+              as="h1"
+              id={`hero_slide_${slideIndex}_title`}
+              fieldPath={`heroSlides[${slideIndex}].title`}
+              label="Hero Headline"
+              type="heading"
+              text={slide.title}
+            />
+            <BuilderText
+              as="p"
+              id={`hero_slide_${slideIndex}_desc`}
+              className="hero-description"
+              fieldPath={`heroSlides[${slideIndex}].description`}
+              label="Hero Description"
+              text={slide.description}
+            />
+            <div className="material-pills">
+              <span data-editable="true">
+                <Sparkles size={13} /> <BuilderText as="span" text="Pure Banarasi Katan · 100% Handloom" />
+              </span>
+              <span data-editable="true">
+                <Sparkles size={13} /> <BuilderText as="span" text="Soft & Elegant" />
+              </span>
+            </div>
+            <div className="hero-actions">
+              <button
+                data-editable="true"
+                className="primary-action"
+                onClick={() => document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" })}
+              >
+                <BuilderText
+                  as="span"
+                  id={`hero_slide_${slideIndex}_cta`}
+                  fieldPath={`heroSlides[${slideIndex}].ctaText`}
+                  label="Hero Button CTA"
+                  type="button"
+                  text={slide.ctaText || "Explore Festive Edit"}
+                />{" "}
+                <ArrowRight size={17} />
+              </button>
+              <button data-editable="true" className="secondary-action pookie-action" onClick={onPookie}>
+                <Sparkles size={15} /> <BuilderText as="span" text="Ask Pookie" />
+              </button>
+            </div>
+            <div className="slide-controls">
+              <div className="slide-dots">
+                {activeSlides.map((item, index) => (
+                  <button
+                    data-editable="true"
+                    key={item.number || index}
+                    aria-label={`Go to slide ${index + 1}`}
+                    className={index === slideIndex ? "active" : ""}
+                    onClick={() => setActiveSlide(index)}
+                  />
+                ))}
+              </div>
+              <div className="slide-arrows">
+                <button
+                  data-editable="true"
+                  aria-label="Previous Slide"
+                  onClick={() => setActiveSlide((slideIndex + activeSlides.length - 1) % activeSlides.length)}
+                >
+                  <ChevronLeft size={17} />
+                </button>
+                <button
+                  data-editable="true"
+                  aria-label="Next Slide"
+                  onClick={() => setActiveSlide((slideIndex + 1) % activeSlides.length)}
+                >
+                  <ChevronRight size={17} />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="hero-media-wrap">
+            <div data-editable="true" className="hero-media-label">
+              <Crown size={15} /> <BuilderText as="span" text="Haute Couture Edit" />
+            </div>
+            <div className="hero-media">
+              <CanvaEditable
+                id={`hero_slide_${slideIndex}_image`}
+                as="img"
+                type="image"
+                label={`Hero Slide ${slideIndex + 1} Photo`}
+                src={slide.image}
+                alt={slide.title}
+                slideIndex={slideIndex}
+                fieldPath={`heroSlides[${slideIndex}].image`}
+              />
+              <div className="media-gradient" />
+              <button data-editable="true" className="save-pin">
+                <Bookmark size={14} /> <BuilderText as="span" text="Save Pin" />
+              </button>
+              <div className="hero-caption">
+                <div>
+                  <BuilderText as="strong" text="HOUSE OF SHRIYA COUTURE" />
+                  <BuilderText as="span" text={`${slide.number} · ${slide.season}`} />
+                </div>
+                <BuilderText as="h3" text={slide.caption} />
+                <BuilderText as="p" text={`✦ Trending on Moodboard: ${slide.mood}`} />
+              </div>
+            </div>
+            <div className="atelier-card">
+              <div><BuilderText as="span" text="Atelier Detail" /></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <FeatureStrip />
+    </section>
+  );
+}
+
+function FeatureStrip() {
+  const features = [
+    { icon: Crown, title: "Heritage Craftsmanship", text: "Artisanal hand-woven heirlooms" },
+    { icon: Sparkles, title: "100% Pure Handlooms", text: "Authentic Banarasi & Chanderi" },
+    { icon: Check, title: "Instant UPI & COD", text: "Zero-hassle secure checkout" },
+    { icon: PackageCheck, title: "Worldwide Express", text: "Fast insured courier delivery" },
+  ];
+  return <div className="feature-strip"><div className="site-container feature-grid">{features.map(({ icon: Icon, title, text }) => <div className="feature-item" key={title}><span data-editable="true"><Icon size={17} /></span><div><BuilderText as="strong" text={title} /><BuilderText as="small" text={text} /></div></div>)}</div></div>;
+}
+
+function Catalog({
+  wishlist,
+  onWishlist,
+  activeCategory,
+  onCategoryChange,
+  query,
+  onQueryChange,
+}: {
+  wishlist: Set<string>;
+  onWishlist: (id: string) => void;
+  activeCategory: string;
+  onCategoryChange: (cat: string) => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+}) {
+  const { products: dynamicProducts, categories, siteContent } = useStore();
+  const [sort, setSort] = useState("Featured Couture");
+
+  const categoryPills = useMemo(() => {
+    const defaultPills = [
+      "All Collections",
+      "Cotton Suits",
+      "Daily Wear Suits",
+      "Co-ord Sets",
+      "Party Wear",
+      "Festive Wear",
+      "Seasonal Drop",
+    ];
+    if (!categories || categories.length === 0) return defaultPills;
+    const catNames = categories.map((c) => c.name);
+    return Array.from(new Set(["All Collections", ...catNames]));
+  }, [categories]);
+
+  const visibleProducts = useMemo(() => {
+    const listToFilter = dynamicProducts && dynamicProducts.length > 0 ? dynamicProducts : products;
+    let result = listToFilter.filter((product) => {
+      let matchesFilter = true;
+      if (activeCategory === "All Collections" || activeCategory === "All Suits") {
+        matchesFilter = true;
+      } else {
+        const productTags = product.tags || [];
+        matchesFilter =
+          product.category === activeCategory ||
+          productTags.includes(activeCategory);
+      }
+
+      const matchesQuery = `${product.name} ${product.description || ""} ${product.color || ""} ${product.fabricType || ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
+
+      return matchesFilter && matchesQuery;
+    });
+
+    if (sort === "Price: Low to High") {
+      result = [...result].sort((a, b) => {
+        const pA = Number(String(a.price).replace(/[^0-9]/g, "")) || 0;
+        const pB = Number(String(b.price).replace(/[^0-9]/g, "")) || 0;
+        return pA - pB;
+      });
+    }
+    if (sort === "Price: High to Low") {
+      result = [...result].sort((a, b) => {
+        const pA = Number(String(a.price).replace(/[^0-9]/g, "")) || 0;
+        const pB = Number(String(b.price).replace(/[^0-9]/g, "")) || 0;
+        return pB - pA;
+      });
+    }
+    if (sort === "Highest Rated") {
+      result = [...result].sort((a, b) => {
+        const rA = parseFloat(String(a.rating || "4.8")) || 4.8;
+        const rB = parseFloat(String(b.rating || "4.8")) || 4.8;
+        return rB - rA;
+      });
+    }
+    return result;
+  }, [dynamicProducts, activeCategory, query, sort]);
+
+  return (
+    <section id="catalog-section" className="catalog-section">
+      <div className="site-container">
+        <div className="catalog-heading">
+          <div>
+            <BuilderText
+              as="p"
+              id="catalog_subtitle"
+              fieldPath="catalogSubtitle"
+              label="Catalog Eyebrow"
+              className="section-eyebrow"
+              text={siteContent?.catalogSubtitle || "All Handcrafted Silks & Suits"}
+            />
+            <BuilderText
+              as="h2"
+              id="catalog_title"
+              fieldPath="catalogTitle"
+              label="Catalog Title"
+              type="heading"
+              text={siteContent?.catalogTitle || "Grand Boutique Catalog"}
+            />
+          </div>
+          <div className="catalog-search">
+            <Search size={15} />
+            <input
+              data-editable="true"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search by suit, fabric, or color..."
+              aria-label="Search the catalog"
+            />
+          </div>
+        </div>
+
+        <div className="catalog-toolbar">
+          <div className="filter-pills" style={{ overflowX: "auto", maxWidth: "100%", paddingBottom: "0.25rem" }}>
+            {categoryPills.map((item) => (
+              <button
+                data-editable="true"
+                key={item}
+                className={activeCategory === item ? "active" : ""}
+                onClick={() => onCategoryChange(item)}
+              >
+                <BuilderText as="span" text={item} />
+              </button>
+            ))}
+          </div>
+
+          <label className="sort-select">
+            <BuilderText as="span" text="↕" />
+            <select
+              data-editable="true"
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+              aria-label="Sort products"
+            >
+              <option>Featured Couture</option>
+              <option>Price: Low to High</option>
+              <option>Price: High to Low</option>
+              <option>Highest Rated</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="product-grid">
+          {visibleProducts.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              index={index}
+              product={product}
+              isWishlisted={wishlist.has(product.id)}
+              onWishlist={onWishlist}
+            />
+          ))}
+        </div>
+
+        {visibleProducts.length === 0 && (
+          <div className="empty-state">
+            <BuilderText as="span" text="No pieces found in this category or search. Try clearing filters." />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ProductCard({
+  product,
+  isWishlisted,
+  onWishlist,
+  index,
+}: {
+  product: Product;
+  isWishlisted: boolean;
+  onWishlist: (id: string) => void;
+  index: number;
+  key?: React.Key;
+}) {
+  const [quickView, setQuickView] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<string>("Unstitched Fabric");
+  const { addToCart, startInstantCheckout } = useStore();
+  const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
+
+  const handleAddToCart = () => {
+    addToCart(product as Product, selectedSize);
+  };
+
+  const handleBuyNow = () => {
+    startInstantCheckout(product as Product, selectedSize);
+  };
+
+  const whatsappMsg = encodeURIComponent(
+    `Namaste House of Shriya! I would like to inquire about ${product.name} (${product.price}, ${product.color || "Surat Handloom"}). Can you assist with delivery?`
+  );
+
+  return (
+    <motion.article
+      className="product-card relative"
+      initial={{ opacity: 0, y: 28, scale: 0.96 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{
+        duration: 0.55,
+        ease: [0.22, 1, 0.36, 1],
+        delay: (index % 3) * 0.08,
+      }}
+    >
+      {/* Quick Edit button in Edit Mode */}
+      {isEditMode && !isPreviewOnly && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            quickEditProduct(product);
+          }}
+          className="absolute top-2 left-2 z-30 bg-[#7D2AE8] hover:bg-[#6d20d8] text-white text-[0.65rem] px-2.5 py-1 rounded-md shadow-lg flex items-center gap-1 font-sans font-semibold cursor-pointer border border-white/20 transition-all hover:scale-105"
+          title="Click to edit product in Canva modal"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
+          <span>Edit Suit</span>
+        </button>
+      )}
+
+      <div className="product-image">
+        <CanvaEditable
+          id={`product_${product.id}_image`}
+          as="img"
+          type="image"
+          label={`${product.name} Photo`}
+          src={product.image}
+          alt={product.name}
+          productId={product.id}
+          className="product-image-primary"
+        />
+        <img
+          data-editable="true"
+          className="product-image-hover"
+          src={product.hoverImage || product.image}
+          alt=""
+          loading="lazy"
+        />
+        <div className="product-badges">
+          {(product.badges || []).slice(0, 2).map((badge) => (
+            <BuilderText as="span" key={badge} text={badge} />
+          ))}
+        </div>
+        <button
+          data-editable="true"
+          className={`wishlist-button ${isWishlisted ? "wishlisted" : ""}`}
+          aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+          onClick={() => onWishlist(product.id)}
+        >
+          <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} />
+        </button>
+        <button data-editable="true" className="quick-view" onClick={() => setQuickView(!quickView)}>
+          <BuilderText as="span" text={quickView ? "Close Details" : "Quick View"} />
+        </button>
+      </div>
+      <div className="product-content">
+        <div className="rating-row">
+          <span data-editable="true">
+            <Star size={12} fill="currentColor" /> <BuilderText as="span" text={`${product.rating || "4.8"} (${product.reviews || "120+"})`} />
+          </span>
+          <BuilderText as="small" text={product.color || "Artisan Craft"} />
+        </div>
+        <BuilderText
+          as="h3"
+          id={`product_${product.id}_title`}
+          label={`${product.name} Title`}
+          type="heading"
+          text={product.name}
+        />
+        <BuilderText
+          as="p"
+          id={`product_${product.id}_desc`}
+          label={`${product.name} Description`}
+          text={product.description}
+        />
+        <div className="price-row">
+          <BuilderText
+            as="strong"
+            id={`product_${product.id}_price`}
+            label={`${product.name} Price`}
+            text={product.price}
+          />
+          {product.originalPrice && (
+            <BuilderText
+              as="del"
+              id={`product_${product.id}_orig_price`}
+              label={`${product.name} Original Price`}
+              text={product.originalPrice}
+            />
+          )}
+          {product.savings && (
+            <BuilderText
+              as="span"
+              id={`product_${product.id}_savings`}
+              label={`${product.name} Savings`}
+              text={product.savings}
+            />
+          )}
+        </div>
+
+        {quickView && (
+          <div className="quick-view-copy" style={{ marginTop: "0.5rem", marginBottom: "0.75rem", padding: "0.5rem", backgroundColor: "#f9f6f0", borderRadius: "8px", border: "1px solid #e8dfd5" }}>
+            <p className="text-xs text-[#554a40] mb-2">
+              <strong>Fabric:</strong> {product.fabricType || "Pure Surat Handloom Silk"} · <strong>Fit:</strong> {product.cut || "Classic"}
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[0.68rem] text-[#8c827a] uppercase font-bold">Select Size:</span>
+              {["Unstitched Fabric", "S", "M", "L", "XL"].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSelectedSize(s)}
+                  className={`text-[0.65rem] px-2 py-0.5 rounded border transition-colors ${
+                    selectedSize === s
+                      ? "bg-[#0d4f3c] text-white border-[#0d4f3c]"
+                      : "bg-white text-[#2a241e] border-[#d6ccc2] hover:border-[#0d4f3c]"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="product-actions" style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "0.5rem" }}>
+          <button
+            type="button"
+            data-editable="true"
+            onClick={handleBuyNow}
+            title="Instant Checkout"
+            style={{
+              flex: "1",
+              backgroundColor: "#0d4f3c",
+              color: "#faf8f5",
+              fontWeight: 600,
+              fontSize: "0.75rem",
+              padding: "7px 12px",
+              borderRadius: "9999px",
+              border: "none",
+              cursor: "pointer",
+              transition: "opacity 0.15s",
+            }}
+          >
+            <BuilderText as="span" text="Buy Now" />
+          </button>
+
+          <button
+            type="button"
+            data-editable="true"
+            onClick={handleAddToCart}
+            title="Add to Shopping Bag"
+            aria-label={`Add ${product.name} to Shopping Bag`}
+            style={{
+              backgroundColor: "#f4eee6",
+              color: "#0d4f3c",
+              fontWeight: 600,
+              fontSize: "0.75rem",
+              padding: "7px 10px",
+              borderRadius: "9999px",
+              border: "1px solid #d6ccc2",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <ShoppingBag size={14} />
+            <span>Bag</span>
+          </button>
+
+          <a
+            data-editable="true"
+            href={`https://wa.me/919825087654?text=${whatsappMsg}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="whatsapp-button"
+            aria-label={`Inquire on WhatsApp about ${product.name}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "32px",
+              height: "32px",
+              borderRadius: "9999px",
+              backgroundColor: "#25D366",
+              color: "#ffffff",
+              textDecoration: "none",
+            }}
+          >
+            <MessageCircle size={15} />
+          </a>
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
+function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }) {
+  const { siteContent } = useStore();
+  const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
+
+  return (
+    <footer className="site-footer">
+      <div className="site-container">
+        <div className="footer-main">
+          <div className="footer-brand">
+            <LogoMark />
+            <BuilderText as="h2" text="House of Shriya" />
+            <BuilderText as="p" text={siteContent?.brandDescription || "Heirloom Indian couture, thoughtfully woven and made to measure in Surat."} />
+            <a
+              data-editable="true"
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-xs text-[#faf8f5] bg-white/10 hover:bg-white/20 px-3.5 py-2 rounded-full transition-colors w-fit"
+            >
+              <MessageCircle size={15} /> <BuilderText as="span" text="Chat with Atelier Concierge" />
+            </a>
+          </div>
+          <div className="footer-links">
+            <div>
+              <BuilderText as="strong" text="Discover" />
+              <Link data-editable="true" to="/our-story"><BuilderText as="span" text="Our Story" /></Link>
+              <Link data-editable="true" to="/craftsmanship"><BuilderText as="span" text="Craftsmanship" /></Link>
+              <Link data-editable="true" to="/journal"><BuilderText as="span" text="Journal" /></Link>
+            </div>
+            <div>
+              <BuilderText as="strong" text="Client Care" />
+              <button
+                type="button"
+                data-editable="true"
+                onClick={() => onOpenModal?.("shipping_policy")}
+                className="text-left text-[#faf8f5]/70 hover:text-white transition-colors"
+              >
+                <BuilderText as="span" text="Shipping Policy" />
+              </button>
+              <button
+                type="button"
+                data-editable="true"
+                onClick={() => onOpenModal?.("support")}
+                className="text-left text-[#faf8f5]/70 hover:text-white transition-colors"
+              >
+                <BuilderText as="span" text="Book a Styling" />
+              </button>
+              <button
+                type="button"
+                data-editable="true"
+                onClick={() => onOpenModal?.("support")}
+                className="text-left text-[#faf8f5]/70 hover:text-white transition-colors"
+              >
+                <BuilderText as="span" text="Contact Us" />
+              </button>
+            </div>
+            <div>
+              <BuilderText as="strong" text="Stay in the know" />
+              <BuilderText as="p" text="Private previews, artisan stories, and first access to every drop." />
+              <div className="footer-input">
+                <input data-editable="true" placeholder="Your email address" aria-label="Email address" />
+                <button data-editable="true" aria-label="Subscribe"><ArrowRight size={15} /></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <BuilderText as="span" text={siteContent?.footerNote || "© House of Shriya. Made for your forever wardrobe."} />
+          <BuilderText as="span" text={`${siteContent?.atelierCity || "SURAT"} · WORLDWIDE SHIPPING`} />
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+export default function Index() {
+  const [showIntro, setShowIntro] = useState(true);
+  const [pookieMessage, setPookieMessage] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState("All Collections");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Use persistent store wishlist and toggleWishlist
+  const { wishlist, toggleWishlist } = useStore();
+
+  const dismissIntro = () => setShowIntro(false);
+
+  const openPookie = () => {
+    setPookieMessage(true);
+    window.setTimeout(() => setPookieMessage(false), 3200);
+  };
+
+  const handleSelectCategory = (category: string) => {
+    setActiveCategory(category);
+    document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  return (
+    <div className="storefront">
+      {showIntro && (
+        <IntroOverlay onEnter={dismissIntro} />
+      )}
+
+      <StoreHeader
+        onPookie={openPookie}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        wishlistCount={wishlist.size}
+        onSelectCategory={handleSelectCategory}
+      />
+          
+          <main>
+            <Hero onPookie={openPookie} />
+
+            <Catalog
+              wishlist={wishlist}
+              onWishlist={toggleWishlist}
+              activeCategory={activeCategory}
+              onCategoryChange={setActiveCategory}
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+            />
+          </main>
+
+          <Footer onOpenModal={(type) => setActiveModal(type)} />
+
+          {/* Navigation Drawer Menu */}
+          <NavigationDrawer
+            isOpen={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            onSelectCategory={handleSelectCategory}
+            onOpenModal={(type) => setActiveModal(type)}
+            onOpenAuth={() => setIsAuthOpen(true)}
+            wishlistCount={wishlist.size}
+          />
+
+          {/* Interactive Info Modal */}
+          <InteractiveModal
+            type={activeModal}
+            onClose={() => setActiveModal(null)}
+            onOpenAuth={() => setIsAuthOpen(true)}
+          />
+
+          {/* Customer Authentication Modal */}
+          <CustomerAuthModal
+            isOpen={isAuthOpen}
+            onClose={() => setIsAuthOpen(false)}
+          />
+
+          {pookieMessage && (
+            <div className="pookie-toast">
+              <span data-editable="true"><Sparkles size={16} /></span>
+              <div>
+                <BuilderText as="strong" text="Pookie is ready" />
+                <BuilderText as="small" text="Tell me your occasion and I’ll style the perfect edit." />
+              </div>
+              <button data-editable="true" onClick={() => setPookieMessage(false)} aria-label="Close Pookie message">
+                <X size={15} />
+              </button>
+            </div>
+          )}
+    </div>
+  );
+}

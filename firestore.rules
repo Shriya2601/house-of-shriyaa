@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Site Content & CMS: Publicly readable and editable by store management
+    match /site_content/{documentId} {
+      allow read, write: if true;
+    }
+
+    // Products Catalog: Publicly readable and editable
+    match /products/{productId} {
+      allow read, write: if true;
+    }
+
+    // Categories & Taxonomy: Publicly readable and editable
+    match /categories/{categoryId} {
+      allow read, write: if true;
+    }
+
+    // Orders: Anyone (customers) can create an order; store admin can read, update status, and manage orders
+    match /orders/{orderId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Admin Credentials & Settings:
+    match /admin_settings/{documentId} {
+      allow read, write: if true;
+    }
+
+    match /admin_auth/{documentId} {
+      allow read, write: if true;
+    }
+
+    // Admin profiles / metadata:
+    match /admins/{userId} {
+      allow read, write: if true;
+    }
+
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
