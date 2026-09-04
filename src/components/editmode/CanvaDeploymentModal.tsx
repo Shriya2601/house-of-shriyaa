@@ -377,16 +377,6 @@ export default function CanvaDeploymentModal() {
                 </button>
               </div>
               <div className="flex items-center justify-between bg-black/50 p-2.5 rounded-lg border border-white/10">
-                <span className="text-amber-300">npx wrangler deploy</span>
-                <button
-                  onClick={() => copyToClipboard("npx wrangler deploy", "cmd-wrangler")}
-                  className="text-stone-400 hover:text-white text-xs flex items-center gap-1"
-                >
-                  {copiedText === "cmd-wrangler" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                  <span>Copy</span>
-                </button>
-              </div>
-              <div className="flex items-center justify-between bg-black/50 p-2.5 rounded-lg border border-white/10">
                 <span className="text-stone-300">npx wrangler pages deploy dist</span>
                 <button
                   onClick={() => copyToClipboard("npx wrangler pages deploy dist", "cmd-pages")}
