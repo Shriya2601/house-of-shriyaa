@@ -1,5 +1,0 @@
-# Cloudflare Pages SPA Routing
-# Note: Cloudflare Pages automatically routes all non-asset requests to /index.html with status 200
-# when no 404.html is present. The wildcard rule '/* /index.html 200' has been removed to eliminate
-# the "Invalid _redirects configuration: Line 1: Infinite loop detected" (code: 100324) error.
-
