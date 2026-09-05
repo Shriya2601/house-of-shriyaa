@@ -48,7 +48,7 @@ export default function CanvaTopBar() {
   // If Edit Mode is OFF, render a discreet, luxury Canva Edit Mode launcher button inside AI Studio editor only
   if (!isEditMode) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 print:hidden">
+      <div className="fixed bottom-20 right-4 sm:bottom-23 sm:right-6 z-40 flex items-center gap-2 print:hidden">
         <button
           onClick={toggleEditMode}
           className="group relative flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-gradient-to-r from-[#7D2AE8] via-[#6d20d8] to-[#0d4f3c] text-white font-medium text-xs shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 border border-white/20 backdrop-blur-md"

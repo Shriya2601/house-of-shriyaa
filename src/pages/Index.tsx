@@ -2410,8 +2410,7 @@ export default function Index() {
   const dismissIntro = () => setShowIntro(false);
 
   const openPookie = () => {
-    setPookieMessage(true);
-    window.setTimeout(() => setPookieMessage(false), 3200);
+    window.dispatchEvent(new CustomEvent("open-pookie-chat"));
   };
 
   const handleSelectCategory = (category: string) => {

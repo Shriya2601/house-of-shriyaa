@@ -16,6 +16,7 @@ import {
 } from "./components/editmode";
 import CartDrawer from "./components/cart/CartDrawer";
 import CheckoutModal from "./components/checkout/CheckoutModal";
+import PookieChatbot from "./components/pookie/PookieChatbot";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
           <CanvaDeploymentModal />
           <CartDrawer />
           <CheckoutModal />
+          <PookieChatbot />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/admin" element={<Admin />} />
