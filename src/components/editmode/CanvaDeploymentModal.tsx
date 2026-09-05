@@ -393,23 +393,26 @@ export default function CanvaDeploymentModal() {
             </div>
           </div>
 
-          {/* Direct CLI Deployment Commands */}
+          {/* Cloudflare Pages Build & Deploy Configuration */}
           <div className="bg-[#121815] border border-[#202f28] rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-amber-200 font-semibold text-xs uppercase tracking-wider">
                 <Server size={15} />
-                <span>Direct Cloudflare CLI Deployment</span>
+                <span>Cloudflare Pages Production Settings</span>
               </div>
-              <span className="text-[0.65rem] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
-                Wrangler
+              <span className="text-[0.65rem] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                Pages SPA
               </span>
             </div>
             <p className="text-xs text-stone-300">
-              To deploy directly from your terminal with guaranteed cache busting:
+              Cloudflare Pages automatically deploys every commit pushed to GitHub. Do not run <code className="text-amber-300">npx wrangler deploy</code> (this is a React + Vite Pages site, not a Worker).
             </p>
             <div className="space-y-2 font-mono text-xs">
               <div className="flex items-center justify-between bg-black/50 p-2.5 rounded-lg border border-white/10">
-                <span className="text-emerald-400">npm run build</span>
+                <div>
+                  <span className="text-stone-400 text-[10px] block uppercase font-sans">Build command</span>
+                  <span className="text-emerald-400 font-bold">npm run build</span>
+                </div>
                 <button
                   onClick={() => copyToClipboard("npm run build", "cmd-build")}
                   className="text-stone-400 hover:text-white text-xs flex items-center gap-1"
@@ -419,12 +422,15 @@ export default function CanvaDeploymentModal() {
                 </button>
               </div>
               <div className="flex items-center justify-between bg-black/50 p-2.5 rounded-lg border border-white/10">
-                <span className="text-stone-300">npx wrangler pages deploy dist</span>
+                <div>
+                  <span className="text-stone-400 text-[10px] block uppercase font-sans">Build output directory</span>
+                  <span className="text-amber-300 font-bold">dist</span>
+                </div>
                 <button
-                  onClick={() => copyToClipboard("npx wrangler pages deploy dist", "cmd-pages")}
+                  onClick={() => copyToClipboard("dist", "cmd-dist")}
                   className="text-stone-400 hover:text-white text-xs flex items-center gap-1"
                 >
-                  {copiedText === "cmd-pages" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  {copiedText === "cmd-dist" ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                   <span>Copy</span>
                 </button>
               </div>
