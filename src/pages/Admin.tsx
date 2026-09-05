@@ -38,6 +38,7 @@ import {
   ArrowLeft,
   Menu,
   Key,
+  Upload,
 } from "lucide-react";
 import {
   Product,
@@ -75,6 +76,7 @@ import {
 } from "../services/storeService";
 import { User } from "firebase/auth";
 import { ProductImageUploader } from "../components/admin/ProductImageUploader";
+import { optimizeImageFile, persistAssetToFirestore } from "../services/imageUploadService";
 
 export default function Admin() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -2320,18 +2322,45 @@ export default function Admin() {
 
                         <div className="sm:col-span-2">
                           <label className="block text-[10px] font-bold text-[#6b6257] uppercase mb-1">
-                            Slide Image URL
+                            Slide Photo (Direct Device Upload)
                           </label>
-                          <input
-                            type="url"
-                            value={slide.image}
-                            onChange={(e) => {
-                              const updated = [...siteContent.heroSlides];
-                              updated[sIndex] = { ...slide, image: e.target.value };
-                              setSiteContent({ ...siteContent, heroSlides: updated });
-                            }}
-                            className="w-full p-2 bg-white border border-[#d6ccc2] rounded-lg"
-                          />
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-white p-2.5 rounded-xl border border-[#d6ccc2]">
+                            {slide.image && (
+                              <img
+                                src={slide.image}
+                                alt="Slide preview"
+                                className="w-16 h-16 object-cover rounded-lg border border-[#e5ded6] shrink-0"
+                              />
+                            )}
+                            <div className="flex-1 space-y-1">
+                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0d4f3c] text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-[#083528] transition-colors">
+                                <Upload size={13} />
+                                <span>Upload Slide Photo From Device</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    try {
+                                      const optimized = await optimizeImageFile(file);
+                                      await persistAssetToFirestore(optimized);
+                                      const updated = [...siteContent.heroSlides];
+                                      updated[sIndex] = { ...slide, image: optimized.url };
+                                      setSiteContent({ ...siteContent, heroSlides: updated });
+                                    } catch (err) {
+                                      console.error("Slide upload error:", err);
+                                      alert("Failed to upload slide image from device.");
+                                    }
+                                  }}
+                                />
+                              </label>
+                              <p className="text-[10px] text-[#6b6257]">
+                                High-resolution photo is compressed and saved securely.
+                              </p>
+                            </div>
+                          </div>
                         </div>
 
                         <div>

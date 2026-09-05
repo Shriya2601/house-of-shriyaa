@@ -17,6 +17,7 @@ import {
   replaceImageFromDevice,
   MAX_PRODUCT_IMAGES,
   ALLOWED_IMAGE_TYPES,
+  UploadProgress,
 } from "../../services/imageUploadService";
 
 interface ProductImageUploaderProps {
@@ -34,12 +35,11 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
-  const [showManualUrlInput, setShowManualUrlInput] = useState(false);
-  const [manualUrl, setManualUrl] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -47,7 +47,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
   const currentCount = images.length;
   const slotsRemaining = MAX_PRODUCT_IMAGES - currentCount;
 
-  // Handle file selection from device
+  // Handle file selection directly from device
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setErrorMessage(null);
@@ -57,12 +57,17 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
     setIsProcessing(true);
 
     try {
-      const result = await processAndUploadDeviceImages(filesArray, images, productId);
+      const result = await processAndUploadDeviceImages(
+        filesArray,
+        images,
+        productId,
+        (progress) => setUploadProgress(progress)
+      );
 
       if (result.newImages.length > 0) {
         const updated = [...images, ...result.newImages].slice(0, MAX_PRODUCT_IMAGES);
         onChange(updated);
-        setSuccessMessage(`Successfully added ${result.newImages.length} image(s) from device.`);
+        setSuccessMessage(`Successfully uploaded ${result.newImages.length} photo(s) from device.`);
         setTimeout(() => setSuccessMessage(null), 4000);
       }
 
@@ -74,6 +79,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
       setErrorMessage("An unexpected error occurred while processing device images.");
     } finally {
       setIsProcessing(false);
+      setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -81,7 +87,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
   // Trigger file input
   const triggerFileInput = () => {
     if (slotsRemaining <= 0) {
-      setErrorMessage(`Maximum limit of ${MAX_PRODUCT_IMAGES} images reached for this product.`);
+      setErrorMessage(`Maximum limit of ${MAX_PRODUCT_IMAGES} images reached for this product. You can replace or delete existing photos.`);
       return;
     }
     fileInputRef.current?.click();
@@ -122,7 +128,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
     const target = images[index];
     const rest = images.filter((_, idx) => idx !== index);
     onChange([target, ...rest]);
-    setSuccessMessage("Selected image is now set as the primary cover photo.");
+    setSuccessMessage("Selected photo is now set as the primary cover photo.");
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
@@ -136,7 +142,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
     onChange(reordered);
   };
 
-  // Replace single image
+  // Replace single image from device
   const handleTriggerReplace = (index: number) => {
     setReplacingIndex(index);
     replaceInputRef.current?.click();
@@ -149,14 +155,18 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
     setErrorMessage(null);
 
     try {
-      const res = await replaceImageFromDevice(file, productId);
+      const res = await replaceImageFromDevice(
+        file,
+        productId,
+        (progress) => setUploadProgress(progress)
+      );
       if (res.error) {
         setErrorMessage(res.error);
       } else if (res.url) {
         const updated = [...images];
         updated[replacingIndex] = res.url;
         onChange(updated);
-        setSuccessMessage(`Image #${replacingIndex + 1} successfully replaced from device.`);
+        setSuccessMessage(`Photo #${replacingIndex + 1} successfully replaced from device.`);
         setTimeout(() => setSuccessMessage(null), 3500);
       }
     } catch (err) {
@@ -164,29 +174,15 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
       setErrorMessage("Failed to replace image from device.");
     } finally {
       setIsProcessing(false);
+      setUploadProgress(null);
       setReplacingIndex(null);
       if (replaceInputRef.current) replaceInputRef.current.value = "";
     }
   };
 
-  // Add manual URL fallback
-  const handleAddManualUrl = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualUrl.trim()) return;
-    if (slotsRemaining <= 0) {
-      setErrorMessage(`Maximum limit of ${MAX_PRODUCT_IMAGES} images reached.`);
-      return;
-    }
-    onChange([...images, manualUrl.trim()]);
-    setManualUrl("");
-    setShowManualUrlInput(false);
-    setSuccessMessage("Image URL added to catalog.");
-    setTimeout(() => setSuccessMessage(null), 3000);
-  };
-
   return (
     <div className="space-y-4">
-      {/* Hidden File Inputs */}
+      {/* Hidden File Inputs for Direct Device Upload */}
       <input
         type="file"
         ref={fileInputRef}
@@ -203,55 +199,54 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
         onChange={handleReplaceFile}
         accept={ALLOWED_IMAGE_TYPES.join(",")}
         className="hidden"
-        aria-label="Replace single image"
+        aria-label="Replace single image from device"
       />
 
       {/* Header bar with Count and Status */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-[#e5ded6]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#e5ded6]">
         <div>
           <label className="block text-xs font-bold text-[#1e1b18] uppercase tracking-wider">
             Product Photography Gallery
           </label>
           <p className="text-[11px] text-[#6b6257]">
-            Upload up to 10 high-resolution photos directly from your phone or PC. First image serves as the Main Cover.
+            Upload up to 10 high-resolution photos directly from your phone or PC. Photo #1 serves as the Main Cover.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <div className="flex items-center gap-1.5 bg-[#faf8f5] px-2.5 py-1 rounded-full border border-[#e5ded6]">
+          <div className="flex items-center gap-1.5 bg-[#faf8f5] px-3 py-1 rounded-full border border-[#e5ded6]">
             <span className="w-2 h-2 rounded-full bg-[#0d4f3c]" />
             <span className="text-[11px] font-bold text-[#0d4f3c]">
-              {currentCount} / {MAX_PRODUCT_IMAGES} Images
+              {currentCount} / {MAX_PRODUCT_IMAGES} Photos
             </span>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowManualUrlInput(!showManualUrlInput)}
-            className="text-[10px] text-[#8c8275] hover:text-[#0d4f3c] underline"
-          >
-            {showManualUrlInput ? "Hide Link Option" : "Paste URL Link"}
-          </button>
         </div>
       </div>
 
-      {/* Optional Manual URL Fallback Input */}
-      {showManualUrlInput && (
-        <form onSubmit={handleAddManualUrl} className="flex gap-2 p-2.5 bg-[#faf8f5] rounded-xl border border-[#d6ccc2]">
-          <input
-            type="url"
-            placeholder="https://images.unsplash.com/..."
-            value={manualUrl}
-            onChange={(e) => setManualUrl(e.target.value)}
-            className="flex-1 text-xs px-2.5 py-1.5 bg-white border border-[#d6ccc2] rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"
-          />
-          <button
-            type="submit"
-            className="text-xs font-bold bg-[#0d4f3c] text-white px-3 py-1.5 rounded-lg hover:bg-[#083528]"
-          >
-            Add URL
-          </button>
-        </form>
+      {/* Upload Progress Bar */}
+      {uploadProgress && (
+        <div className="bg-[#faf8f5] border border-[#d4af37]/60 rounded-xl p-3 shadow-xs space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={13} className="animate-spin text-[#0d4f3c]" />
+              <span className="font-bold text-[#1e1b18]">
+                Uploading photo {uploadProgress.current} of {uploadProgress.total} ({uploadProgress.percent}%)
+              </span>
+            </div>
+            <span className="text-[11px] text-[#6b6257] truncate max-w-[220px]">
+              {uploadProgress.fileName}
+            </span>
+          </div>
+          <div className="w-full bg-[#e5ded6] rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-[#0d4f3c] via-[#1a7358] to-[#d4af37] h-full transition-all duration-300 rounded-full"
+              style={{ width: `${uploadProgress.percent}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-[#6b6257]">
+            Optimizing high-resolution photo and archiving permanently to store storage...
+          </p>
+        </div>
       )}
 
       {/* Alert Notices */}
@@ -285,8 +280,8 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
         </div>
       )}
 
-      {/* Drag & Drop / Upload Target Box */}
-      {slotsRemaining > 0 && (
+      {/* Direct Device Upload Target Box */}
+      {slotsRemaining > 0 ? (
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -310,11 +305,11 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
             <div>
               <p className="text-xs font-bold text-[#1e1b18]">
                 {isProcessing
-                  ? "Processing and saving images to storage..."
+                  ? "Processing and archiving images to storage..."
                   : "Click to select photos from device or drag and drop here"}
               </p>
               <p className="text-[11px] text-[#6b6257] mt-0.5">
-                Multiple selection supported · JPG, PNG, WEBP · Up to 10MB per image
+                Multiple selection supported · JPG, PNG, WEBP · Up to 10MB per photo
               </p>
             </div>
 
@@ -323,6 +318,15 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
               <span>Browse Device Photos ({slotsRemaining} slots remaining)</span>
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="bg-emerald-50/70 border border-[#0d4f3c]/20 rounded-xl p-3 text-center">
+          <p className="text-xs font-bold text-[#0d4f3c] flex items-center justify-center gap-1.5">
+            <CheckCircle2 size={15} /> All 10 photo slots filled
+          </p>
+          <p className="text-[11px] text-[#6b6257] mt-0.5">
+            Maximum capacity reached. You can replace, rearrange, or delete any photo using the controls below.
+          </p>
         </div>
       )}
 

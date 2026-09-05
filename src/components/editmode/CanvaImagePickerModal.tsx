@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useEditMode } from "./EditModeContext";
-import { X, Image as ImageIcon, Upload, Check, Link as LinkIcon, Sparkles } from "lucide-react";
+import { X, Image as ImageIcon, Upload, Check, Sparkles } from "lucide-react";
+import { optimizeImageFile, persistAssetToFirestore } from "../../services/imageUploadService";
 
 interface StockImage {
   title: string;
@@ -61,9 +62,9 @@ export default function CanvaImagePickerModal() {
     saveChanges,
   } = useEditMode();
 
-  const [activeTab, setActiveTab] = useState<"presets" | "url" | "upload">("presets");
-  const [customUrl, setCustomUrl] = useState(modalData?.currentUrl || "");
+  const [activeTab, setActiveTab] = useState<"upload" | "presets">("upload");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [isUploading, setIsUploading] = useState(false);
 
   if (activeModal !== "imagePicker") return null;
 
@@ -83,17 +84,21 @@ export default function CanvaImagePickerModal() {
     setActiveModal(null);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        handleApplyImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    setIsUploading(true);
+    try {
+      const optimized = await optimizeImageFile(file);
+      await persistAssetToFirestore(optimized);
+      handleApplyImage(optimized.url);
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Failed to process image from device.");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const categories = ["All", "Silks & Heirloom", "Cotton & Daily", "Party Wear", "Atelier Details"];
@@ -118,7 +123,7 @@ export default function CanvaImagePickerModal() {
                 Canva Photo Selector: {label}
               </h2>
               <p className="text-xs text-white/60">
-                Choose high-resolution Indian couture photography or upload your own
+                Upload photos directly from your phone or PC, or choose curated couture photography
               </p>
             </div>
           </div>
@@ -133,28 +138,6 @@ export default function CanvaImagePickerModal() {
         {/* Tab Navigation */}
         <div className="flex border-b border-white/10 bg-[#0d1411] px-6 text-xs">
           <button
-            onClick={() => setActiveTab("presets")}
-            className={`py-3 px-4 font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-              activeTab === "presets"
-                ? "border-amber-400 text-amber-300"
-                : "border-transparent text-white/60 hover:text-white"
-            }`}
-          >
-            <Sparkles size={14} />
-            Curated Couture Photos
-          </button>
-          <button
-            onClick={() => setActiveTab("url")}
-            className={`py-3 px-4 font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-              activeTab === "url"
-                ? "border-amber-400 text-amber-300"
-                : "border-transparent text-white/60 hover:text-white"
-            }`}
-          >
-            <LinkIcon size={14} />
-            Paste Image URL
-          </button>
-          <button
             onClick={() => setActiveTab("upload")}
             className={`py-3 px-4 font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
               activeTab === "upload"
@@ -165,12 +148,45 @@ export default function CanvaImagePickerModal() {
             <Upload size={14} />
             Upload from Device
           </button>
+          <button
+            onClick={() => setActiveTab("presets")}
+            className={`py-3 px-4 font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === "presets"
+                ? "border-amber-400 text-amber-300"
+                : "border-transparent text-white/60 hover:text-white"
+            }`}
+          >
+            <Sparkles size={14} />
+            Curated Couture Photos
+          </button>
         </div>
 
         {/* Modal Content */}
         <div className="p-6 overflow-y-auto flex-1 text-xs">
           
-          {/* TAB 1: CURATED PHOTOS */}
+          {/* TAB 1: UPLOAD FROM DEVICE */}
+          {activeTab === "upload" && (
+            <div className="space-y-4 max-w-lg mx-auto py-6 text-center">
+              <label className="border-2 border-dashed border-white/20 hover:border-amber-400/60 rounded-2xl p-8 block cursor-pointer bg-white/5 hover:bg-white/10 transition-colors">
+                <Upload size={32} className="mx-auto text-amber-300 mb-3" />
+                <strong className="text-sm text-white block mb-1">
+                  {isUploading ? "Optimizing & Saving Photo..." : "Click to select photo from device"}
+                </strong>
+                <span className="text-xs text-white/50 block">
+                  Supports JPG, PNG, WEBP · Auto-compressed for rapid display
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          )}
+
+          {/* TAB 2: CURATED PHOTOS */}
           {activeTab === "presets" && (
             <div className="space-y-4">
               {/* Filter Pills */}
@@ -214,70 +230,6 @@ export default function CanvaImagePickerModal() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* TAB 2: URL INPUT */}
-          {activeTab === "url" && (
-            <div className="space-y-4 max-w-lg mx-auto py-6">
-              <div>
-                <label className="block text-xs font-medium text-amber-200 mb-1.5">
-                  Direct Image Web Address (Unsplash, Cloudinary, etc.):
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={customUrl}
-                    onChange={(e) => setCustomUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="flex-1 bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-amber-400"
-                  />
-                  <button
-                    onClick={() => handleApplyImage(customUrl)}
-                    disabled={!customUrl}
-                    className="px-4 py-2 bg-gradient-to-r from-[#d4af37] to-[#b88c29] text-black font-semibold rounded-lg hover:brightness-110 disabled:opacity-50"
-                  >
-                    Apply
-                  </button>
-                </div>
-              </div>
-
-              {customUrl && (
-                <div className="border border-white/10 rounded-xl p-3 bg-white/5">
-                  <span className="text-[0.7rem] text-white/60 block mb-2">Live Preview:</span>
-                  <div className="aspect-video w-full rounded-lg overflow-hidden bg-black/50 border border-white/10 flex items-center justify-center">
-                    <img
-                      src={customUrl}
-                      alt="Preview"
-                      className="max-h-full max-w-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = "none";
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: UPLOAD */}
-          {activeTab === "upload" && (
-            <div className="space-y-4 max-w-lg mx-auto py-6 text-center">
-              <label className="border-2 border-dashed border-white/20 hover:border-amber-400/60 rounded-2xl p-8 block cursor-pointer bg-white/5 hover:bg-white/10 transition-colors">
-                <Upload size={32} className="mx-auto text-amber-300 mb-3" />
-                <strong className="text-sm text-white block mb-1">
-                  Click to browse image from your computer
-                </strong>
-                <span className="text-xs text-white/50 block">
-                  Supports JPG, PNG, WEBP files
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
             </div>
           )}
 

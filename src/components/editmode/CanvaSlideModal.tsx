@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useEditMode } from "./EditModeContext";
 import { useStore } from "../../context/StoreContext";
-import { X, Layers, Image as ImageIcon, Plus, Trash2, Check } from "lucide-react";
+import { X, Layers, Image as ImageIcon, Plus, Trash2, Check, Upload } from "lucide-react";
 import { HeroSlide } from "../../types";
+import { optimizeImageFile, persistAssetToFirestore } from "../../services/imageUploadService";
 
 export default function CanvaSlideModal() {
   const { activeModal, setActiveModal, modalData, updateContentField, saveChanges } = useEditMode();
@@ -191,15 +192,44 @@ export default function CanvaSlideModal() {
               />
             </div>
 
-            {/* Banner Image URL */}
+            {/* Banner Image from Device */}
             <div className="sm:col-span-2">
-              <label className="block text-amber-200 font-medium mb-1">Slide Image URL</label>
-              <input
-                type="url"
-                value={currentSlide.image || ""}
-                onChange={(e) => handleFieldChange("image", e.target.value)}
-                className="w-full bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400"
-              />
+              <label className="block text-amber-200 font-medium mb-1">Slide Photo (Direct Device Upload)</label>
+              <div className="flex items-center gap-3 bg-black/40 border border-white/15 rounded-lg p-2.5">
+                {currentSlide.image && (
+                  <img
+                    src={currentSlide.image}
+                    alt="Slide photo"
+                    className="w-14 h-14 object-cover rounded-md border border-white/20 shrink-0"
+                  />
+                )}
+                <div className="flex-1 space-y-1">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0d4f3c] text-amber-200 border border-amber-400/40 text-xs font-semibold rounded-lg cursor-pointer hover:bg-[#145d48] transition-colors">
+                    <Upload size={13} />
+                    <span>Upload Slide Photo From Device</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const optimized = await optimizeImageFile(file);
+                          await persistAssetToFirestore(optimized);
+                          handleFieldChange("image", optimized.url);
+                        } catch (err) {
+                          console.error("Slide upload error:", err);
+                          alert("Failed to upload slide image from device.");
+                        }
+                      }}
+                    />
+                  </label>
+                  <p className="text-[10px] text-white/50">
+                    High-resolution image is optimized and saved securely.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Description */}

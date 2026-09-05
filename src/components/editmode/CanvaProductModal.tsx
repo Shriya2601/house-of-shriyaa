@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useEditMode } from "./EditModeContext";
 import { useStore } from "../../context/StoreContext";
-import { X, SlidersHorizontal, Image as ImageIcon, Sparkles, Check, Plus } from "lucide-react";
+import { X, SlidersHorizontal, Image as ImageIcon, Sparkles, Check, Plus, Upload } from "lucide-react";
 import { Product } from "../../types";
+import { optimizeImageFile, persistAssetToFirestore } from "../../services/imageUploadService";
 
 export default function CanvaProductModal() {
   const { activeModal, setActiveModal, modalData, quickEditImage, saveChanges } = useEditMode();
@@ -171,26 +172,49 @@ export default function CanvaProductModal() {
               </select>
             </div>
 
-            {/* Image URL with quick Photo Picker */}
+            {/* Product Photo from Device */}
             <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-amber-200 font-medium">Product Photo URL</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveModal("imagePicker");
-                  }}
-                  className="text-amber-400 hover:underline flex items-center gap-1 text-[0.7rem]"
-                >
-                  <ImageIcon size={12} /> Choose from Stock Photos
-                </button>
+              <label className="block text-amber-200 font-medium mb-1">Product Photo (Direct Device Upload)</label>
+              <div className="flex items-center gap-3 bg-black/40 border border-white/15 rounded-lg p-2.5">
+                {formProduct.image && (
+                  <img
+                    src={formProduct.image}
+                    alt="Product"
+                    className="w-14 h-14 object-cover rounded-md border border-white/20 shrink-0"
+                  />
+                )}
+                <div className="flex-1 space-y-1">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0d4f3c] text-amber-200 border border-amber-400/40 text-xs font-semibold rounded-lg cursor-pointer hover:bg-[#145d48] transition-colors">
+                    <Upload size={13} />
+                    <span>Upload Product Photo From Device</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const optimized = await optimizeImageFile(file);
+                          await persistAssetToFirestore(optimized, selectedProductId);
+                          handleFieldChange("image", optimized.url);
+                          if (formProduct.images && formProduct.images.length > 0) {
+                            const newImgs = [...formProduct.images];
+                            newImgs[0] = optimized.url;
+                            handleFieldChange("images", newImgs as any);
+                          }
+                        } catch (err) {
+                          console.error("Product photo upload error:", err);
+                          alert("Failed to upload photo from device.");
+                        }
+                      }}
+                    />
+                  </label>
+                  <p className="text-[10px] text-white/50">
+                    High-resolution photo is optimized and saved securely to the catalog.
+                  </p>
+                </div>
               </div>
-              <input
-                type="url"
-                value={formProduct.image || ""}
-                onChange={(e) => handleFieldChange("image", e.target.value)}
-                className="w-full bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400"
-              />
             </div>
 
             {/* Description */}
