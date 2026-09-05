@@ -58,7 +58,12 @@ interface EditModeContextType {
   canRedo: boolean;
   lastActionDescription: string;
 
-  saveChanges: () => Promise<boolean>;
+  saveChanges: (explicitData?: {
+    siteContent?: SiteContent;
+    products?: Product[];
+    brandStyles?: BrandStyles;
+    customOverrides?: Record<string, CustomElementStyle>;
+  }) => Promise<boolean>;
   isSaving: boolean;
   saveSuccess: boolean;
   hasUnsavedChanges: boolean;
@@ -119,8 +124,28 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
+  // Track latest state in a ref to avoid stale closures in saveChanges and callbacks
+  const latestStateRef = useRef({
+    siteContent,
+    products,
+    brandStyles,
+    customOverrides,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      siteContent,
+      products,
+      brandStyles,
+      customOverrides,
+    };
+  }, [siteContent, products, brandStyles, customOverrides]);
+
+  // Track deliberate user edits so initial Firestore data fetch doesn't trigger spurious git auto-commits
+  const userInteractedRef = useRef(false);
+
   // AUTOMATIC DEBOUNCED AUTO-SAVE TO PROJECT SOURCE FILES & GITHUB:
-  // Whenever any edit is made in Canva / Edit Mode, write to src/data/*.json on disk and sync to Git
+  // Whenever any deliberate edit is made in Canva / Edit Mode, write to src/data/*.json on disk and sync to Git
   const isFirstMount = useRef(true);
   const prevDataRef = useRef({
     siteContentStr: JSON.stringify(siteContent),
@@ -132,6 +157,17 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   // Automatically detect any modification across modals, toolbar, or brand kit
   useEffect(() => {
     if (isFirstMount.current) return;
+    if (!userInteractedRef.current) {
+      // Don't mark unsaved or trigger auto-commit on initial store boots
+      prevDataRef.current = {
+        siteContentStr: JSON.stringify(siteContent),
+        productsStr: JSON.stringify(products),
+        brandStylesStr: JSON.stringify(brandStyles),
+        customOverridesStr: JSON.stringify(customOverrides),
+      };
+      return;
+    }
+
     const currentSiteContentStr = JSON.stringify(siteContent);
     const currentProductsStr = JSON.stringify(products);
     const currentBrandStylesStr = JSON.stringify(brandStyles);
@@ -159,19 +195,20 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges || !userInteractedRef.current) return;
 
     const timer = setTimeout(async () => {
       try {
         const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
+        const dataToSave = latestStateRef.current;
         const repoRes = await fetch("/api/save-repo-changes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            siteContent,
-            products,
-            brandStyles,
-            customOverrides,
+            siteContent: dataToSave.siteContent,
+            products: dataToSave.products,
+            brandStyles: dataToSave.brandStyles,
+            customOverrides: dataToSave.customOverrides,
             token: savedToken,
             commitMessage: `chore(canva): auto-sync storefront edits to source files (${new Date().toLocaleTimeString()})`,
           }),
@@ -188,7 +225,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.warn("Auto-save notice:", err);
       }
-    }, 800);
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, [siteContent, products, brandStyles, customOverrides, hasUnsavedChanges]);
@@ -245,6 +282,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   // Push snapshot before any state modification
   const pushSnapshot = useCallback(
     (description: string) => {
+      userInteractedRef.current = true;
       const snapshot: EditSnapshot = {
         timestamp: Date.now(),
         description,
@@ -418,82 +456,96 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   );
 
   // Save all changes to Git Repository, Cloud Firestore and LocalStorage
-  const saveChanges = useCallback(async (): Promise<boolean> => {
-    setIsSaving(true);
-    setSaveSuccess(false);
+  const saveChanges = useCallback(
+    async (explicitData?: {
+      siteContent?: SiteContent;
+      products?: Product[];
+      brandStyles?: BrandStyles;
+      customOverrides?: Record<string, CustomElementStyle>;
+    }): Promise<boolean> => {
+      userInteractedRef.current = true;
+      setIsSaving(true);
+      setSaveSuccess(false);
 
-    let gitCommitMsg = "";
+      const targetSiteContent = explicitData?.siteContent || latestStateRef.current.siteContent;
+      const targetProducts = explicitData?.products || latestStateRef.current.products;
+      const targetBrandStyles = explicitData?.brandStyles || latestStateRef.current.brandStyles;
+      const targetOverrides = explicitData?.customOverrides || latestStateRef.current.customOverrides;
 
-    try {
-      // 1. Save directly to GitHub repository files on disk and commit to Git
+      let gitCommitMsg = "";
+
       try {
-        const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
-        const repoRes = await fetch("/api/save-repo-changes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            siteContent,
-            products,
-            brandStyles,
-            customOverrides,
-            token: savedToken,
-            commitMessage: `chore(canva): storefront design & catalog updates (${new Date().toLocaleDateString()})`,
-          }),
-        });
-        if (repoRes.ok) {
-          const repoData = await repoRes.json();
-          if (repoData.commitHash) {
-            gitCommitMsg = ` · Git: ${repoData.commitHash.slice(0, 7)}`;
+        // 1. Save directly to GitHub repository files on disk and commit to Git
+        try {
+          const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
+          const repoRes = await fetch("/api/save-repo-changes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              siteContent: targetSiteContent,
+              products: targetProducts,
+              brandStyles: targetBrandStyles,
+              customOverrides: targetOverrides,
+              token: savedToken,
+              commitMessage: `chore(canva): storefront design & catalog updates (${new Date().toLocaleDateString()})`,
+            }),
+          });
+          if (repoRes.ok) {
+            const repoData = await repoRes.json();
+            if (repoData.commitHash) {
+              gitCommitMsg = ` · Git: ${repoData.commitHash.slice(0, 7)}`;
+            }
+            if (repoData.remotePushed) {
+              gitCommitMsg += " · Pushed to GitHub main";
+            }
           }
-          if (repoData.remotePushed) {
-            gitCommitMsg += " · Pushed to GitHub main";
-          }
+        } catch (repoErr) {
+          console.warn("Notice: /api/save-repo-changes unavailable in current env:", repoErr);
         }
-      } catch (repoErr) {
-        console.warn("Notice: /api/save-repo-changes unavailable in current env:", repoErr);
-      }
 
-      // 2. Save siteContent to Firestore
-      try {
-        await saveSiteContent(siteContent);
-      } catch (fsErr) {
-        console.warn("Firestore siteContent notice:", fsErr);
-      }
-
-      // 3. Save any edited products to Firestore
-      try {
-        for (const p of products) {
-          if (p.updatedAt) {
-            await saveProduct(p);
-          }
+        // 2. Save siteContent to Firestore
+        try {
+          await saveSiteContent(targetSiteContent);
+        } catch (fsErr) {
+          console.warn("Firestore siteContent notice:", fsErr);
         }
-      } catch (prodErr) {
-        console.warn("Firestore product save notice:", prodErr);
+
+        // 3. Save any edited products to Firestore
+        try {
+          for (const p of targetProducts) {
+            if (p.updatedAt) {
+              await saveProduct(p);
+            }
+          }
+        } catch (prodErr) {
+          console.warn("Firestore product save notice:", prodErr);
+        }
+
+        // 4. Persist brand styles and overrides locally
+        localStorage.setItem(STORAGE_KEY_BRAND_STYLES, JSON.stringify(targetBrandStyles));
+        localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(targetOverrides));
+
+        setIsSaving(false);
+        setSaveSuccess(true);
+        setHasUnsavedChanges(false);
+        setLastActionDescription(`Saved to repository & cloud!${gitCommitMsg}`);
+
+        setTimeout(() => setSaveSuccess(false), 4000);
+        return true;
+      } catch (error) {
+        console.error("Failed to save changes:", error);
+        setIsSaving(false);
+        // Still keep local backup saved
+        localStorage.setItem(STORAGE_KEY_BRAND_STYLES, JSON.stringify(targetBrandStyles));
+        localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(targetOverrides));
+        setSaveSuccess(true);
+        setHasUnsavedChanges(false);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        return false;
       }
-
-      // 4. Persist brand styles and overrides locally
-      localStorage.setItem(STORAGE_KEY_BRAND_STYLES, JSON.stringify(brandStyles));
-      localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(customOverrides));
-
-      setIsSaving(false);
-      setSaveSuccess(true);
-      setHasUnsavedChanges(false);
-      setLastActionDescription(`Saved to repository & cloud!${gitCommitMsg}`);
-
-      setTimeout(() => setSaveSuccess(false), 4000);
-      return true;
-    } catch (error) {
-      console.error("Failed to save changes:", error);
-      setIsSaving(false);
-      // Still keep local backup saved
-      localStorage.setItem(STORAGE_KEY_BRAND_STYLES, JSON.stringify(brandStyles));
-      localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(customOverrides));
-      setSaveSuccess(true);
-      setHasUnsavedChanges(false);
-      setTimeout(() => setSaveSuccess(false), 3000);
-      return false;
-    }
-  }, [siteContent, products, brandStyles, customOverrides]);
+    },
+    []
+  );
 
   // Reset to initial defaults
   const resetToDefaults = useCallback(() => {

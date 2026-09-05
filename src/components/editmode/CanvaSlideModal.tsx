@@ -268,7 +268,11 @@ export default function CanvaSlideModal() {
           </span>
           <button
             onClick={() => {
-              saveChanges();
+              const updatedContent = {
+                ...siteContent,
+                heroSlides: slides,
+              };
+              saveChanges({ siteContent: updatedContent });
               setActiveModal(null);
             }}
             className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#d4af37] to-[#b88c29] text-black font-semibold hover:brightness-110 shadow-md"

@@ -65,12 +65,13 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       let authUrl = originUrl;
       if (originUrl.startsWith("https://")) {
         const cleanBase = originUrl.replace(/https:\/\/[^@]+@/, "https://");
-        authUrl = cleanBase.replace("https://", `https://${token}@`);
+        authUrl = cleanBase.replace("https://", `https://x-access-token:${encodeURIComponent(token)}@`);
       }
       
       let output = "";
+      const execEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
       try {
-        output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+        output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
       } catch (pushErr: any) {
         const pushStderr = (pushErr.stderr ? pushErr.stderr.toString() : pushErr.message || "").trim();
         if (
@@ -80,10 +81,10 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
           pushStderr.includes("Updates were rejected")
         ) {
           try {
-            execSync(`git pull "${authUrl}" main --rebase`, { cwd: rootDir, stdio: "pipe" });
-            output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+            execSync(`git pull "${authUrl}" main --rebase`, { cwd: rootDir, stdio: "pipe", env: execEnv });
+            output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
           } catch {
-            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe" }).toString();
+            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
           }
         } else {
           throw pushErr;
@@ -97,7 +98,8 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
 
       return { success: true, output };
     } else {
-      const output = execSync("git push -u origin main", { cwd: rootDir, stdio: "pipe" }).toString();
+      const execEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+      const output = execSync("git push -u origin main", { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
       return { success: true, output };
     }
   } catch (err: any) {
@@ -110,10 +112,11 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       errorMsg.includes("Authentication failed") ||
       errorMsg.includes("Invalid username or token") ||
       errorMsg.includes("403") ||
+      errorMsg.includes("terminal prompts disabled") ||
       errorMsg.includes("No such device or address")
     ) {
       friendlyError =
-        "GitHub authentication required: HTTPS push to 'https://github.com/kshriya2626/house-of-shriya.git' requires credentials. Please enter your GitHub Personal Access Token (PAT with 'repo' scope) in the field above to push directly, or use AI Studio's 'Share to GitHub' menu.";
+        "GitHub authentication required: Push to 'https://github.com/kshriya2626/house-of-shriya.git' requires credentials. Please enter your GitHub Personal Access Token (PAT with 'repo' scope) in Deploy & Git to push directly to GitHub, or use AI Studio's 'Share to GitHub' menu.";
     }
 
     return {
@@ -199,6 +202,26 @@ export function gitSyncPlugin(): Plugin {
               );
             }
 
+            // Update deployment config before staging
+            const deployConfigPath = path.join(dataDir, "deploymentConfig.json");
+            let currentConfig: any = {};
+            if (fs.existsSync(deployConfigPath)) {
+              try {
+                currentConfig = JSON.parse(fs.readFileSync(deployConfigPath, "utf-8"));
+              } catch {
+                // ignore
+              }
+            }
+
+            currentConfig.repository = currentConfig.repository || DEFAULT_REPO_URL;
+            currentConfig.branch = "main";
+            currentConfig.cloudflareProject = currentConfig.cloudflareProject || "house-of-shriya";
+            currentConfig.buildOutputDir = "dist";
+            currentConfig.buildCommand = "npm run build";
+            currentConfig.lastDeployTime = new Date().toISOString();
+            currentConfig.lastCommitMessage = commitMessage;
+            fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
+
             // Git operations: stage ALL repository changes and commit
             let commitHash = "";
             let gitOutput = "";
@@ -220,35 +243,34 @@ export function gitSyncPlugin(): Plugin {
                     `git commit -m "${commitMessage.replace(/"/g, '\\"')}"`,
                     { cwd: rootDir, stdio: "pipe" }
                   ).toString();
+
+                  commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" })
+                    .toString()
+                    .trim();
+
+                  // Record final commit hash into config and amend to keep repo 100% clean
+                  currentConfig.lastDeployCommit = commitHash.substring(0, 7);
+                  currentConfig.lastDeployFullHash = commitHash;
+                  fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
+
+                  execSync("git add src/data/deploymentConfig.json", { cwd: rootDir, stdio: "pipe" });
+                  execSync("git commit --amend --no-edit", { cwd: rootDir, stdio: "pipe" });
+
+                  commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" })
+                    .toString()
+                    .trim();
                 } else {
                   gitOutput = "No changes to commit, repository already up to date";
+                  commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" })
+                    .toString()
+                    .trim();
                 }
               } catch (commitErr: any) {
                 gitOutput = commitErr.message || "Commit skipped";
+                commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" })
+                  .toString()
+                  .trim();
               }
-
-              commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" })
-                .toString()
-                .trim();
-
-              // Update deployment config
-              const deployConfigPath = path.join(dataDir, "deploymentConfig.json");
-              let currentConfig: any = {};
-              if (fs.existsSync(deployConfigPath)) {
-                try {
-                  currentConfig = JSON.parse(fs.readFileSync(deployConfigPath, "utf-8"));
-                } catch {
-                  // ignore
-                }
-              }
-
-              currentConfig.repository = currentConfig.repository || DEFAULT_REPO_URL;
-              currentConfig.branch = "main";
-              currentConfig.lastDeployCommit = commitHash.substring(0, 7);
-              currentConfig.lastDeployFullHash = commitHash;
-              currentConfig.lastDeployTime = new Date().toISOString();
-              currentConfig.lastCommitMessage = commitMessage;
-              fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
 
               // Attempt push if token is available
               const tokenToUse = (data.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();

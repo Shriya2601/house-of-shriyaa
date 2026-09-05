@@ -86,7 +86,9 @@ export default function CanvaContextualToolbar() {
       updateContentField(selectedElement.fieldPath, textVal);
     }
     updateCustomOverride(selectedElement.id, { text: textVal }, `Updated text for ${selectedElement.label}`);
-    saveChanges();
+    setTimeout(() => {
+      saveChanges();
+    }, 50);
     setInlineEditing(false);
   };
 
