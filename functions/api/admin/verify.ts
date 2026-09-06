@@ -29,8 +29,8 @@ export async function onRequestOptions() {
 export async function onRequestPost(context: { request: Request; env: Record<string, any> }) {
   try {
     const body = (await context.request.json()) as { username?: string; password?: string };
-    const secret = context.env.ADMIN_SECRET_KEY || context.env.ADMIN_PASSWORD || "hos-admin-master-secret-2026";
-    const envPassword = (context.env.ADMIN_PASSWORD || context.env.ADMIN_SECRET_KEY || "house-of-shriya-2026").trim();
+    const secret = context.env.ADMIN_SECRET_KEY || context.env.ADMIN_PASSWORD || "Houseofshriy@26_master_key_2026";
+    const envPassword = (context.env.ADMIN_PASSWORD || context.env.ADMIN_SECRET_KEY || "Houseofshriy@26").trim();
 
     const username = (body.username || "").trim().toLowerCase();
     const password = (body.password || "").trim();

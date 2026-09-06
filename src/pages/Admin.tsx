@@ -168,20 +168,22 @@ export default function Admin() {
   const [cmsSaving, setCmsSaving] = useState(false);
   const [cmsSaveNotice, setCmsSaveNotice] = useState("");
 
-  const isAuthenticated = Boolean(currentUser || adminSession?.authenticated);
-  const currentAdminName = adminSession?.username || currentUser?.displayName || currentUser?.email || "House of Shriya";
+  const isAuthenticated = Boolean(adminSession?.authenticated);
+  const currentAdminName = adminSession?.username || "House of Shriya";
 
   // Validate active admin session with backend on mount
   useEffect(() => {
     const session = getStoredAdminSession();
-    if (session?.authenticated) {
+    if (session?.authenticated && session.token) {
       checkAdminSession().then((res) => {
         if (!res.valid) {
           setAdminSession(null);
-        } else if (res.username && res.username !== adminSession?.username) {
+        } else if (res.username) {
           setAdminSession({ authenticated: true, username: res.username });
         }
       });
+    } else {
+      setAdminSession(null);
     }
   }, []);
 
@@ -250,25 +252,11 @@ export default function Admin() {
       // Direct backend verification against server environment variable
       const verified = await verifyAdminLogin(authUsername, authPassword);
       if (verified.success) {
-        const verifiedName = verified.username || authUsername || "House of Shriya";
+        const verifiedName = verified.username || "House of Shriya";
         setAdminSession({ authenticated: true, username: verifiedName });
         setAuthSuccess("Authentication verified. Entering dashboard...");
         setAuthPassword(""); // Clear password from component memory
         return;
-      }
-
-      // Fallback: If user entered email format, attempt Firebase Auth
-      if (authUsername.includes("@")) {
-        try {
-          await adminSignIn(authUsername, authPassword);
-          setStoredAdminSession(authUsername);
-          setAdminSession({ authenticated: true, username: authUsername });
-          setAuthSuccess("Authentication verified. Entering dashboard...");
-          setAuthPassword("");
-          return;
-        } catch {
-          // fallback to error display
-        }
       }
 
       setAuthError(verified.error || "Invalid username or password. Access denied.");
@@ -306,10 +294,14 @@ export default function Admin() {
     }
     setAuthSubmitting(true);
     try {
-      await adminResetPassword(authEmail);
-      setAuthSuccess("Password reset instructions sent to your email. Check your inbox.");
+      const res = await adminResetPassword(authEmail);
+      if (res.success) {
+        setAuthSuccess(res.message || `Password reset instructions sent to ${authEmail}. Check your inbox.`);
+      } else {
+        setAuthError(res.error || "Failed to dispatch reset email. Please ensure email credentials are configured.");
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to send reset email.";
+      const msg = err instanceof Error ? err.message : "Failed to process reset request.";
       setAuthError(msg);
     } finally {
       setAuthSubmitting(false);
@@ -1193,17 +1185,6 @@ export default function Admin() {
               </button>
               <button
                 type="button"
-                onClick={() => { setAuthMode("setup"); setAuthError(""); setAuthSuccess(""); }}
-                className={`flex-1 pb-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-                  authMode === "setup"
-                    ? "border-[#d4af37] text-[#d4af37]"
-                    : "border-transparent text-[#8a857b] hover:text-white"
-                }`}
-              >
-                Owner Setup
-              </button>
-              <button
-                type="button"
                 onClick={() => { setAuthMode("reset"); setAuthError(""); setAuthSuccess(""); }}
                 className={`flex-1 pb-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
                   authMode === "reset"
@@ -1211,7 +1192,7 @@ export default function Admin() {
                     : "border-transparent text-[#8a857b] hover:text-white"
                 }`}
               >
-                Reset Key
+                Forgot / Reset Password
               </button>
             </div>
 

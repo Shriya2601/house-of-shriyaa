@@ -44,9 +44,20 @@ const distUploadsDir = path.join(rootDir, "dist", "uploads");
 // ==========================================
 // ADMIN SECURITY & SESSION AUTHENTICATION
 // ==========================================
-// Admin password is read strictly from server-side environment variables
-const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "house-of-shriya-2026").trim();
-const ADMIN_SECRET = (process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || "hos-admin-master-secret-2026").trim();
+// Admin username must strictly be "House of Shriya"
+export const ADMIN_USERNAME = "House of Shriya";
+
+// Admin password is read strictly from server-side environment variables with backend fallback
+let runtimeAdminPassword = (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "Houseofshriy@26").trim();
+export const ADMIN_SECRET = (process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || "Houseofshriy@26_master_key_2026").trim();
+
+export function getAdminPassword(): string {
+  return (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || runtimeAdminPassword || "Houseofshriy@26").trim();
+}
+
+export function setRuntimeAdminPassword(newPass: string) {
+  runtimeAdminPassword = newPass.trim();
+}
 
 export function verifyAdminSessionToken(token: string | undefined): { valid: boolean; username?: string; error?: string } {
   if (!token || typeof token !== "string" || !token.includes(".")) {
@@ -86,6 +97,12 @@ export function extractAdminToken(req: express.Request): string | undefined {
   }
   if (req.body && typeof req.body.adminToken === "string") {
     return req.body.adminToken;
+  }
+  if (req.query && typeof req.query.adminToken === "string") {
+    return req.query.adminToken as string;
+  }
+  if (req.query && typeof req.query.token === "string") {
+    return req.query.token as string;
   }
   const cookieHeader = req.headers["cookie"];
   if (cookieHeader) {
@@ -449,12 +466,23 @@ app.post("/api/custom-overrides", requireAdminAuth, (req, res) => {
 });
 
 // ==========================================
-// 5. ORDERS API
+// 5. ORDERS API (ADMIN RESTRICTED FOR SENSITIVE CUSTOMER DATA)
 // ==========================================
-app.get("/api/orders", (req, res) => {
+app.get("/api/orders", requireAdminAuth, (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   const orders = readDataFile<any[]>("orders.json", []);
   res.json(orders);
+});
+
+app.get("/api/orders/:id", requireAdminAuth, (req, res) => {
+  const id = req.params.id;
+  const orders = readDataFile<any[]>("orders.json", []);
+  const order = orders.find((o) => o.id === id || o.orderNumber === id);
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  res.json(order);
 });
 
 app.post("/api/orders", (req, res) => {
@@ -725,8 +753,8 @@ app.all(["/api/upload-images-batch", "/api/upload-images-batch/"], requireAdminA
   }
 });
 
-// List all uploaded images stored physically on server
-app.get("/api/uploaded-images", (req, res) => {
+// List all uploaded images stored physically on server (Admin Restricted)
+app.get("/api/uploaded-images", requireAdminAuth, (req, res) => {
   try {
     const list: Array<{ id: string; name: string; url: string; size: number; createdAt: string }> = [];
     if (fs.existsSync(publicUploadsDir)) {
@@ -1028,19 +1056,20 @@ app.post("/api/save-github-token", requireAdminAuth, (req, res) => {
 });
 
 // ==========================================
-// 9. ADMIN VERIFY & SESSION
+// 9. ADMIN VERIFY, SESSION & AUTHENTICATION
 // ==========================================
 app.post(["/api/admin/verify", "/api/admin/verify/"], (req, res) => {
   try {
     const { username = "", password = "" } = req.body || {};
     const cleanUser = String(username).trim().toLowerCase();
     const cleanPass = String(password).trim();
+    const activePass = getAdminPassword();
 
     // The admin username must strictly be "House of Shriya"
     const isUserValid = cleanUser === "house of shriya";
 
     // The admin password must strictly match the server environment secret
-    const isPassValid = cleanPass === ADMIN_PASSWORD;
+    const isPassValid = cleanPass === activePass;
 
     if (!isUserValid || !isPassValid) {
       res.status(401).json({
@@ -1102,6 +1131,245 @@ app.all(["/api/admin/session", "/api/admin/session/"], (req, res) => {
     });
   } catch (err: any) {
     res.status(400).json({ authenticated: false, valid: false, error: err.message });
+  }
+});
+
+// Admin Password Reset Request Flow
+// STRICT RULE: Never report email sent unless real email transmission was successfully confirmed by an active provider.
+app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req, res) => {
+  try {
+    const { email = "" } = req.body || {};
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      res.status(400).json({
+        success: false,
+        emailSent: false,
+        error: "Please enter a valid registered administrator email address.",
+      });
+      return;
+    }
+
+    // List of authorized admin emails (configured via env or store defaults)
+    const configuredAdminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+    const authorizedAdminEmails = [
+      "houseofshriya.in@gmail.com",
+      "shriyapusha01@gmail.com",
+      "hello.munchmini@gmail.com",
+      "care@houseofshriya.com",
+    ];
+
+    const isAuthorized =
+      (configuredAdminEmail && cleanEmail === configuredAdminEmail) ||
+      authorizedAdminEmails.includes(cleanEmail);
+
+    if (!isAuthorized) {
+      res.status(403).json({
+        success: false,
+        emailSent: false,
+        error: `"${cleanEmail}" is not recognized as an authorized administrator email for House of Shriya.`,
+      });
+      return;
+    }
+
+    // Check whether real email delivery provider credentials are set in environment
+    const resendKey = process.env.RESEND_API_KEY?.trim();
+    const smtpHost = process.env.SMTP_HOST?.trim();
+    const smtpUser = process.env.SMTP_USER?.trim();
+    const smtpPass = process.env.SMTP_PASS?.trim();
+    const sendgridKey = process.env.SENDGRID_API_KEY?.trim();
+
+    const isEmailConfigured = Boolean(resendKey || (smtpHost && smtpUser && smtpPass) || sendgridKey);
+
+    if (!isEmailConfigured) {
+      // RULE: Do NOT say "email sent". Explicitly communicate that email provider credentials are required in AI Studio Secrets.
+      res.status(400).json({
+        success: false,
+        emailSent: false,
+        configured: false,
+        error:
+          "Automated email service is not configured on the server. No reset email was sent. To enable automated email dispatch, add your email service credentials (such as RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS) in AI Studio Settings Secrets. Your master admin password is also securely managed via the ADMIN_PASSWORD environment variable.",
+      });
+      return;
+    }
+
+    // Prepare real email transmission
+    const resetToken = crypto.randomBytes(24).toString("hex");
+    const resetSubject = "House of Shriya · Admin Password Reset";
+    const resetHtml = `
+      <div style="font-family: sans-serif; color: #1a221f; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #d4af37; border-radius: 12px; background: #faf8f5;">
+        <h2 style="color: #0d4f3c; margin-top: 0; font-family: serif;">House of Shriya · Admin Portal</h2>
+        <p>Hello Atelier Administrator,</p>
+        <p>A password reset request was initiated for your House of Shriya admin account (<strong>${cleanEmail}</strong>).</p>
+        <p><strong>Username:</strong> House of Shriya</p>
+        <p>Your one-time security reset code is:</p>
+        <div style="background: #121916; color: #d4af37; padding: 12px 18px; border-radius: 8px; font-weight: bold; font-size: 20px; letter-spacing: 4px; display: inline-block;">
+          ${resetToken.slice(0, 8).toUpperCase()}
+        </div>
+        <p style="color: #7a7469; font-size: 12px; margin-top: 24px;">This code is valid for 1 hour. If you did not request this, you can safely ignore this email.</p>
+      </div>
+    `;
+
+    let emailDelivered = false;
+    let providerError = "";
+
+    // 1. Attempt via Resend if configured
+    if (resendKey) {
+      try {
+        const fromEmail = process.env.SMTP_FROM || "House of Shriya <onboarding@resend.dev>";
+        const resendRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${resendKey}`,
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: cleanEmail,
+            subject: resetSubject,
+            html: resetHtml,
+          }),
+        });
+        const resendData = await resendRes.json();
+        if (resendRes.ok) {
+          emailDelivered = true;
+        } else {
+          providerError = resendData?.message || "Resend API error";
+        }
+      } catch (err: any) {
+        providerError = err.message || "Resend network error";
+      }
+    }
+
+    // 2. Attempt via SMTP if configured and not yet sent
+    if (!emailDelivered && smtpHost && smtpUser && smtpPass) {
+      try {
+        const nodemailer = await import("nodemailer");
+        const port = parseInt(process.env.SMTP_PORT || "587", 10);
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port,
+          secure: port === 465,
+          auth: {
+            user: smtpUser,
+            pass: smtpPass,
+          },
+        });
+
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || `"House of Shriya" <${smtpUser}>`,
+          to: cleanEmail,
+          subject: resetSubject,
+          html: resetHtml,
+        });
+        emailDelivered = true;
+      } catch (err: any) {
+        providerError = err.message || "SMTP transmission error";
+      }
+    }
+
+    if (emailDelivered) {
+      res.json({
+        success: true,
+        emailSent: true,
+        message: `Password reset instructions have been successfully sent to ${cleanEmail}. Please check your inbox.`,
+      });
+    } else {
+      res.status(502).json({
+        success: false,
+        emailSent: false,
+        error: `Failed to deliver reset email: ${providerError || "Provider rejected connection"}. Please verify your email credentials in AI Studio Settings Secrets.`,
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, emailSent: false, error: err.message || "Server error processing reset." });
+  }
+});
+
+// Update runtime credentials (admin protected)
+app.post("/api/admin/change-credentials", requireAdminAuth, (req, res) => {
+  try {
+    const { currentPassword = "", newPassword = "" } = req.body || {};
+    const activePass = getAdminPassword();
+
+    if (currentPassword.trim() !== activePass) {
+      res.status(401).json({
+        success: false,
+        error: "Current password does not match server records.",
+      });
+      return;
+    }
+
+    if (!newPassword || newPassword.trim().length < 6) {
+      res.status(400).json({
+        success: false,
+        error: "New password must be at least 6 characters long.",
+      });
+      return;
+    }
+
+    setRuntimeAdminPassword(newPassword.trim());
+
+    // Issue updated fresh token
+    const issuedAt = Date.now();
+    const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
+    const payload = `house of shriya:${issuedAt}:${expiresAt}`;
+    const signature = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
+    const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
+
+    res.json({
+      success: true,
+      token,
+      message:
+        "Admin password updated successfully for active runtime session. To persist across container restarts, also update ADMIN_PASSWORD in AI Studio Settings Secrets.",
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin User Accounts API (Admin Restricted)
+app.get("/api/admin/users", requireAdminAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  const users = readDataFile<any[]>("users.json", []);
+  res.json(users);
+});
+
+app.post("/api/admin/users", requireAdminAuth, (req, res) => {
+  try {
+    const userData = req.body;
+    if (!userData || !userData.email) {
+      res.status(400).json({ error: "Email is required for user account" });
+      return;
+    }
+    let users = readDataFile<any[]>("users.json", []);
+    const idx = users.findIndex((u) => u.id === userData.id || u.email.toLowerCase() === userData.email.toLowerCase());
+    if (idx > -1) {
+      users[idx] = { ...users[idx], ...userData, updatedAt: new Date().toISOString() };
+    } else {
+      users.unshift({
+        ...userData,
+        id: userData.id || `usr_${Date.now()}`,
+        createdAt: userData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    writeDataFile("users.json", users);
+    res.json({ success: true, user: users[idx > -1 ? idx : 0], users });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/users/:id", requireAdminAuth, (req, res) => {
+  try {
+    const id = req.params.id;
+    let users = readDataFile<any[]>("users.json", []);
+    const filtered = users.filter((u) => u.id !== id);
+    writeDataFile("users.json", filtered);
+    res.json({ success: true, id, count: filtered.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -456,7 +456,11 @@ export function subscribeUploadedAssets(
   };
 
   const fetchServerAssets = () => {
-    fetch(`/api/uploaded-images?v=${Date.now()}`)
+    fetch(`/api/uploaded-images?v=${Date.now()}`, {
+      headers: {
+        ...getAdminAuthHeaders(),
+      },
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.assets && Array.isArray(data.assets)) {

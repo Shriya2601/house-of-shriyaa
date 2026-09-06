@@ -969,7 +969,11 @@ export function subscribeOrders(
   includeTest = false
 ): () => void {
   const fetchOrders = () => {
-    fetch(`/api/orders?v=${Date.now()}`)
+    fetch(`/api/orders?v=${Date.now()}`, {
+      headers: {
+        ...getAdminAuthHeaders(),
+      },
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((ordersList) => {
         if (Array.isArray(ordersList)) {
@@ -1300,30 +1304,33 @@ export async function changeAdminCredentials(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!newUsername.trim() || newUsername.trim().length < 3) {
-      return { success: false, error: "Username must be at least 3 characters long." };
-    }
     if (!newPassword || newPassword.length < 6) {
       return { success: false, error: "New password must be at least 6 characters long." };
     }
 
-    const currentSession = getStoredAdminSession();
-    const verifyRes = await fetch("/api/admin/verify", {
+    const res = await fetch("/api/admin/change-credentials", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...getAdminAuthHeaders(),
+      },
       body: JSON.stringify({
-        username: currentSession?.username || "House of Shriya",
-        password: currentPassword.trim(),
+        currentPassword: currentPassword.trim(),
+        newUsername: newUsername.trim() || "House of Shriya",
+        newPassword: newPassword.trim(),
       }),
     });
 
-    const verifyData = await verifyRes.json().catch(() => ({}));
-    if (!verifyRes.ok || !verifyData.success) {
-      return { success: false, error: "Current password does not match server records." };
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      const verifiedUsername = "House of Shriya";
+      if (data.token) {
+        setStoredAdminSession(verifiedUsername, data.token);
+      }
+      return { success: true };
     }
 
-    setStoredAdminSession(newUsername.trim(), verifyData.token);
-    return { success: true };
+    return { success: false, error: data.error || data.message || "Failed to update password on server." };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to update credentials.";
     return { success: false, error: msg };
@@ -1443,8 +1450,40 @@ export async function adminSignOut(): Promise<void> {
   await signOut(auth);
 }
 
-export async function adminResetPassword(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim());
+export async function adminResetPassword(
+  email: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const clean = email.trim();
+    if (!clean) {
+      return { success: false, error: "Please enter your registered administrator email address." };
+    }
+
+    const res = await fetch("/api/admin/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: clean }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success && data.emailSent) {
+      return {
+        success: true,
+        message: data.message || `Password reset instructions have been sent to ${clean}. Please check your inbox.`,
+      };
+    }
+
+    return {
+      success: false,
+      error:
+        data.error ||
+        data.message ||
+        "Could not dispatch reset email. Please ensure email service secrets are configured on the server.",
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Network error contacting password reset service.";
+    return { success: false, error: msg };
+  }
 }
 
 export function subscribeAuthState(callback: (user: User | null) => void): () => void {
@@ -1719,6 +1758,25 @@ export function subscribeUserAccounts(
   const initial = getCachedUserAccounts();
   callback(initial);
 
+  // Sync from server if admin authenticated
+  const syncServerUsers = () => {
+    fetch(`/api/admin/users?v=${Date.now()}`, {
+      headers: {
+        ...getAdminAuthHeaders(),
+      },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((serverUsers) => {
+        if (Array.isArray(serverUsers) && serverUsers.length > 0) {
+          cacheUserAccountsLocally(serverUsers);
+          callback(serverUsers);
+        }
+      })
+      .catch(() => {});
+  };
+
+  syncServerUsers();
+
   const colRef = collection(db, "users");
   const q = query(colRef, orderBy("createdAt", "desc"));
 
@@ -1743,7 +1801,9 @@ export function subscribeUserAccounts(
     }
   );
 
-  return unsubscribe;
+  return () => {
+    unsubscribe();
+  };
 }
 
 export async function seedInitialUsersIfEmpty(): Promise<void> {
@@ -1818,6 +1878,16 @@ export async function saveUserAccount(
     console.warn("Notice: Firestore user write notice (proceeding with local cache):", err);
   }
 
+  // Sync to server users API
+  fetch("/api/admin/users", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAdminAuthHeaders(),
+    },
+    body: JSON.stringify(fullUser),
+  }).catch(() => {});
+
   return userId;
 }
 
@@ -1835,6 +1905,15 @@ export async function updateUserStatus(
   } catch (err) {
     console.warn("updateUserStatus notice:", err);
   }
+
+  fetch("/api/admin/users", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAdminAuthHeaders(),
+    },
+    body: JSON.stringify({ id: userId, status }),
+  }).catch(() => {});
 }
 
 export async function deleteUserAccount(userId: string): Promise<void> {
@@ -1850,6 +1929,13 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   } catch (err) {
     console.warn("deleteUserAccount notice:", err);
   }
+
+  fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: {
+      ...getAdminAuthHeaders(),
+    },
+  }).catch(() => {});
 }
 
 export async function sendUserPasswordReset(email: string): Promise<void> {
