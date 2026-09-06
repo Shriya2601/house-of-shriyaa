@@ -2056,22 +2056,39 @@ export function ProductCard({
   key?: React.Key;
 }) {
   const navigate = useNavigate();
-  const [activeImageIndex] = useState(0);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
 
+  const currentVariant = useMemo(() => {
+    if (product.colorVariants && product.colorVariants.length > 0) {
+      return product.colorVariants[selectedVariantIndex] || product.colorVariants[0];
+    }
+    return undefined;
+  }, [product.colorVariants, selectedVariantIndex]);
+
   const productImages = useMemo(() => {
+    if (currentVariant) {
+      if (Array.isArray(currentVariant.images) && currentVariant.images.length > 0) {
+        return currentVariant.images.filter(Boolean);
+      }
+      if (currentVariant.image) {
+        return [currentVariant.image, currentVariant.hoverImage].filter(Boolean);
+      }
+    }
     if (Array.isArray(product.images) && product.images.length > 0) {
       return product.images.filter(Boolean);
     }
     return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
-  }, [product.images, product.image, product.hoverImage]);
+  }, [currentVariant, product.images, product.image, product.hoverImage]);
 
-  const activeImage = productImages[activeImageIndex] || product.image;
+  const activeImage = productImages[activeImageIndex] || currentVariant?.image || product.image;
 
   const handleOpenDetails = () => {
-    navigate(`/product/${product.id}`);
+    const colorParam = currentVariant?.colorName ? `?color=${encodeURIComponent(currentVariant.colorName)}` : "";
+    navigate(`/product/${product.id}${colorParam}`);
   };
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -2087,7 +2104,7 @@ export function ProductCard({
   };
 
   const whatsappMsg = encodeURIComponent(
-    `Namaste House of Shriya! I would like to inquire about ${product.name} (${product.price}, ${product.color || "Surat Handloom"}). Can you assist with delivery?`
+    `Namaste House of Shriya! I would like to inquire about ${product.name} (${currentVariant?.price || product.price}, ${currentVariant?.colorName || product.color || "Surat Handloom"}). Can you assist with delivery?`
   );
 
   return (
@@ -2133,9 +2150,12 @@ export function ProductCard({
         <img
           data-editable="true"
           className="product-image-hover"
-          src={product.hoverImage || activeImage}
+          src={productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage}
           alt=""
           loading="lazy"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+          }}
         />
         <div className="product-badges">
           {(product.badges || []).slice(0, 2).map((badge) => (
@@ -2184,8 +2204,41 @@ export function ProductCard({
           <span data-editable="true">
             <Star size={12} fill="currentColor" /> <BuilderText as="span" text={`${product.rating || "4.8"} (${product.reviews || "120+"})`} />
           </span>
-          <BuilderText as="small" text={product.color || "Artisan Craft"} />
+          <BuilderText as="small" text={currentVariant?.colorName || product.color || "Artisan Craft"} />
         </div>
+
+        {/* Color Palette Swatches on Card */}
+        {product.colorVariants && product.colorVariants.length > 1 && (
+          <div className="flex items-center gap-1.5 pt-1 pb-0.5" onClick={(e) => e.stopPropagation()}>
+            {product.colorVariants.slice(0, 6).map((variant, vIdx) => {
+              const isSelected = vIdx === selectedVariantIndex;
+              return (
+                <button
+                  key={variant.id || vIdx}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedVariantIndex(vIdx);
+                    setActiveImageIndex(0);
+                  }}
+                  className={`w-3.5 h-3.5 rounded-full transition-all cursor-pointer ${
+                    isSelected
+                      ? "ring-2 ring-[#0d4f3c] ring-offset-1 scale-110 shadow-xs"
+                      : "opacity-75 hover:opacity-100 hover:scale-110 border border-black/20"
+                  }`}
+                  style={{ backgroundColor: variant.colorHex || "#0d4f3c" }}
+                  title={`Select ${variant.colorName} edition (${variant.price || product.price})`}
+                />
+              );
+            })}
+            {product.colorVariants.length > 6 && (
+              <span className="text-[10px] text-[#8c8275] font-medium">
+                +{product.colorVariants.length - 6}
+              </span>
+            )}
+          </div>
+        )}
+
         <BuilderText
           as="h3"
           id={`product_${product.id}_title`}
@@ -2197,29 +2250,29 @@ export function ProductCard({
           as="p"
           id={`product_${product.id}_desc`}
           label={`${product.name} Description`}
-          text={product.description}
+          text={currentVariant?.description || product.description}
         />
         <div className="price-row">
           <BuilderText
             as="strong"
             id={`product_${product.id}_price`}
             label={`${product.name} Price`}
-            text={product.price}
+            text={currentVariant?.price || product.price}
           />
-          {product.originalPrice && (
+          {(currentVariant?.originalPrice || product.originalPrice) && (
             <BuilderText
               as="del"
               id={`product_${product.id}_orig_price`}
               label={`${product.name} Original Price`}
-              text={product.originalPrice}
+              text={currentVariant?.originalPrice || product.originalPrice}
             />
           )}
-          {product.savings && (
+          {(currentVariant?.savings || product.savings) && (
             <BuilderText
               as="span"
               id={`product_${product.id}_savings`}
               label={`${product.name} Savings`}
-              text={product.savings}
+              text={currentVariant?.savings || product.savings}
             />
           )}
         </div>

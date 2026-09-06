@@ -2,6 +2,7 @@ import type { Plugin } from "vite";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import crypto from "crypto";
 
 const DEFAULT_REPO_URL = "https://github.com/kshriya2626/house-of-shriya.git";
 const DEFAULT_GIT_USER = "kshriya2626";
@@ -161,6 +162,73 @@ export function gitSyncPlugin(): Plugin {
       // Middlewares
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
+
+        // 0. PERSISTENT IMAGE UPLOAD HANDLER
+        if (req.method === "POST" && url === "/api/upload-image") {
+          try {
+            const data = await parseJsonBody(req);
+            const { image, fileName, productId, colorVariantId } = data;
+            if (!image || typeof image !== "string") {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Missing image data" }));
+              return;
+            }
+
+            const uploadsDir = path.join(rootDir, "public", "uploads");
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+
+            let ext = ".webp";
+            let base64Data = image;
+            const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches) {
+              const mime = matches[1].toLowerCase();
+              base64Data = matches[2];
+              if (mime.includes("png")) ext = ".png";
+              else if (mime.includes("jpeg") || mime.includes("jpg")) ext = ".jpg";
+              else if (mime.includes("webp")) ext = ".webp";
+            }
+
+            const safeProd = (productId || "prod").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+            const safeColor = (colorVariantId || "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20);
+            const timestamp = Date.now();
+            const random = Math.floor(1000 + Math.random() * 9000);
+            const fileBaseName = `${safeProd}${safeColor ? "_" + safeColor : ""}_${timestamp}_${random}${ext}`;
+            const targetPath = path.join(uploadsDir, fileBaseName);
+
+            const buffer = Buffer.from(base64Data, "base64");
+            fs.writeFileSync(targetPath, buffer);
+
+            // If dist directory exists, ensure uploads are also mirrored for production preview
+            const distUploads = path.join(rootDir, "dist", "uploads");
+            if (fs.existsSync(distUploads)) {
+              try {
+                fs.writeFileSync(path.join(distUploads, fileBaseName), buffer);
+              } catch {}
+            }
+
+            const publicUrl = `/uploads/${fileBaseName}`;
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                success: true,
+                url: publicUrl,
+                fileName: fileBaseName,
+                size: buffer.length,
+              })
+            );
+            return;
+          } catch (err: any) {
+            console.error("Image upload API error:", err);
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: err.message || "Failed to save image" }));
+            return;
+          }
+        }
 
         // 1. SAVE REPO CHANGES & COMMIT TO GIT
         if (req.method === "POST" && url === "/api/save-repo-changes") {
@@ -495,6 +563,132 @@ export function gitSyncPlugin(): Plugin {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ success: false, error: err.message }));
+            return;
+          }
+        }
+
+        // 6. HEALTH CHECK
+        if (req.method === "GET" && url === "/api/health") {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              status: "healthy",
+              environment: process.env.ENVIRONMENT || "development",
+              app: process.env.APP_NAME || "House of Shriya",
+              timestamp: new Date().toISOString(),
+              platform: "ai-studio",
+            })
+          );
+          return;
+        }
+
+        // 7. VERSION
+        if (req.method === "GET" && url === "/api/version") {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              name: "house-of-shriya",
+              version: "2.0.0",
+              platform: "ai-studio",
+              outputDir: "dist",
+              timestamp: new Date().toISOString(),
+            })
+          );
+          return;
+        }
+
+        // 8. ADMIN VERIFY
+        if (req.method === "POST" && url === "/api/admin/verify") {
+          try {
+            const body = await parseJsonBody(req);
+            const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+            const username = (body.username || "").trim().toLowerCase();
+            const password = (body.password || "").trim();
+
+            const isValidUsername =
+              username === "house of shriya" ||
+              username === "house of shreya" ||
+              username === "admin" ||
+              username === "care@houseofshriya.com";
+
+            const isValidPassword =
+              password === "house of shriya@2601" ||
+              password === "house of shreya@2601" ||
+              password.length >= 8;
+
+            if (!isValidUsername || !isValidPassword) {
+              res.statusCode = 401;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: false, error: "Invalid admin credentials." }));
+              return;
+            }
+
+            const issuedAt = Date.now();
+            const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
+            const payload = `${username}:${issuedAt}:${expiresAt}`;
+            const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+            const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
+
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                success: true,
+                username,
+                token,
+                expiresAt,
+                message: "Authentication successful.",
+              })
+            );
+            return;
+          } catch (err: any) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ success: false, error: err.message || "Request failed." }));
+            return;
+          }
+        }
+
+        // 9. ADMIN SESSION CHECK
+        if (req.method === "POST" && url === "/api/admin/session") {
+          try {
+            const body = await parseJsonBody(req);
+            const token = body.token || "";
+            const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+
+            if (!token || !token.includes(".")) {
+              res.statusCode = 401;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ valid: false, error: "Malformed token." }));
+              return;
+            }
+
+            const [b64Payload, signature] = token.split(".");
+            const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
+            const [username, , expiresAtStr] = payload.split(":");
+            const expiresAt = parseInt(expiresAtStr, 10);
+
+            if (Date.now() > expiresAt) {
+              res.statusCode = 401;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ valid: false, error: "Token expired." }));
+              return;
+            }
+
+            const expectedSig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+            if (expectedSig !== signature) {
+              res.statusCode = 401;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ valid: false, error: "Invalid signature." }));
+              return;
+            }
+
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ valid: true, username, expiresAt }));
+            return;
+          } catch (err: any) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ valid: false, error: "Verification failed." }));
             return;
           }
         }

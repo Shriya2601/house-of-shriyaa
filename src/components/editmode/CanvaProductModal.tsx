@@ -3,7 +3,7 @@ import { useEditMode } from "./EditModeContext";
 import { useStore } from "../../context/StoreContext";
 import { X, SlidersHorizontal, Image as ImageIcon, Sparkles, Check, Plus, Upload } from "lucide-react";
 import { Product } from "../../types";
-import { optimizeImageFile, persistAssetToFirestore } from "../../services/imageUploadService";
+import { optimizeImageFile, persistImageToStorage } from "../../services/imageUploadService";
 
 export default function CanvaProductModal() {
   const { activeModal, setActiveModal, modalData, quickEditImage, saveChanges } = useEditMode();
@@ -196,12 +196,13 @@ export default function CanvaProductModal() {
                         if (!file) return;
                         try {
                           const optimized = await optimizeImageFile(file);
-                          await persistAssetToFirestore(optimized, selectedProductId);
-                          handleFieldChange("image", optimized.url);
-                          if (formProduct.images && formProduct.images.length > 0) {
-                            const newImgs = [...formProduct.images];
-                            newImgs[0] = optimized.url;
-                            handleFieldChange("images", newImgs as any);
+                          const persistentUrl = await persistImageToStorage(optimized, selectedProductId);
+                          handleFieldChange("image", persistentUrl);
+                          const existingImages = formProduct.images || [];
+                          if (existingImages.length > 0) {
+                            handleFieldChange("images", [persistentUrl, ...existingImages.slice(1)]);
+                          } else {
+                            handleFieldChange("images", [persistentUrl]);
                           }
                         } catch (err) {
                           console.error("Product photo upload error:", err);

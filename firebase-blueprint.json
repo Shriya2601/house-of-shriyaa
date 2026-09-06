@@ -24,6 +24,8 @@
         "name": { "type": "string", "description": "Product name" },
         "description": { "type": "string", "description": "Product fabric weave description" },
         "color": { "type": "string", "description": "Color name" },
+        "colorHex": { "type": "string", "description": "Color hex code for swatch e.g. #0d4f3c" },
+        "colorVariants": { "type": "array", "description": "Array of independent color variants with individual images, prices, and fabric details" },
         "rating": { "type": "string", "description": "Customer star rating" },
         "reviews": { "type": "string", "description": "Review count" },
         "price": { "type": "string", "description": "Selling price string e.g. ₹3,899" },

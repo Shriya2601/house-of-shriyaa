@@ -42,6 +42,8 @@ import {
   Copy,
   Palette,
   ArrowRight,
+  Star,
+  Camera,
 } from "lucide-react";
 import {
   Product,
@@ -92,7 +94,7 @@ export default function Admin() {
 
   // Navigation tabs in Admin
   const [activeTab, setActiveTab] = useState<
-    "overview" | "orders" | "products" | "categories" | "banners" | "content" | "settings"
+    "overview" | "orders" | "products" | "colors" | "categories" | "banners" | "content" | "settings"
   >("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -141,6 +143,14 @@ export default function Admin() {
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("all");
   const [savingProduct, setSavingProduct] = useState(false);
+  const [productSaveSuccess, setProductSaveSuccess] = useState<string | null>(null);
+
+  // Dedicated Color Palette Option & Studio States
+  const [selectedPaletteProductId, setSelectedPaletteProductId] = useState<string>("");
+  const [selectedPaletteVariantIndex, setSelectedPaletteVariantIndex] = useState<number>(0);
+  const [paletteSaving, setPaletteSaving] = useState(false);
+  const [paletteSaveNotice, setPaletteSaveNotice] = useState<string | null>(null);
+  const [paletteSearchQuery, setPaletteSearchQuery] = useState("");
 
   // Category Editing
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -715,6 +725,250 @@ export default function Admin() {
     }
   };
 
+  // Luxury Indian Couture Color Palette Presets
+  const LUXURY_PALETTE_PRESETS = [
+    { name: "Royal Emerald", hex: "#0d4f3c" },
+    { name: "Crimson Maroon", hex: "#8b0000" },
+    { name: "Mustard Zari", hex: "#c5a059" },
+    { name: "Midnight Navy", hex: "#102a43" },
+    { name: "Rani Gulabi Pink", hex: "#d94f70" },
+    { name: "Pastel Mint", hex: "#70a9a1" },
+    { name: "Dusty Terracotta", hex: "#c06c52" },
+    { name: "Lavender Mist", hex: "#9d81ba" },
+    { name: "Ivory Pearl", hex: "#f4f1ea" },
+    { name: "Banarasi Gold", hex: "#b8860b" },
+    { name: "Peacock Teal", hex: "#005f73" },
+    { name: "Deep Plum Wine", hex: "#5c1349" },
+  ];
+
+  // Active product for Color Palette Studio
+  const activePaletteProduct = useMemo(() => {
+    if (!products.length) return null;
+    return products.find((p) => p.id === selectedPaletteProductId) || products[0];
+  }, [products, selectedPaletteProductId]);
+
+  const activePaletteVariants = useMemo(() => {
+    if (!activePaletteProduct) return [];
+    return ensureProductVariants(activePaletteProduct).colorVariants || [];
+  }, [activePaletteProduct]);
+
+  const currentPaletteVariant = useMemo(() => {
+    if (!activePaletteVariants.length) return null;
+    const safeIdx = Math.min(selectedPaletteVariantIndex, activePaletteVariants.length - 1);
+    return activePaletteVariants[safeIdx] || activePaletteVariants[0];
+  }, [activePaletteVariants, selectedPaletteVariantIndex]);
+
+  const handlePaletteAddColor = (targetProduct: Product) => {
+    const currentVars = targetProduct.colorVariants?.length
+      ? targetProduct.colorVariants
+      : [
+          {
+            id: `var-${targetProduct.id}-0`,
+            colorName: targetProduct.color || "Standard Edition",
+            colorHex: targetProduct.colorHex || "#0d4f3c",
+            price: targetProduct.price,
+            originalPrice: targetProduct.originalPrice,
+            savings: targetProduct.savings,
+            description: targetProduct.description,
+            fabricType: targetProduct.fabricType,
+            images: targetProduct.images || [],
+            image: targetProduct.image || "",
+            hoverImage: targetProduct.hoverImage || "",
+            inStock: targetProduct.inStock !== false,
+          },
+        ];
+
+    const newIdx = currentVars.length;
+    const newVariant: ColorVariant = {
+      id: `var-${targetProduct.id}-${newIdx}-${Date.now()}`,
+      colorName: `New Color Edition ${newIdx + 1}`,
+      colorHex: "#c5a059",
+      price: targetProduct.price || "₹2,999",
+      originalPrice: targetProduct.originalPrice || "₹4,499",
+      savings: targetProduct.savings || "Save 30%",
+      description: targetProduct.description || "",
+      fabricType: targetProduct.fabricType || "Pure Handloom",
+      images: [],
+      image: "",
+      hoverImage: "",
+      inStock: true,
+    };
+
+    const updatedProduct = {
+      ...targetProduct,
+      colorVariants: [...currentVars, newVariant],
+    };
+
+    setProducts((prev) => prev.map((p) => (p.id === targetProduct.id ? updatedProduct : p)));
+    setSelectedPaletteVariantIndex(newIdx);
+    setPaletteSaveNotice("Added new color edition. Click 'Save Color Palette' to commit.");
+    setTimeout(() => setPaletteSaveNotice(null), 4000);
+  };
+
+  const handlePaletteUpdateColor = (productId: string, variantIndex: number, updates: Partial<ColorVariant>) => {
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== productId) return p;
+        const currentVars = [...(p.colorVariants || [])];
+        if (!currentVars[variantIndex]) return p;
+        const updatedVar: ColorVariant = {
+          ...currentVars[variantIndex],
+          ...updates,
+        };
+        currentVars[variantIndex] = updatedVar;
+
+        // If primary variant (0), sync top-level attributes
+        const topSync =
+          variantIndex === 0
+            ? {
+                color: updatedVar.colorName,
+                colorHex: updatedVar.colorHex,
+                price: updatedVar.price,
+                originalPrice: updatedVar.originalPrice,
+                savings: updatedVar.savings,
+                fabricType: updatedVar.fabricType,
+                description: updatedVar.description,
+                inStock: updatedVar.inStock,
+                images: updatedVar.images,
+                image: updatedVar.images?.[0] || updatedVar.image || "",
+                hoverImage: updatedVar.images?.[1] || updatedVar.hoverImage || updatedVar.images?.[0] || "",
+              }
+            : {};
+
+        return {
+          ...p,
+          ...topSync,
+          colorVariants: currentVars,
+        };
+      })
+    );
+  };
+
+  const handlePaletteDeleteColor = (targetProduct: Product, variantIndex: number) => {
+    const currentVars = targetProduct.colorVariants || [];
+    if (currentVars.length <= 1) {
+      alert("A suit piece must retain at least one color option.");
+      return;
+    }
+    const varToDelete = currentVars[variantIndex];
+    if (!window.confirm(`Are you sure you want to delete the "${varToDelete?.colorName || 'this'}" color option?`)) {
+      return;
+    }
+
+    const filtered = currentVars.filter((_, i) => i !== variantIndex);
+    const newIdx = Math.max(0, Math.min(selectedPaletteVariantIndex, filtered.length - 1));
+
+    const primary = filtered[0];
+    const updatedProduct: Product = {
+      ...targetProduct,
+      color: primary.colorName,
+      colorHex: primary.colorHex,
+      price: primary.price,
+      originalPrice: primary.originalPrice,
+      savings: primary.savings,
+      fabricType: primary.fabricType,
+      description: primary.description,
+      inStock: primary.inStock,
+      images: primary.images,
+      image: primary.images?.[0] || primary.image || "",
+      hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || "",
+      colorVariants: filtered,
+    };
+
+    setProducts((prev) => prev.map((p) => (p.id === targetProduct.id ? updatedProduct : p)));
+    setSelectedPaletteVariantIndex(newIdx);
+    setPaletteSaveNotice(`Deleted color edition. Remember to click "Save Color Palette" to commit.`);
+    setTimeout(() => setPaletteSaveNotice(null), 4000);
+  };
+
+  const handlePaletteReorderColor = (targetProduct: Product, fromIndex: number, toIndex: number) => {
+    const list = [...(targetProduct.colorVariants || [])];
+    if (toIndex < 0 || toIndex >= list.length || fromIndex === toIndex) return;
+
+    const [moved] = list.splice(fromIndex, 1);
+    list.splice(toIndex, 0, moved);
+
+    const primary = list[0];
+    const updatedProduct: Product = {
+      ...targetProduct,
+      color: primary.colorName,
+      colorHex: primary.colorHex,
+      price: primary.price,
+      originalPrice: primary.originalPrice,
+      savings: primary.savings,
+      fabricType: primary.fabricType,
+      description: primary.description,
+      inStock: primary.inStock,
+      images: primary.images,
+      image: primary.images?.[0] || primary.image || "",
+      hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || "",
+      colorVariants: list,
+    };
+
+    setProducts((prev) => prev.map((p) => (p.id === targetProduct.id ? updatedProduct : p)));
+    setSelectedPaletteVariantIndex(toIndex);
+  };
+
+  const handleSaveColorPalette = async (targetProduct: Product) => {
+    setPaletteSaving(true);
+    try {
+      const variants = targetProduct.colorVariants || [];
+      const sanitizedVariants = variants.map((v, i) => {
+        const vImgs =
+          v.images && v.images.length > 0
+            ? v.images
+            : v.image
+            ? [v.image, ...(v.hoverImage && v.hoverImage !== v.image ? [v.hoverImage] : [])]
+            : [];
+        return {
+          ...v,
+          images: vImgs,
+          image: vImgs[0] || v.image || (i === 0 ? targetProduct.image || "" : ""),
+          hoverImage: vImgs[1] || v.hoverImage || vImgs[0] || (i === 0 ? targetProduct.hoverImage || "" : ""),
+        };
+      });
+
+      const primary = sanitizedVariants[0] || {
+        colorName: targetProduct.color,
+        colorHex: targetProduct.colorHex,
+        price: targetProduct.price,
+        originalPrice: targetProduct.originalPrice,
+        savings: targetProduct.savings,
+        fabricType: targetProduct.fabricType,
+        description: targetProduct.description,
+        inStock: targetProduct.inStock,
+        images: targetProduct.images,
+        image: targetProduct.image,
+        hoverImage: targetProduct.hoverImage,
+      };
+
+      const productToSave: Product = {
+        ...targetProduct,
+        fabricType: primary.fabricType || targetProduct.fabricType || "Pure Handloom",
+        color: primary.colorName || targetProduct.color || "Standard Edition",
+        colorHex: primary.colorHex || targetProduct.colorHex || "#0d4f3c",
+        price: primary.price || targetProduct.price || "₹2,999",
+        originalPrice: primary.originalPrice || targetProduct.originalPrice || "₹4,499",
+        savings: primary.savings || targetProduct.savings || "Save 30%",
+        description: primary.description !== undefined ? primary.description : targetProduct.description || "",
+        image: primary.images?.[0] || primary.image || targetProduct.image || "",
+        hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || targetProduct.hoverImage || "",
+        images: primary.images?.length ? primary.images : targetProduct.images || [],
+        inStock: primary.inStock !== false && targetProduct.inStock !== false,
+        colorVariants: sanitizedVariants,
+      };
+
+      await saveProduct(productToSave);
+      setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved persistently to catalog! ✓`);
+      setTimeout(() => setPaletteSaveNotice(null), 5000);
+    } catch (err) {
+      console.error("Failed to save color palette:", err);
+      alert("Failed to save color palette changes. Please try again.");
+    } finally {
+      setPaletteSaving(false);
+    }
+  };
+
   // Category Add
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1124,6 +1378,7 @@ export default function Admin() {
             { id: "overview", label: "Dashboard Overview", icon: Sliders },
             { id: "orders", label: `Customer Orders (${realOrders.length})`, icon: Package },
             { id: "products", label: `Products Catalog (${products.length})`, icon: ShoppingBag },
+            { id: "colors", label: "Color Palettes & Photos", icon: Palette },
             { id: "categories", label: `Categories (${categories.length})`, icon: Layers },
             { id: "banners", label: "Hero & Announcement", icon: Sparkles },
             { id: "content", label: "Atelier & Story CMS", icon: FileText },
@@ -1199,6 +1454,23 @@ export default function Admin() {
                 <span>Products Catalog</span>
               </div>
               <span className="text-[11px] text-[#8fa398]">{products.length}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("colors")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "colors"
+                  ? "bg-[#0d4f3c] text-white shadow-sm border border-[#d4af37]/40"
+                  : "hover:bg-[#15221e] hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Palette size={16} className={activeTab === "colors" ? "text-[#d4af37]" : "text-[#7a8c83]"} />
+                <span>Color Palettes &amp; Photos</span>
+              </div>
+              <span className="bg-[#1e332a] text-[#d4af37] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                Palette
+              </span>
             </button>
 
             <button
@@ -2110,6 +2382,18 @@ export default function Admin() {
 
                             <div className="flex items-center gap-1">
                               <button
+                                onClick={() => {
+                                  setSelectedPaletteProductId(product.id);
+                                  setSelectedPaletteVariantIndex(0);
+                                  setActiveTab("colors");
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-[#0d4f3c] bg-[#0d4f3c]/10 hover:bg-[#0d4f3c]/20 transition-colors"
+                                title="Manage Color Palette & Photos"
+                              >
+                                <Palette size={13} />
+                                <span>Palette ({product.colorVariants?.length || 1})</span>
+                              </button>
+                              <button
                                 onClick={() => handleOpenProductModal(product)}
                                 className="p-1.5 rounded-lg text-[#0d4f3c] hover:bg-[#0d4f3c]/10 transition-colors"
                                 title="Edit Product"
@@ -2497,6 +2781,648 @@ export default function Admin() {
                       </div>
                     </form>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================
+              TAB: COLOR PALETTE & PHOTO STUDIO (Dedicated Option)
+          ============================================================ */}
+          {activeTab === "colors" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <span className="text-xs uppercase font-bold tracking-wider text-[#0d4f3c] flex items-center gap-1.5">
+                    <Palette size={14} />
+                    <span>COLOR PALETTES &amp; MULTI-SHADE STUDIO</span>
+                  </span>
+                  <h2 className="font-serif font-bold text-2xl text-[#1e1b18]">
+                    Product Color Palettes &amp; Photos
+                  </h2>
+                  <p className="text-xs text-[#6b6257] mt-0.5 max-w-2xl">
+                    Add, edit, delete, and reorder color options for each suit piece. Each color option is independently
+                    manageable with its own product photos, individual pricing, and fabric specs. When a customer selects
+                    a color, the boutique displays the exact images for that color.
+                  </p>
+                </div>
+
+                {activePaletteProduct && (
+                  <button
+                    onClick={() => handleSaveColorPalette(activePaletteProduct)}
+                    disabled={paletteSaving}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[#0d4f3c] hover:bg-[#083528] text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow self-start sm:self-auto shrink-0"
+                  >
+                    <Save size={14} />
+                    <span>{paletteSaving ? "Saving to Catalog..." : "Save Color Palette & Photos"}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Success / Notification Banner */}
+              {paletteSaveNotice && (
+                <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl text-xs font-medium animate-in fade-in">
+                  <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                  <span>{paletteSaveNotice}</span>
+                </div>
+              )}
+
+              {/* Product Selector Bar */}
+              <div className="bg-white border border-[#e5ded6] rounded-2xl p-4 sm:p-5 shadow-xs">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex-1 max-w-md">
+                    <label className="block text-xs font-bold text-[#1e1b18] mb-1.5">
+                      Select Suit Piece to Manage Color Palette:
+                    </label>
+                    <select
+                      value={selectedPaletteProductId || activePaletteProduct?.id || ""}
+                      onChange={(e) => {
+                        setSelectedPaletteProductId(e.target.value);
+                        setSelectedPaletteVariantIndex(0);
+                      }}
+                      className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3.5 py-2.5 text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c] focus:ring-1 focus:ring-[#0d4f3c]"
+                    >
+                      {products.map((p) => {
+                        const count = p.colorVariants?.length || 1;
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({count} {count === 1 ? "color" : "colors"}) - {p.price}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {activePaletteProduct && (
+                    <div className="flex items-center gap-3 bg-[#faf8f5] border border-[#e5ded6] rounded-xl p-2.5">
+                      <img
+                        src={
+                          activePaletteProduct.images?.[0] ||
+                          activePaletteProduct.image ||
+                          "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300"
+                        }
+                        alt={activePaletteProduct.name}
+                        className="w-12 h-14 object-cover rounded-lg border border-[#e5ded6]"
+                        onError={(e) => {
+                          e.currentTarget.src =
+                            "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300";
+                        }}
+                      />
+                      <div className="text-xs">
+                        <div className="font-serif font-bold text-[#1e1b18] line-clamp-1">
+                          {activePaletteProduct.name}
+                        </div>
+                        <div className="text-[11px] text-[#6b6257] flex items-center gap-2 mt-0.5">
+                          <span className="bg-[#e9e3da] px-1.5 py-0.5 rounded text-[10px] font-semibold text-[#1e1b18]">
+                            {activePaletteProduct.category}
+                          </span>
+                          <span className="font-bold text-[#0d4f3c]">{activePaletteProduct.price}</span>
+                          <span>•</span>
+                          <span className="text-[#0d4f3c] font-semibold">
+                            {activePaletteVariants.length} Color {activePaletteVariants.length === 1 ? "Option" : "Options"}
+                          </span>
+                        </div>
+                        <Link
+                          to={`/product/${activePaletteProduct.id}`}
+                          target="_blank"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-[#0d4f3c] hover:underline mt-1"
+                        >
+                          <span>Preview on live store</span>
+                          <ExternalLink size={10} />
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Active Product Color Studio */}
+              {activePaletteProduct && (
+                <div className="space-y-5">
+                  {/* Step 1: Color Palette Carousel & Swatches Tabs */}
+                  <div className="bg-white border border-[#e5ded6] rounded-2xl p-4 sm:p-5 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#e5ded6]">
+                      <div>
+                        <h3 className="font-bold text-sm text-[#1e1b18] flex items-center gap-2">
+                          <span>Available Color Options</span>
+                          <span className="bg-[#0d4f3c]/10 text-[#0d4f3c] text-[11px] px-2 py-0.5 rounded-full font-semibold">
+                            {activePaletteVariants.length} Active
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-[#6b6257] mt-0.5">
+                          Select any color below to manage its photos and details, or add a new color option.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePaletteAddColor(activePaletteProduct)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0d4f3c] text-white text-xs font-bold rounded-xl hover:bg-[#083528] transition-colors self-start sm:self-auto shadow-xs"
+                      >
+                        <Plus size={14} />
+                        <span>Add Color Option</span>
+                      </button>
+                    </div>
+
+                    {/* Color Swatch Tiles */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mt-4">
+                      {activePaletteVariants.map((variant, idx) => {
+                        const isSelected = idx === selectedPaletteVariantIndex;
+                        const photoCount = variant.images?.length || (variant.image ? 1 : 0);
+                        const coverThumb =
+                          variant.images?.[0] ||
+                          variant.image ||
+                          activePaletteProduct.images?.[0] ||
+                          activePaletteProduct.image ||
+                          "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300";
+
+                        return (
+                          <div
+                            key={variant.id || `palette-v-${idx}`}
+                            onClick={() => setSelectedPaletteVariantIndex(idx)}
+                            className={`cursor-pointer rounded-xl border p-3 transition-all relative ${
+                              isSelected
+                                ? "border-[#0d4f3c] bg-[#0d4f3c]/5 ring-2 ring-[#0d4f3c]/20 shadow-xs"
+                                : "border-[#e5ded6] bg-[#faf8f5] hover:border-[#b88c29]/50 hover:bg-white"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              {/* Swatch & Thumbnail preview */}
+                              <div className="relative shrink-0">
+                                <img
+                                  src={coverThumb}
+                                  alt={variant.colorName}
+                                  className="w-12 h-14 object-cover rounded-lg border border-[#e5ded6]"
+                                  onError={(e) => {
+                                    e.currentTarget.src =
+                                      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300";
+                                  }}
+                                />
+                                <span
+                                  className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white shadow-xs"
+                                  style={{ backgroundColor: variant.colorHex || "#0d4f3c" }}
+                                  title={variant.colorHex}
+                                />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-bold text-xs text-[#1e1b18] truncate">
+                                    {variant.colorName || `Color #${idx + 1}`}
+                                  </span>
+                                  {idx === 0 && (
+                                    <span className="text-[9px] font-bold bg-[#b88c29]/20 text-[#855e09] px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
+                                      <Star size={8} className="fill-current" />
+                                      <span>Cover</span>
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-[11px] font-bold text-[#0d4f3c] mt-0.5">
+                                  {variant.price || activePaletteProduct.price}
+                                </div>
+
+                                <div className="flex items-center gap-2 mt-1 text-[10px] text-[#6b6257]">
+                                  <span className="flex items-center gap-0.5">
+                                    <Camera size={10} />
+                                    <span>{photoCount} {photoCount === 1 ? "photo" : "photos"}</span>
+                                  </span>
+                                  <span>•</span>
+                                  <span
+                                    className={`font-semibold ${
+                                      variant.inStock !== false ? "text-emerald-700" : "text-red-700"
+                                    }`}
+                                  >
+                                    {variant.inStock !== false ? "In Stock" : "Out of Stock"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Step 2: Active Color Management Panel */}
+                  {currentPaletteVariant && (
+                    <div className="bg-white border border-[#e5ded6] rounded-2xl p-4 sm:p-6 shadow-xs space-y-6">
+                      {/* Active Color Controls Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#e5ded6]">
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="w-8 h-8 rounded-full border-2 border-white shadow-md shrink-0"
+                            style={{ backgroundColor: currentPaletteVariant.colorHex || "#0d4f3c" }}
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-serif font-bold text-base text-[#1e1b18]">
+                                {currentPaletteVariant.colorName || `Color Edition #${selectedPaletteVariantIndex + 1}`}
+                              </h4>
+                              {selectedPaletteVariantIndex === 0 ? (
+                                <span className="text-[10px] font-bold bg-[#b88c29] text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Star size={10} className="fill-current" />
+                                  <span>Primary Storefront Cover</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaletteReorderColor(activePaletteProduct, selectedPaletteVariantIndex, 0)}
+                                  className="text-[10px] font-bold text-[#b88c29] hover:underline flex items-center gap-1"
+                                >
+                                  <Star size={10} />
+                                  <span>Make Primary Cover</span>
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-[#6b6257]">
+                              Hex: {currentPaletteVariant.colorHex || "#0d4f3c"} • Position #{selectedPaletteVariantIndex + 1} of {activePaletteVariants.length}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Reorder and Delete Controls */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            disabled={selectedPaletteVariantIndex === 0}
+                            onClick={() =>
+                              handlePaletteReorderColor(
+                                activePaletteProduct,
+                                selectedPaletteVariantIndex,
+                                selectedPaletteVariantIndex - 1
+                              )
+                            }
+                            className="px-2.5 py-1.5 text-xs font-semibold bg-[#faf8f5] border border-[#d6cec3] text-[#1e1b18] rounded-lg hover:bg-[#f0ebe3] disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Move color earlier in palette"
+                          >
+                            ← Move Left
+                          </button>
+                          <button
+                            type="button"
+                            disabled={selectedPaletteVariantIndex === activePaletteVariants.length - 1}
+                            onClick={() =>
+                              handlePaletteReorderColor(
+                                activePaletteProduct,
+                                selectedPaletteVariantIndex,
+                                selectedPaletteVariantIndex + 1
+                              )
+                            }
+                            className="px-2.5 py-1.5 text-xs font-semibold bg-[#faf8f5] border border-[#d6cec3] text-[#1e1b18] rounded-lg hover:bg-[#f0ebe3] disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Move color later in palette"
+                          >
+                            Move Right →
+                          </button>
+                          <button
+                            type="button"
+                            disabled={activePaletteVariants.length <= 1}
+                            onClick={() => handlePaletteDeleteColor(activePaletteProduct, selectedPaletteVariantIndex)}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="Delete this color option"
+                          >
+                            <Trash2 size={13} />
+                            <span>Delete Color</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Main Dual Grid: Left = Color Specs, Right = Independent Photos & Store Preview */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* LEFT COLUMN: Color Swatch, Identity, Pricing & Fabric */}
+                        <div className="lg:col-span-6 space-y-4">
+                          <h5 className="font-bold text-xs uppercase tracking-wider text-[#0d4f3c]">
+                            1. Color Identity &amp; Pricing
+                          </h5>
+
+                          {/* Color Name & Hex */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Color Edition Name:
+                              </label>
+                              <input
+                                type="text"
+                                value={currentPaletteVariant.colorName || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    colorName: e.target.value,
+                                  })
+                                }
+                                placeholder="e.g. Royal Emerald, Mustard Zari"
+                                className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Color Hex Code &amp; Picker:
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={currentPaletteVariant.colorHex || "#0d4f3c"}
+                                  onChange={(e) =>
+                                    handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                      colorHex: e.target.value,
+                                    })
+                                  }
+                                  className="w-9 h-9 p-0.5 rounded-lg border border-[#d6cec3] cursor-pointer bg-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={currentPaletteVariant.colorHex || ""}
+                                  onChange={(e) =>
+                                    handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                      colorHex: e.target.value,
+                                    })
+                                  }
+                                  placeholder="#0d4f3c"
+                                  className="flex-1 text-xs font-mono font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quick Preset Luxury Indian Couture Colors */}
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#6b6257] mb-1.5">
+                              Quick Luxury Couture Presets:
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {LUXURY_PALETTE_PRESETS.map((preset) => (
+                                <button
+                                  key={preset.hex}
+                                  type="button"
+                                  onClick={() =>
+                                    handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                      colorName: preset.name,
+                                      colorHex: preset.hex,
+                                    })
+                                  }
+                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-[#e5ded6] hover:border-[#0d4f3c] bg-white transition-all shadow-xs"
+                                >
+                                  <span
+                                    className="w-3 h-3 rounded-full border border-black/10 shrink-0"
+                                    style={{ backgroundColor: preset.hex }}
+                                  />
+                                  <span>{preset.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Pricing for this color */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[#e5ded6]">
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Selling Price (₹):
+                              </label>
+                              <input
+                                type="text"
+                                value={currentPaletteVariant.price || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    price: e.target.value,
+                                  })
+                                }
+                                placeholder="₹2,999"
+                                className="w-full text-xs font-bold bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#0d4f3c] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Original MRP (Strike):
+                              </label>
+                              <input
+                                type="text"
+                                value={currentPaletteVariant.originalPrice || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    originalPrice: e.target.value,
+                                  })
+                                }
+                                placeholder="₹4,499"
+                                className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#6b6257] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Savings Pill:
+                              </label>
+                              <input
+                                type="text"
+                                value={currentPaletteVariant.savings || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    savings: e.target.value,
+                                  })
+                                }
+                                placeholder="Save 30%"
+                                className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#b88c29] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Fabric & Stock */}
+                          <div className="space-y-3 pt-2 border-t border-[#e5ded6]">
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Fabric Type for {currentPaletteVariant.colorName}:
+                              </label>
+                              <input
+                                type="text"
+                                value={currentPaletteVariant.fabricType || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    fabricType: e.target.value,
+                                  })
+                                }
+                                placeholder="e.g. Pure Handloom Chanderi Silk with Zari Dupatta"
+                                className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-[#1e1b18] mb-1">
+                                Color Edition Description &amp; Weave Notes:
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={currentPaletteVariant.description || ""}
+                                onChange={(e) =>
+                                  handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                    description: e.target.value,
+                                  })
+                                }
+                                placeholder="Describe the shade nuances, embroidery highlights, or festive occasion suitability for this color..."
+                                className="w-full text-xs font-medium bg-[#faf8f5] border border-[#d6cec3] rounded-xl px-3 py-2 text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#1e1b18]">
+                                <input
+                                  type="checkbox"
+                                  checked={currentPaletteVariant.inStock !== false}
+                                  onChange={(e) =>
+                                    handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                      inStock: e.target.checked,
+                                    })
+                                  }
+                                  className="w-4 h-4 text-[#0d4f3c] rounded border-[#d6cec3] focus:ring-[#0d4f3c]"
+                                />
+                                <span>This color edition ({currentPaletteVariant.colorName}) is currently In Stock</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: Dedicated Photos for this Color & Live Customer Preview */}
+                        <div className="lg:col-span-6 space-y-4">
+                          <h5 className="font-bold text-xs uppercase tracking-wider text-[#0d4f3c] flex items-center justify-between">
+                            <span>2. Dedicated Photos for {currentPaletteVariant.colorName || "This Color"}</span>
+                            <span className="text-[11px] text-[#0d4f3c] lowercase font-semibold">
+                              ({currentPaletteVariant.images?.length || (currentPaletteVariant.image ? 1 : 0)}/10 photos)
+                            </span>
+                          </h5>
+
+                          <p className="text-xs text-[#6b6257]">
+                            Photos uploaded here are linked exclusively to the{" "}
+                            <strong className="text-[#1e1b18]">{currentPaletteVariant.colorName}</strong> edition.
+                            When shoppers click this color swatch on the store, these exact photos will be shown.
+                            Existing photos are preserved and never lost.
+                          </p>
+
+                          {/* Image Uploader */}
+                          <div className="bg-[#faf8f5] border border-[#e5ded6] rounded-xl p-3.5">
+                            <ProductImageUploader
+                              images={
+                                currentPaletteVariant.images && currentPaletteVariant.images.length > 0
+                                  ? currentPaletteVariant.images
+                                  : currentPaletteVariant.image
+                                  ? [
+                                      currentPaletteVariant.image,
+                                      ...(currentPaletteVariant.hoverImage &&
+                                      currentPaletteVariant.hoverImage !== currentPaletteVariant.image
+                                        ? [currentPaletteVariant.hoverImage]
+                                        : []),
+                                    ]
+                                  : []
+                              }
+                              onChange={(newImages) => {
+                                handlePaletteUpdateColor(activePaletteProduct.id, selectedPaletteVariantIndex, {
+                                  images: newImages,
+                                  image: newImages[0] || "",
+                                  hoverImage: newImages[1] || newImages[0] || "",
+                                });
+                              }}
+                              productId={`${activePaletteProduct.id}-${currentPaletteVariant.id || selectedPaletteVariantIndex}`}
+                              productTitle={`${activePaletteProduct.name} (${currentPaletteVariant.colorName})`}
+                            />
+                          </div>
+
+                          {/* Customer Storefront Live Simulation Card */}
+                          <div className="pt-3 border-t border-[#e5ded6]">
+                            <h6 className="text-xs font-bold text-[#1e1b18] mb-2 flex items-center gap-1.5">
+                              <Eye size={13} className="text-[#0d4f3c]" />
+                              <span>Live Customer Storefront Simulation</span>
+                            </h6>
+
+                            <div className="max-w-xs bg-white border border-[#e5ded6] rounded-xl overflow-hidden shadow-sm p-3">
+                              <div className="relative aspect-3/4 rounded-lg overflow-hidden bg-[#faf8f5] mb-2">
+                                <img
+                                  src={
+                                    currentPaletteVariant.images?.[0] ||
+                                    currentPaletteVariant.image ||
+                                    activePaletteProduct.images?.[0] ||
+                                    activePaletteProduct.image ||
+                                    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300"
+                                  }
+                                  alt={currentPaletteVariant.colorName}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src =
+                                      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=300";
+                                  }}
+                                />
+                                <span className="absolute top-2 left-2 bg-[#0d4f3c] text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  {currentPaletteVariant.colorName}
+                                </span>
+                              </div>
+
+                              <div className="text-xs font-serif font-bold text-[#1e1b18] line-clamp-1">
+                                {activePaletteProduct.name}
+                              </div>
+                              <div className="text-[11px] text-[#6b6257] mt-0.5">
+                                {currentPaletteVariant.fabricType || activePaletteProduct.fabricType}
+                              </div>
+
+                              <div className="flex items-baseline gap-2 mt-1.5">
+                                <span className="font-bold text-sm text-[#0d4f3c]">
+                                  {currentPaletteVariant.price || activePaletteProduct.price}
+                                </span>
+                                {currentPaletteVariant.originalPrice && (
+                                  <span className="text-xs text-[#6b6257] line-through">
+                                    {currentPaletteVariant.originalPrice}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Swatches preview */}
+                              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#f0ebe3]">
+                                <span className="text-[10px] text-[#6b6257]">Color:</span>
+                                <div className="flex items-center gap-1">
+                                  {activePaletteVariants.map((v, i) => (
+                                    <span
+                                      key={i}
+                                      className={`w-3.5 h-3.5 rounded-full border ${
+                                        i === selectedPaletteVariantIndex
+                                          ? "ring-2 ring-[#0d4f3c] border-white scale-110"
+                                          : "border-black/20 opacity-70"
+                                      }`}
+                                      style={{ backgroundColor: v.colorHex || "#0d4f3c" }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Save & Add Button Bar */}
+                      <div className="pt-4 border-t border-[#e5ded6] flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="text-xs text-[#6b6257] flex items-center gap-1.5">
+                          <CheckCircle2 size={14} className="text-emerald-700" />
+                          <span>
+                            Saved color palettes &amp; photos persist across sessions, refreshes, and deployments.
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => handlePaletteAddColor(activePaletteProduct)}
+                            className="flex-1 sm:flex-none px-4 py-2.5 text-xs font-bold text-[#0d4f3c] bg-[#0d4f3c]/10 hover:bg-[#0d4f3c]/20 rounded-xl transition-colors"
+                          >
+                            + Add Another Color
+                          </button>
+                          <button
+                            type="button"
+                            disabled={paletteSaving}
+                            onClick={() => handleSaveColorPalette(activePaletteProduct)}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0d4f3c] text-white text-xs font-bold rounded-xl hover:bg-[#083528] transition-colors shadow-xs"
+                          >
+                            <Save size={14} />
+                            <span>{paletteSaving ? "Saving..." : "Save Color Palette & Photos"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -173,6 +173,53 @@ export async function optimizeImageFile(
 }
 
 /**
+ * Persistent Image Storage using IndexedDB (high quota, survives refreshes and restarts)
+ */
+const IDB_NAME = "hos_media_store";
+const IDB_STORE = "images";
+
+function openImageDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      return reject(new Error("IndexedDB not supported"));
+    }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function saveImageToIndexedDb(key: string, dataUrl: string): Promise<void> {
+  try {
+    const db = await openImageDatabase();
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    store.put({ key, dataUrl, savedAt: Date.now() });
+  } catch {}
+}
+
+export async function getImageFromIndexedDb(key: string): Promise<string | null> {
+  try {
+    const db = await openImageDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result?.dataUrl || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Persists an uploaded asset directly into Firestore's `uploaded_assets` collection.
  * This guarantees the image is saved in the persistent backend storage
  * and remains permanently available across browser refreshes and site deployments.
@@ -196,9 +243,52 @@ export async function persistAssetToFirestore(
     await setDoc(docRef, data);
     return assetId;
   } catch (err) {
-    console.warn("Notice: Asset saved locally, firestore asset archive notification:", err);
+    console.warn("Notice: Firestore asset archive notice (proceeding with local & storage persistence):", err);
     return assetId;
   }
+}
+
+/**
+ * Saves an image to the backend storage endpoint (/public/uploads/ via /api/upload-image),
+ * caches in IndexedDB for instant retrieval, and triggers Firestore archive.
+ * Returns the permanent URL for the image.
+ */
+export async function persistImageToStorage(
+  asset: ImageProcessingResult,
+  productId?: string,
+  colorVariantId?: string
+): Promise<string> {
+  // Always cache in IndexedDB for zero-latency offline recovery
+  saveImageToIndexedDb(asset.name, asset.url).catch(() => {});
+
+  try {
+    const res = await fetch("/api/upload-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: asset.url,
+        fileName: asset.name,
+        productId,
+        colorVariantId,
+      }),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.url) {
+        // Cache under the new URL as well
+        saveImageToIndexedDb(json.url, asset.url).catch(() => {});
+        persistAssetToFirestore({ ...asset, url: json.url }, productId).catch(() => {});
+        return json.url;
+      }
+    }
+  } catch (err) {
+    console.warn("Backend storage upload notice, falling back to optimized inline format:", err);
+  }
+
+  // Fallback: use optimized data URL and trigger Firestore asset backup
+  persistAssetToFirestore(asset, productId).catch(() => {});
+  return asset.url;
 }
 
 /**
@@ -260,8 +350,8 @@ export async function processAndUploadDeviceImages(
 
     try {
       const optimized = await optimizeImageFile(file);
-      await persistAssetToFirestore(optimized, productId);
-      newImages.push(optimized.url);
+      const persistentUrl = await persistImageToStorage(optimized, productId);
+      newImages.push(persistentUrl);
 
       const completedPercent = Math.round(((i + 1) / total) * 100);
       onProgress?.({
@@ -307,14 +397,14 @@ export async function replaceImageFromDevice(
       percent: 75,
       fileName: file.name,
     });
-    await persistAssetToFirestore(optimized, productId);
+    const persistentUrl = await persistImageToStorage(optimized, productId);
     onProgress?.({
       current: 1,
       total: 1,
       percent: 100,
       fileName: file.name,
     });
-    return { url: optimized.url };
+    return { url: persistentUrl };
   } catch (err) {
     return { error: `Failed to process replacement image: ${err instanceof Error ? err.message : "Unknown error"}` };
   }

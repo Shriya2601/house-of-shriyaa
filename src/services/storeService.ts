@@ -513,8 +513,12 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     updatedAt: new Date().toISOString(),
   });
 
-  // 1. Write to Firestore
-  await setDoc(docRef, sanitized, { merge: true });
+  // 1. Write to Firestore (resilient against quota exhaustion or temporary network issues)
+  try {
+    await setDoc(docRef, sanitized, { merge: true });
+  } catch (firestoreErr) {
+    console.warn("Firestore write notice (using persistent local and repository storage):", firestoreErr);
+  }
 
   // 2. Update local cache and un-delete if previously marked
   try {
