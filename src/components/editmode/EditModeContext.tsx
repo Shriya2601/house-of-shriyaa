@@ -15,7 +15,7 @@ import {
   EditSnapshot,
   CanvaModalType,
 } from "./EditModeTypes";
-import { saveSiteContent, saveProduct } from "../../services/storeService";
+import { saveSiteContent, saveProduct, getAdminAuthHeaders } from "../../services/storeService";
 import { Product, SiteContent } from "../../types";
 import { isInsideAIStudioEditor } from "./EditModeUtils";
 import defaultBrandStylesJson from "../../data/brandStyles.json";
@@ -504,7 +504,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
           const savedToken = (typeof window !== "undefined" && localStorage.getItem("gh_pat_token")) || "";
           const repoRes = await fetch("/api/save-repo-changes", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
             body: JSON.stringify({
               siteContent: targetSiteContent,
               products: targetProducts,

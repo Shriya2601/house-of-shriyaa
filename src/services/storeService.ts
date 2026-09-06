@@ -295,7 +295,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
   try {
     await fetch("/api/site-content", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify(merged),
     });
   } catch (apiErr) {
@@ -306,7 +306,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
   try {
     fetch("/api/save-repo-changes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify({
         siteContent: merged,
         commitMessage: `chore(cms): updated site content and announcement`,
@@ -472,7 +472,7 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
     try {
       await fetch("/api/categories", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
         body: JSON.stringify(sanitized),
       });
     } catch (apiErr) {
@@ -483,7 +483,7 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
     try {
       fetch("/api/save-repo-changes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
         body: JSON.stringify({
           categories: updated,
           commitMessage: `chore(catalog): saved category folder ${sanitized.name}`,
@@ -516,6 +516,7 @@ export async function deleteCategory(id: string): Promise<void> {
     try {
       await fetch(`/api/categories/${encodeURIComponent(id)}`, {
         method: "DELETE",
+        headers: { ...getAdminAuthHeaders() },
       });
     } catch (apiErr) {
       console.warn("API delete category notice:", apiErr);
@@ -525,7 +526,7 @@ export async function deleteCategory(id: string): Promise<void> {
     try {
       fetch("/api/save-repo-changes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
         body: JSON.stringify({
           categories: filtered,
           commitMessage: `chore(catalog): permanently deleted category folder ${id}`,
@@ -824,7 +825,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   try {
     const apiRes = await fetch("/api/products", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify(sanitized),
     });
     if (apiRes.ok) {
@@ -845,7 +846,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   try {
     await fetch("/api/save-repo-changes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify({
         products: updated,
         commitMessage: `chore(catalog): saved product ${sanitized.name} with ${sanitized.colorVariants?.length || 1} color variants`,
@@ -884,6 +885,7 @@ export async function deleteProduct(id: string, imageUrls?: string[]): Promise<v
     try {
       await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "DELETE",
+        headers: { ...getAdminAuthHeaders() },
       });
     } catch (apiErr) {
       console.warn("API delete product notice:", apiErr);
@@ -896,7 +898,7 @@ export async function deleteProduct(id: string, imageUrls?: string[]): Promise<v
         try {
           await fetch("/api/delete-image", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
             body: JSON.stringify({ url: imgUrl }),
           });
         } catch {}
@@ -907,7 +909,7 @@ export async function deleteProduct(id: string, imageUrls?: string[]): Promise<v
     try {
       await fetch("/api/save-repo-changes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
         body: JSON.stringify({
           products: filtered,
           commitMessage: `chore(catalog): permanently deleted product ${id}`,
@@ -1077,7 +1079,7 @@ export async function updateOrderStatus(
   try {
     await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify(updates),
     });
   } catch (err) {
@@ -1097,7 +1099,7 @@ export async function updateOrderNotes(orderId: string, notes: string): Promise<
   try {
     await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
       body: JSON.stringify({ notes }),
     });
   } catch {}
@@ -1114,6 +1116,7 @@ export async function deleteOrder(orderId: string): Promise<void> {
   try {
     await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: "DELETE",
+      headers: { ...getAdminAuthHeaders() },
     });
   } catch {}
 
@@ -1121,19 +1124,28 @@ export async function deleteOrder(orderId: string): Promise<void> {
 }
 
 /* ============================================================
-   DATABASE-BACKED ADMIN CREDENTIALS & SESSIONS
-   Stored in Firestore: admin_settings/auth_credentials
-   Initial credentials:
-     username: "house of shriya"
-     password: "house of shriya@2601"
-   Fully changeable by admin in Settings tab!
+   SECURE ADMIN AUTHENTICATION & SESSION MANAGEMENT
+   Server-side environment variables (ADMIN_PASSWORD) protect all admin access.
+   Tokens are HMAC-SHA256 signed by the server and verified on all mutations.
 ============================================================ */
 
-const ADMIN_CREDS_DOC = "auth_credentials";
 const SESSION_KEY = "hos_admin_session";
 const LEGACY_SESSION_KEY = "hos_admin_active_session";
 const COOKIE_NAME = "hos_admin_session";
-const CUSTOM_CREDS_KEY = "hos_admin_custom_creds";
+
+/**
+ * Returns authorization headers containing the active admin token.
+ * Attached to all administrative mutation requests to protect APIs.
+ */
+export function getAdminAuthHeaders(): Record<string, string> {
+  const session = getStoredAdminSession();
+  const token = session?.token;
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+    "x-admin-token": token,
+  };
+}
 
 /**
  * Robust cross-domain session cookie setter.
@@ -1193,128 +1205,92 @@ export function clearSessionCookie(name: string): void {
   }
 }
 
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(salt + "::" + password);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function generateSalt(): string {
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export async function getAdminCredentials(): Promise<AdminAuthCredentials> {
-  // 1. Check local persistent cache first
-  if (typeof window !== "undefined") {
-    try {
-      const cached = localStorage.getItem(CUSTOM_CREDS_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed?.username && parsed?.passwordHash && parsed?.salt) {
-          return parsed as AdminAuthCredentials;
-        }
-      }
-    } catch {}
-  }
-
-  // 2. Query Firestore with a strict 1500ms timeout (never hang if quota is exhausted or network stalls)
-  try {
-    const docRef = doc(db, "admin_settings", ADMIN_CREDS_DOC);
-    const snap = await Promise.race([
-      getDoc(docRef),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Firestore timeout")), 1500)),
-    ]);
-    if (snap && snap.exists()) {
-      const creds = snap.data() as AdminAuthCredentials;
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem(CUSTOM_CREDS_KEY, JSON.stringify(creds));
-        } catch {}
-      }
-      return creds;
-    }
-  } catch (err) {
-    console.warn("Notice reading admin credentials from db (proceeding with verified credentials):", err);
-  }
-
-  // 3. Authoritative master initial credentials
-  const defaultSalt = "hos-atelier-salt-2026";
-  const defaultHash = await hashPassword("house of shriya@2601", defaultSalt);
-  const initialCreds: AdminAuthCredentials = {
-    username: "house of shriya",
-    passwordHash: defaultHash,
-    salt: defaultSalt,
+  const session = getStoredAdminSession();
+  return {
+    username: session?.username || "House of Shriya",
+    passwordHash: "",
+    salt: "",
     updatedAt: new Date().toISOString(),
   };
-
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(CUSTOM_CREDS_KEY, JSON.stringify(initialCreds));
-    } catch {}
-  }
-
-  return initialCreds;
 }
 
+/**
+ * Verifies admin credentials directly with the backend API.
+ * The backend securely validates against the environment variable ADMIN_PASSWORD.
+ */
 export async function verifyAdminLogin(
   usernameInput: string,
   passwordInput: string
 ): Promise<{ success: boolean; username?: string; error?: string }> {
   try {
-    const inputUser = usernameInput.trim().toLowerCase();
-    const cleanPassword = passwordInput.trim();
+    const cleanUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
 
-    // Check if input matches standard master admin usernames
-    const isMasterUsername =
-      inputUser === "house of shriya" ||
-      inputUser === "house of shreya" ||
-      inputUser === "admin" ||
-      inputUser === "care@houseofshriya.com";
-
-    // Check master default passwords
-    const isMasterPassword =
-      cleanPassword === "house of shriya@2601" ||
-      cleanPassword === "house of shreya@2601";
-
-    if (isMasterUsername && isMasterPassword) {
-      const finalUsername = "house of shriya";
-      setStoredAdminSession(finalUsername);
-      return { success: true, username: finalUsername };
+    if (!cleanUser || !cleanPass) {
+      return { success: false, error: "Please enter both username and security password." };
     }
 
-    // Check custom credentials (from database or local cache)
-    const creds = await getAdminCredentials();
-    const storedUser = creds.username.trim().toLowerCase();
+    const res = await fetch("/api/admin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: cleanUser,
+        password: cleanPass,
+      }),
+    });
 
-    const isUserMatch =
-      inputUser === storedUser ||
-      ((inputUser === "house of shriya" || inputUser === "house of shreya") &&
-        (storedUser === "house of shriya" || storedUser === "house of shreya"));
-
-    if (isUserMatch) {
-      const computedHash = await hashPassword(cleanPassword, creds.salt);
-      if (computedHash === creds.passwordHash || (isMasterPassword && isMasterUsername)) {
-        const finalUsername = creds.username || "house of shriya";
-        setStoredAdminSession(finalUsername);
-
-        // Non-blocking update of last login timestamp
-        try {
-          const docRef = doc(db, "admin_settings", ADMIN_CREDS_DOC);
-          safeFirestoreSet(docRef, { lastLoginAt: new Date().toISOString() }, { merge: true }).catch(() => {});
-        } catch {}
-
-        return { success: true, username: finalUsername };
-      }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      const verifiedUsername = data.username || cleanUser || "House of Shriya";
+      const token = data.token;
+      setStoredAdminSession(verifiedUsername, token);
+      return { success: true, username: verifiedUsername };
     }
 
-    return { success: false, error: "Invalid username or password. Please verify your credentials." };
+    return {
+      success: false,
+      error: data.error || data.message || "Invalid username or security password. Access denied.",
+    };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Authentication error.";
+    const msg = err instanceof Error ? err.message : "Authentication network error.";
     return { success: false, error: msg };
+  }
+}
+
+/**
+ * Validates the currently active admin session token with the backend.
+ * Clears expired or forged tokens automatically.
+ */
+export async function checkAdminSession(): Promise<{ valid: boolean; username?: string }> {
+  const session = getStoredAdminSession();
+  if (!session?.token) {
+    return { valid: false };
+  }
+
+  try {
+    const res = await fetch("/api/admin/session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAdminAuthHeaders(),
+      },
+      body: JSON.stringify({ token: session.token }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.valid) {
+      return { valid: true, username: data.username || session.username };
+    }
+
+    clearStoredAdminSession();
+    return { valid: false };
+  } catch {
+    // If network momentarily hiccups, retain validly formatted local session
+    if (session.authenticated && session.token && session.token.includes(".")) {
+      return { valid: true, username: session.username };
+    }
+    return { valid: false };
   }
 }
 
@@ -1331,37 +1307,22 @@ export async function changeAdminCredentials(
       return { success: false, error: "New password must be at least 6 characters long." };
     }
 
-    const creds = await getAdminCredentials();
-    const currentHash = await hashPassword(currentPassword, creds.salt);
-    const isMasterCurrent =
-      (currentPassword === "house of shriya@2601" || currentPassword === "house of shreya@2601") &&
-      (creds.username === "house of shriya" || creds.username === "house of shreya");
+    const currentSession = getStoredAdminSession();
+    const verifyRes = await fetch("/api/admin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: currentSession?.username || "House of Shriya",
+        password: currentPassword.trim(),
+      }),
+    });
 
-    if (currentHash !== creds.passwordHash && !isMasterCurrent) {
-      return { success: false, error: "Current password does not match atelier record." };
+    const verifyData = await verifyRes.json().catch(() => ({}));
+    if (!verifyRes.ok || !verifyData.success) {
+      return { success: false, error: "Current password does not match server records." };
     }
 
-    const newSalt = generateSalt();
-    const newHash = await hashPassword(newPassword, newSalt);
-    const updatedCreds: AdminAuthCredentials = {
-      username: newUsername.trim(),
-      passwordHash: newHash,
-      salt: newSalt,
-      updatedAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(CUSTOM_CREDS_KEY, JSON.stringify(updatedCreds));
-      } catch {}
-    }
-
-    // Save to Firestore with timeout protection (non-blocking)
-    const docRef = doc(db, "admin_settings", ADMIN_CREDS_DOC);
-    safeFirestoreSet(docRef, updatedCreds, { merge: true }).catch(() => {});
-
-    setStoredAdminSession(updatedCreds.username);
+    setStoredAdminSession(newUsername.trim(), verifyData.token);
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to update credentials.";

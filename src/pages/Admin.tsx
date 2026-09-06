@@ -78,6 +78,7 @@ import {
   adminResetPassword,
   subscribeAuthState,
   verifyAdminLogin,
+  checkAdminSession,
   changeAdminCredentials,
   getStoredAdminSession,
   setStoredAdminSession,
@@ -105,8 +106,8 @@ export default function Admin() {
 
   // Auth form states
   const [authMode, setAuthMode] = useState<"signin" | "setup" | "reset">("signin");
-  const [authUsername, setAuthUsername] = useState("house of shriya");
-  const [authPassword, setAuthPassword] = useState("house of shriya@2601");
+  const [authUsername, setAuthUsername] = useState("House of Shriya");
+  const [authPassword, setAuthPassword] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authDisplayName, setAuthDisplayName] = useState("");
   const [authError, setAuthError] = useState("");
@@ -168,7 +169,21 @@ export default function Admin() {
   const [cmsSaveNotice, setCmsSaveNotice] = useState("");
 
   const isAuthenticated = Boolean(currentUser || adminSession?.authenticated);
-  const currentAdminName = adminSession?.username || currentUser?.displayName || currentUser?.email || "house of shriya";
+  const currentAdminName = adminSession?.username || currentUser?.displayName || currentUser?.email || "House of Shriya";
+
+  // Validate active admin session with backend on mount
+  useEffect(() => {
+    const session = getStoredAdminSession();
+    if (session?.authenticated) {
+      checkAdminSession().then((res) => {
+        if (!res.valid) {
+          setAdminSession(null);
+        } else if (res.username && res.username !== adminSession?.username) {
+          setAdminSession({ authenticated: true, username: res.username });
+        }
+      });
+    }
+  }, []);
 
   // Listen to Auth
   useEffect(() => {
@@ -232,39 +247,13 @@ export default function Admin() {
     setAuthSuccess("");
     setAuthSubmitting(true);
     try {
-      // 1. Edge Worker Authentication verify (production edge HMAC verification with 1500ms timeout)
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1500);
-        const edgeRes = await fetch("/api/admin/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: authUsername, password: authPassword }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        if (edgeRes.ok) {
-          const edgeData = await edgeRes.json();
-          if (edgeData.success) {
-            const verifiedName = edgeData.username || authUsername;
-            setStoredAdminSession(verifiedName, edgeData.token);
-            setAdminSession({ authenticated: true, username: verifiedName });
-            setAuthSuccess("Authentication verified. Entering dashboard...");
-            return;
-          }
-        }
-      } catch (edgeErr) {
-        console.warn("Edge verification unavailable or timed out, proceeding to direct verification:", edgeErr);
-      }
-
-      // 2. Direct cryptographic & database verification via verifyAdminLogin
+      // Direct backend verification against server environment variable
       const verified = await verifyAdminLogin(authUsername, authPassword);
       if (verified.success) {
-        const verifiedName = verified.username || authUsername;
-        setStoredAdminSession(verifiedName);
+        const verifiedName = verified.username || authUsername || "House of Shriya";
         setAdminSession({ authenticated: true, username: verifiedName });
         setAuthSuccess("Authentication verified. Entering dashboard...");
+        setAuthPassword(""); // Clear password from component memory
         return;
       }
 
@@ -275,13 +264,14 @@ export default function Admin() {
           setStoredAdminSession(authUsername);
           setAdminSession({ authenticated: true, username: authUsername });
           setAuthSuccess("Authentication verified. Entering dashboard...");
+          setAuthPassword("");
           return;
         } catch {
           // fallback to error display
         }
       }
 
-      setAuthError(verified.error || "Invalid username or password. Please verify.");
+      setAuthError(verified.error || "Invalid username or password. Access denied.");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to sign in. Please verify credentials.";
       setAuthError(msg);
@@ -1275,29 +1265,13 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* Pre-configured Initial Credentials Box */}
-                <div className="bg-[#0d4f3c]/20 border border-[#d4af37]/30 rounded-xl p-3 text-[11px] text-[#cfc8bc] space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#d4af37] uppercase tracking-wider flex items-center gap-1.5 text-[10px]">
-                      <Shield size={12} /> Initial Admin Key
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthUsername("house of shriya");
-                        setAuthPassword("house of shriya@2601");
-                      }}
-                      className="text-[10px] text-[#d4af37] underline hover:text-white"
-                    >
-                      Fill Credentials
-                    </button>
+                {/* Security Protection Notice */}
+                <div className="bg-[#0d4f3c]/15 border border-[#2b3d35] rounded-xl p-3 text-[11px] text-[#cfc8bc] space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-[#d4af37] text-[10px] uppercase tracking-wider">
+                    <Shield size={12} /> Server-Protected Admin Portal
                   </div>
-                  <div className="font-mono text-[11px] text-[#dcd6ca] space-y-0.5">
-                    <div>User: <span className="text-white font-semibold">house of shriya</span></div>
-                    <div>Pass: <span className="text-white font-semibold">house of shriya@2601</span></div>
-                  </div>
-                  <p className="text-[10px] text-[#8a857b]">
-                    Connected to live database. Securely changeable in Settings.
+                  <p className="text-[10px] text-[#9c9588] leading-relaxed">
+                    Credentials and administrative routes are authenticated via server-side secrets. Unauthorized access attempts are rejected.
                   </p>
                 </div>
 
@@ -4481,7 +4455,7 @@ export default function Admin() {
                     <input
                       type="password"
                       required
-                      placeholder="Enter current password (e.g. house of shriya@2601)"
+                      placeholder="Enter current master password"
                       value={credCurrentPassword}
                       onChange={(e) => setCredCurrentPassword(e.target.value)}
                       className="w-full p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl text-xs"

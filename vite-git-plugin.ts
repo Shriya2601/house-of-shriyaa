@@ -684,32 +684,25 @@ export function gitSyncPlugin(): Plugin {
           if (req.method === "POST") {
             try {
               const body = await parseJsonBody(req);
-              const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+              const secret = process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || "hos-admin-master-secret-2026";
+              const envPassword = (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "house-of-shriya-2026").trim();
               const username = (body.username || "").trim().toLowerCase();
               const password = (body.password || "").trim();
 
-              const isValidUsername =
-                username === "house of shriya" ||
-                username === "house of shreya" ||
-                username === "admin" ||
-                username === "care@houseofshriya.com";
-
-              const isValidPassword =
-                password === "house of shriya@2601" ||
-                password === "house of shreya@2601" ||
-                password.length >= 8;
+              const isValidUsername = username === "house of shriya";
+              const isValidPassword = password === envPassword;
 
               if (!isValidUsername || !isValidPassword) {
                 res.statusCode = 401;
                 res.setHeader("Content-Type", "application/json");
                 res.setHeader("Access-Control-Allow-Origin", "*");
-                res.end(JSON.stringify({ success: false, error: "Invalid admin credentials." }));
+                res.end(JSON.stringify({ success: false, error: "Invalid admin credentials. Please check your username and password." }));
                 return;
               }
 
               const issuedAt = Date.now();
               const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
-              const payload = `${username}:${issuedAt}:${expiresAt}`;
+              const payload = `house of shriya:${issuedAt}:${expiresAt}`;
               const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
               const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
 
@@ -721,12 +714,12 @@ export function gitSyncPlugin(): Plugin {
               res.setHeader("Access-Control-Allow-Origin", "*");
               res.setHeader(
                 "Set-Cookie",
-                `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}`
+                `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}; HttpOnly`
               );
               res.end(
                 JSON.stringify({
                   success: true,
-                  username,
+                  username: "House of Shriya",
                   token,
                   expiresAt,
                   message: "Authentication successful.",

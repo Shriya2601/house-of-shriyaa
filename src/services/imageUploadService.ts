@@ -1,6 +1,7 @@
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { UploadedAsset } from "../types";
+import { getAdminAuthHeaders } from "./storeService";
 
 // Maximum allowable file size before compression (10MB)
 export const MAX_IMAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -279,7 +280,7 @@ export async function persistImageToStorage(
   // Try uploading to persistent server storage API
   const res = await fetch("/api/upload-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
     body: JSON.stringify({
       image: asset.url,
       fileName: asset.name,
@@ -601,7 +602,7 @@ export async function deleteMediaAsset(
       try {
         await fetch("/api/delete-image", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAdminAuthHeaders() },
           body: JSON.stringify({ fileName: targetFile, url: targetUrl }),
         });
       } catch (e) {

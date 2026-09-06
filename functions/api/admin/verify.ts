@@ -29,25 +29,18 @@ export async function onRequestOptions() {
 export async function onRequestPost(context: { request: Request; env: Record<string, any> }) {
   try {
     const body = (await context.request.json()) as { username?: string; password?: string };
-    const secret = context.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+    const secret = context.env.ADMIN_SECRET_KEY || context.env.ADMIN_PASSWORD || "hos-admin-master-secret-2026";
+    const envPassword = (context.env.ADMIN_PASSWORD || context.env.ADMIN_SECRET_KEY || "house-of-shriya-2026").trim();
 
     const username = (body.username || "").trim().toLowerCase();
     const password = (body.password || "").trim();
 
-    const isValidUsername =
-      username === "house of shriya" ||
-      username === "house of shreya" ||
-      username === "admin" ||
-      username === "care@houseofshriya.com";
-
-    const isValidPassword =
-      password === "house of shriya@2601" ||
-      password === "house of shreya@2601" ||
-      password.length >= 8;
+    const isValidUsername = username === "house of shriya";
+    const isValidPassword = password === envPassword;
 
     if (!isValidUsername || !isValidPassword) {
       return new Response(
-        JSON.stringify({ success: false, error: "Invalid admin credentials." }),
+        JSON.stringify({ success: false, error: "Invalid admin credentials. Please check your username and password." }),
         {
           status: 401,
           headers: {
@@ -60,7 +53,7 @@ export async function onRequestPost(context: { request: Request; env: Record<str
 
     const issuedAt = Date.now();
     const expiresAt = issuedAt + 24 * 60 * 60 * 1000; // 24 hours
-    const payload = `${username}:${issuedAt}:${expiresAt}`;
+    const payload = `house of shriya:${issuedAt}:${expiresAt}`;
     const signature = await generateHmacSha256(payload, secret);
     const token = `${btoa(payload)}.${signature}`;
 
@@ -76,13 +69,13 @@ export async function onRequestPost(context: { request: Request; env: Record<str
     // Issue persistent cross-domain session cookie
     headers.append(
       "Set-Cookie",
-      `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}; Secure`
+      `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}; Secure; HttpOnly`
     );
 
     return new Response(
       JSON.stringify({
         success: true,
-        username,
+        username: "House of Shriya",
         token,
         expiresAt,
         message: "Authentication successful.",

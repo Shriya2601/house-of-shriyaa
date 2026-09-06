@@ -94,7 +94,7 @@ export default function PookieChatbot() {
     };
   }, [products]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputText).trim();
     if (!query) return;
 
@@ -109,7 +109,36 @@ export default function PookieChatbot() {
     setInputText("");
     setIsTyping(true);
 
-    // Natural typing delay for conversational feel (350ms - 550ms)
+    try {
+      // Try server-side Gemini AI concierge first
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: query }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reply) {
+          const fallbackMatches = generatePookieAnswer(query, products || []);
+          const pookieMsg: ChatMessage = {
+            id: `pookie-${Date.now()}`,
+            sender: "pookie",
+            text: data.reply,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            suggestedProducts: fallbackMatches.suggestedProducts,
+            quickReplies: fallbackMatches.quickReplies,
+          };
+          setMessages((prev) => [...prev, pookieMsg]);
+          setIsTyping(false);
+          return;
+        }
+      }
+    } catch {
+      // Gracefully fall back to rich local knowledge base if offline or key not provided
+    }
+
+    // Natural typing delay for conversational feel
     setTimeout(() => {
       const response = generatePookieAnswer(query, products || []);
       const pookieMsg: ChatMessage = {

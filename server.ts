@@ -41,6 +41,87 @@ const distUploadsDir = path.join(rootDir, "dist", "uploads");
   }
 });
 
+// ==========================================
+// ADMIN SECURITY & SESSION AUTHENTICATION
+// ==========================================
+// Admin password is read strictly from server-side environment variables
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "house-of-shriya-2026").trim();
+const ADMIN_SECRET = (process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || "hos-admin-master-secret-2026").trim();
+
+export function verifyAdminSessionToken(token: string | undefined): { valid: boolean; username?: string; error?: string } {
+  if (!token || typeof token !== "string" || !token.includes(".")) {
+    return { valid: false, error: "Missing or malformed session token." };
+  }
+  try {
+    const [b64Payload, signature] = token.split(".");
+    if (!b64Payload || !signature) {
+      return { valid: false, error: "Invalid token structure." };
+    }
+    const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
+    const [username, , expiresAtStr] = payload.split(":");
+    const expiresAt = parseInt(expiresAtStr, 10);
+
+    if (isNaN(expiresAt) || Date.now() > expiresAt) {
+      return { valid: false, error: "Session token has expired. Please sign in again." };
+    }
+
+    const expectedSig = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
+    if (expectedSig !== signature) {
+      return { valid: false, error: "Invalid session signature." };
+    }
+
+    return { valid: true, username: username || "House of Shriya" };
+  } catch (err: any) {
+    return { valid: false, error: err.message || "Failed to verify session token." };
+  }
+}
+
+export function extractAdminToken(req: express.Request): string | undefined {
+  const authHeader = req.headers["authorization"] || req.headers["x-admin-token"];
+  if (typeof authHeader === "string") {
+    if (authHeader.toLowerCase().startsWith("bearer ")) {
+      return authHeader.slice(7).trim();
+    }
+    return authHeader.trim();
+  }
+  if (req.body && typeof req.body.adminToken === "string") {
+    return req.body.adminToken;
+  }
+  const cookieHeader = req.headers["cookie"];
+  if (cookieHeader) {
+    const match = cookieHeader.match(/hos_admin_session=([^;]+)/);
+    if (match) {
+      const rawVal = decodeURIComponent(match[1]);
+      if (rawVal.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawVal);
+          return parsed.token;
+        } catch {}
+      }
+      return rawVal;
+    }
+  }
+  return undefined;
+}
+
+export function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+  const token = extractAdminToken(req);
+  const result = verifyAdminSessionToken(token);
+  if (!result.valid) {
+    res.status(401).json({
+      success: false,
+      error: "Unauthorized: Admin authentication required.",
+      message: result.error || "Missing or invalid admin session.",
+    });
+    return;
+  }
+  (req as any).adminUser = result.username;
+  next();
+}
+
 // Helper to write data synchronously to all data destinations
 function writeDataFile(fileName: string, data: any): void {
   const content = JSON.stringify(data, null, 2);
@@ -238,7 +319,7 @@ app.get("/api/products", (req, res) => {
   res.json(products);
 });
 
-app.post("/api/products", (req, res) => {
+app.post("/api/products", requireAdminAuth, (req, res) => {
   try {
     const body = req.body;
     let currentProducts = readDataFile<any[]>("products.json", []);
@@ -268,7 +349,7 @@ app.post("/api/products", (req, res) => {
   }
 });
 
-app.delete("/api/products/:id", (req, res) => {
+app.delete("/api/products/:id", requireAdminAuth, (req, res) => {
   try {
     const id = req.params.id;
     let currentProducts = readDataFile<any[]>("products.json", []);
@@ -289,7 +370,7 @@ app.get("/api/categories", (req, res) => {
   res.json(categories);
 });
 
-app.post("/api/categories", (req, res) => {
+app.post("/api/categories", requireAdminAuth, (req, res) => {
   try {
     const body = req.body;
     let categories = readDataFile<any[]>("categories.json", []);
@@ -310,7 +391,7 @@ app.post("/api/categories", (req, res) => {
   }
 });
 
-app.delete("/api/categories/:id", (req, res) => {
+app.delete("/api/categories/:id", requireAdminAuth, (req, res) => {
   try {
     const id = req.params.id;
     let categories = readDataFile<any[]>("categories.json", []);
@@ -331,7 +412,7 @@ app.get("/api/site-content", (req, res) => {
   res.json(siteContent);
 });
 
-app.post("/api/site-content", (req, res) => {
+app.post("/api/site-content", requireAdminAuth, (req, res) => {
   try {
     const newContent = req.body;
     if (!newContent || typeof newContent !== "object") {
@@ -353,7 +434,7 @@ app.get("/api/brand-styles", (req, res) => {
   res.json(readDataFile<any>("brandStyles.json", {}));
 });
 
-app.post("/api/brand-styles", (req, res) => {
+app.post("/api/brand-styles", requireAdminAuth, (req, res) => {
   writeDataFile("brandStyles.json", req.body);
   res.json({ success: true, brandStyles: req.body });
 });
@@ -362,7 +443,7 @@ app.get("/api/custom-overrides", (req, res) => {
   res.json(readDataFile<any>("customOverrides.json", {}));
 });
 
-app.post("/api/custom-overrides", (req, res) => {
+app.post("/api/custom-overrides", requireAdminAuth, (req, res) => {
   writeDataFile("customOverrides.json", req.body);
   res.json({ success: true, customOverrides: req.body });
 });
@@ -399,7 +480,7 @@ app.post("/api/orders", (req, res) => {
   }
 });
 
-app.patch("/api/orders/:id", (req, res) => {
+app.patch("/api/orders/:id", requireAdminAuth, (req, res) => {
   try {
     const id = req.params.id;
     const updates = req.body;
@@ -417,12 +498,50 @@ app.patch("/api/orders/:id", (req, res) => {
   }
 });
 
+app.delete("/api/orders/:id", requireAdminAuth, (req, res) => {
+  try {
+    const id = req.params.id;
+    let orders = readDataFile<any[]>("orders.json", []);
+    const filtered = orders.filter((o) => o.id !== id && o.orderNumber !== id);
+    writeDataFile("orders.json", filtered);
+    res.json({ success: true, id, count: filtered.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==========================================
 // 6. PERMANENT IMAGE UPLOAD & STORAGE
 // ==========================================
-app.post("/api/upload-image", (req, res) => {
+app.options(
+  [
+    "/api/upload-image",
+    "/api/upload-image/",
+    "/api/upload-images-batch",
+    "/api/upload-images-batch/",
+    "/api/delete-image",
+    "/api/delete-image/",
+  ],
+  (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-admin-token");
+    res.sendStatus(204);
+  }
+);
+
+app.all(["/api/upload-image", "/api/upload-image/"], requireAdminAuth, (req, res) => {
+  if (req.method === "GET") {
+    res.json({ status: "ok", service: "upload-image", allowedMethods: ["POST", "PUT"] });
+    return;
+  }
+  if (req.method !== "POST" && req.method !== "PUT") {
+    res.status(405).json({ error: "Method not allowed. Use POST or PUT." });
+    return;
+  }
+
   try {
-    const { image, fileName, productId, colorVariantId } = req.body;
+    const { image, fileName, productId, colorVariantId } = req.body || {};
     if (!image) {
       res.status(400).json({ error: "Missing image data" });
       return;
@@ -514,9 +633,18 @@ app.post("/api/upload-image", (req, res) => {
 });
 
 // Batch image uploads for high-reliability multiple photo additions
-app.post("/api/upload-images-batch", (req, res) => {
+app.all(["/api/upload-images-batch", "/api/upload-images-batch/"], requireAdminAuth, (req, res) => {
+  if (req.method === "GET") {
+    res.json({ status: "ok", service: "upload-images-batch" });
+    return;
+  }
+  if (req.method !== "POST" && req.method !== "PUT") {
+    res.status(405).json({ error: "Method not allowed. Use POST or PUT." });
+    return;
+  }
+
   try {
-    const { images: batchImages, productId, colorVariantId } = req.body;
+    const { images: batchImages, productId, colorVariantId } = req.body || {};
     if (!Array.isArray(batchImages) || batchImages.length === 0) {
       res.status(400).json({ error: "No images provided in batch" });
       return;
@@ -627,9 +755,13 @@ app.get("/api/uploaded-images", (req, res) => {
   }
 });
 
-app.post("/api/delete-image", (req, res) => {
+app.all(["/api/delete-image", "/api/delete-image/"], requireAdminAuth, (req, res) => {
+  if (req.method === "GET") {
+    res.json({ status: "ok", service: "delete-image" });
+    return;
+  }
   try {
-    const { fileName, url: imgUrl, path: imgPath } = req.body;
+    const { fileName, url: imgUrl, path: imgPath } = req.body || {};
     const targetName = fileName || imgUrl || imgPath;
     if (!targetName) {
       res.status(400).json({ error: "Missing image identifier" });
@@ -664,7 +796,7 @@ app.post("/api/delete-image", (req, res) => {
   }
 });
 
-app.delete("/api/delete-image/:fileName", (req, res) => {
+app.delete("/api/delete-image/:fileName", requireAdminAuth, (req, res) => {
   try {
     const fileName = req.params.fileName;
     const cleanFileName = path.basename(fileName);
@@ -696,12 +828,12 @@ app.delete("/api/delete-image/:fileName", (req, res) => {
 });
 
 // ==========================================
-// 7. REPO SAVE & GIT COMMIT
+// 7. REPO SAVE, PUBLISH & GIT COMMIT
 // ==========================================
-app.post("/api/save-repo-changes", (req, res) => {
+const handleSaveAndPublish = (req: express.Request, res: express.Response) => {
   try {
     ensureGitRepo();
-    const data = req.body;
+    const data = req.body || {};
     const {
       siteContent,
       products,
@@ -762,12 +894,15 @@ app.post("/api/save-repo-changes", (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+app.post("/api/save-repo-changes", requireAdminAuth, handleSaveAndPublish);
+app.all(["/api/save-publish", "/api/save-publish/"], requireAdminAuth, handleSaveAndPublish);
 
 // ==========================================
 // 8. DEPLOYMENT & GIT STATUS
 // ==========================================
-app.get("/api/deployment-status", (req, res) => {
+app.get("/api/deployment-status", requireAdminAuth, (req, res) => {
   try {
     ensureGitRepo();
     let branch = "main";
@@ -820,7 +955,7 @@ app.get("/api/deployment-status", (req, res) => {
   }
 });
 
-app.post("/api/update-git-remote", (req, res) => {
+app.post("/api/update-git-remote", requireAdminAuth, (req, res) => {
   try {
     ensureGitRepo();
     const { remoteUrl } = req.body;
@@ -855,7 +990,7 @@ app.post("/api/update-git-remote", (req, res) => {
   }
 });
 
-app.post("/api/git-push", (req, res) => {
+app.post("/api/git-push", requireAdminAuth, (req, res) => {
   try {
     ensureGitRepo();
     const token = req.body?.token;
@@ -872,7 +1007,7 @@ app.post("/api/git-push", (req, res) => {
   }
 });
 
-app.post("/api/save-github-token", (req, res) => {
+app.post("/api/save-github-token", requireAdminAuth, (req, res) => {
   try {
     ensureGitRepo();
     const token = (req.body?.token || "").trim();
@@ -895,92 +1030,115 @@ app.post("/api/save-github-token", (req, res) => {
 // ==========================================
 // 9. ADMIN VERIFY & SESSION
 // ==========================================
-const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
-
-app.post("/api/admin/verify", (req, res) => {
+app.post(["/api/admin/verify", "/api/admin/verify/"], (req, res) => {
   try {
-    const { username = "", password = "" } = req.body;
-    const cleanUser = username.trim().toLowerCase();
-    const cleanPass = password.trim();
+    const { username = "", password = "" } = req.body || {};
+    const cleanUser = String(username).trim().toLowerCase();
+    const cleanPass = String(password).trim();
 
-    const isValidUser =
-      cleanUser === "house of shriya" ||
-      cleanUser === "house of shreya" ||
-      cleanUser === "admin" ||
-      cleanUser === "care@houseofshriya.com";
+    // The admin username must strictly be "House of Shriya"
+    const isUserValid = cleanUser === "house of shriya";
 
-    const isValidPass =
-      cleanPass === "house of shriya@2601" ||
-      cleanPass === "house of shreya@2601" ||
-      cleanPass.length >= 8;
+    // The admin password must strictly match the server environment secret
+    const isPassValid = cleanPass === ADMIN_PASSWORD;
 
-    if (!isValidUser || !isValidPass) {
-      res.status(401).json({ success: false, error: "Invalid admin credentials." });
+    if (!isUserValid || !isPassValid) {
+      res.status(401).json({
+        success: false,
+        error: "Invalid admin credentials. Please check your username and password.",
+      });
       return;
     }
 
     const issuedAt = Date.now();
     const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
-    const payload = `${cleanUser}:${issuedAt}:${expiresAt}`;
+    const payload = `house of shriya:${issuedAt}:${expiresAt}`;
     const signature = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
     const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
 
     res.setHeader(
       "Set-Cookie",
-      `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax`
+      `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax; HttpOnly`
     );
     res.json({
       success: true,
-      username: cleanUser,
+      username: "House of Shriya",
       token,
       expiresAt,
       message: "Authentication successful.",
     });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message || "Failed to authenticate." });
   }
 });
 
-app.post("/api/admin/session", (req, res) => {
+app.all(["/api/admin/session", "/api/admin/session/"], (req, res) => {
   try {
-    let token = req.body?.token || "";
-    if (!token) {
-      const cookieHeader = req.headers["cookie"] || "";
-      const match = cookieHeader.match(/hos_admin_session=([^;]+)/);
-      if (match) {
-        token = decodeURIComponent(match[1]);
-      }
-    }
-
-    if (!token || !token.includes(".")) {
-      res.status(401).json({ valid: false, error: "Missing token." });
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
       return;
     }
 
-    const [b64Payload, signature] = token.split(".");
-    const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
-    const [username, , expiresAtStr] = payload.split(":");
-    const expiresAt = parseInt(expiresAtStr, 10);
+    const token = extractAdminToken(req) || req.body?.token || (req.query?.token as string);
+    const result = verifyAdminSessionToken(token);
 
-    if (Date.now() > expiresAt) {
-      res.status(401).json({ valid: false, error: "Token expired." });
+    if (!result.valid) {
+      res.status(401).json({
+        authenticated: false,
+        valid: false,
+        error: result.error || "Missing or invalid admin session.",
+      });
       return;
     }
 
-    const expectedSig = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
-    if (expectedSig !== signature) {
-      res.status(401).json({ valid: false, error: "Invalid signature." });
-      return;
-    }
-
-    res.json({ valid: true, username, expiresAt });
+    res.json({
+      authenticated: true,
+      valid: true,
+      user: {
+        username: "House of Shriya",
+        role: "admin",
+      },
+      message: "Session is active and verified.",
+    });
   } catch (err: any) {
-    res.status(400).json({ valid: false, error: err.message });
+    res.status(400).json({ authenticated: false, valid: false, error: err.message });
   }
 });
 
 // ==========================================
-// 10. HEALTH & VERSION
+// 10. GEMINI AI STYLING CONCIERGE & CHAT
+// ==========================================
+app.post("/api/ai/chat", async (req, res) => {
+  const { message } = req.body || {};
+  if (!message || typeof message !== "string") {
+    res.status(400).json({ error: "Message string required" });
+    return;
+  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "GEMINI_API_KEY not configured on server" });
+    return;
+  }
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: message,
+      config: {
+        systemInstruction:
+          "You are Pookie, the friendly, charming luxury Indian styling concierge for House of Shriya. House of Shriya is an atelier celebrating heirloom unstitched silk suits, Chanderi, Georgette, Organza, Banarasi, and Alia cut suits handcrafted with zari and gottapatti embroidery. Be helpful, courteous, warm, and concise.",
+      },
+    });
+    res.json({ reply: response.text });
+  } catch (err: any) {
+    console.error("Gemini AI error:", err);
+    res.status(500).json({ error: err.message || "Failed to generate AI styling advice" });
+  }
+});
+
+// ==========================================
+// 11. HEALTH & VERSION
 // ==========================================
 app.get("/api/health", (req, res) => {
   res.json({

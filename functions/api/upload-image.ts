@@ -4,10 +4,27 @@ export async function onRequestOptions() {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
     },
   });
+}
+
+export async function onRequestGet() {
+  return new Response(
+    JSON.stringify({ status: "ok", service: "upload-image", allowedMethods: ["POST", "PUT"] }),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    }
+  );
+}
+
+export async function onRequestPut(context: { request: Request; env: Record<string, any> }) {
+  return onRequestPost(context);
 }
 
 export async function onRequestPost(context: { request: Request; env: Record<string, any> }) {
