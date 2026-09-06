@@ -2301,24 +2301,13 @@ export function ProductCard({
           )}
         </div>
 
-        <div className="product-actions" style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "0.5rem" }}>
+        <div className="product-actions flex items-center gap-1 sm:gap-1.5 mt-2 pt-1 w-full">
           <button
             type="button"
             data-editable="true"
             onClick={handleBuyNow}
             title="Instant Checkout"
-            style={{
-              flex: "1",
-              backgroundColor: "#0d4f3c",
-              color: "#faf8f5",
-              fontWeight: 600,
-              fontSize: "0.75rem",
-              padding: "7px 12px",
-              borderRadius: "9999px",
-              border: "none",
-              cursor: "pointer",
-              transition: "opacity 0.15s",
-            }}
+            className="flex-1 min-w-0 bg-[#0d4f3c] hover:bg-[#083528] active:scale-[0.98] text-[#faf8f5] font-semibold text-[11px] sm:text-xs py-2 px-2 sm:px-3 rounded-full border-0 cursor-pointer transition-all text-center truncate shadow-2xs"
           >
             <BuilderText as="span" text="Buy Now" />
           </button>
@@ -2329,22 +2318,10 @@ export function ProductCard({
             onClick={handleAddToCart}
             title="Add to Shopping Bag"
             aria-label={`Add ${product.name} to Shopping Bag`}
-            style={{
-              backgroundColor: "#f4eee6",
-              color: "#0d4f3c",
-              fontWeight: 600,
-              fontSize: "0.75rem",
-              padding: "7px 10px",
-              borderRadius: "9999px",
-              border: "1px solid #d6ccc2",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
+            className="bg-[#f4eee6] hover:bg-[#eae2d5] active:scale-[0.98] text-[#0d4f3c] font-semibold text-[11px] sm:text-xs py-2 px-2 sm:px-2.5 rounded-full border border-[#d6ccc2] cursor-pointer inline-flex items-center justify-center gap-1 shrink-0 transition-all"
           >
-            <ShoppingBag size={14} />
-            <span>Bag</span>
+            <ShoppingBag size={13} className="shrink-0" />
+            <span className="hidden xs:inline sm:inline">Bag</span>
           </button>
 
           <a
@@ -2353,21 +2330,10 @@ export function ProductCard({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="whatsapp-button"
+            className="whatsapp-button inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#25D366] hover:bg-[#20ba5a] active:scale-95 text-white shrink-0 transition-colors shadow-2xs"
             aria-label={`Inquire on WhatsApp about ${product.name}`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "32px",
-              height: "32px",
-              borderRadius: "9999px",
-              backgroundColor: "#25D366",
-              color: "#ffffff",
-              textDecoration: "none",
-            }}
           >
-            <MessageCircle size={15} />
+            <MessageCircle size={14} />
           </a>
         </div>
       </div>

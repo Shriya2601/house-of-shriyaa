@@ -344,11 +344,11 @@ export default function ProductDetails() {
       </div>
 
       {/* Main Product Showcase Section */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-start">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 pb-24 md:pb-10">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-12 items-start">
           
-          {/* LEFT: Luxury Image Gallery (7 cols) */}
-          <div className="lg:col-span-7 flex flex-col gap-4">
+          {/* LEFT: Luxury Image Gallery */}
+          <div className="md:col-span-6 lg:col-span-7 flex flex-col gap-4">
             {/* Primary Main Image Frame */}
             <div
               onClick={() => handleOpenViewer()}
@@ -515,8 +515,8 @@ export default function ProductDetails() {
             </div>
           </div>
 
-          {/* RIGHT: Product Details & Buying Controls (5 cols) */}
-          <div className="lg:col-span-5 flex flex-col gap-5 lg:sticky lg:top-24">
+          {/* RIGHT: Product Details & Buying Controls */}
+          <div className="md:col-span-6 lg:col-span-5 flex flex-col gap-5 md:sticky md:top-24">
             
             {/* Category / Collection Tag & Rating */}
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -838,19 +838,19 @@ export default function ProductDetails() {
       </main>
 
       {/* MOBILE STICKY BOTTOM ACTION BAR */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#e8dfd5] p-3 shadow-lg flex items-center gap-3">
-        <div className="flex flex-col">
-          <span className="text-xs text-[#8c827a] line-clamp-1">{product?.name}</span>
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#e8dfd5] p-3 shadow-lg flex items-center gap-3">
+        <div className="flex flex-col min-w-0 max-w-[40%]">
+          <span className="text-xs text-[#8c827a] truncate font-medium">{displayColor} · {product?.name}</span>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-base font-bold text-[#0d4f3c]">{product?.price}</span>
-            <span className="text-[10px] font-semibold text-[#0d4f3c] bg-[#0d4f3c]/10 px-2 py-0.5 rounded">Unstitched Suit</span>
+            <span className="text-base font-bold text-[#0d4f3c]">{displayPrice}</span>
+            <span className="text-[10px] font-semibold text-[#0d4f3c] bg-[#0d4f3c]/10 px-1.5 py-0.5 rounded truncate">Unstitched</span>
           </div>
         </div>
         <div className="flex-1 flex items-center gap-2">
           <button
             type="button"
             onClick={handleAddToCart}
-            className="flex-1 bg-[#f4eee6] text-[#0d4f3c] border border-[#d6ccc2] py-2.5 px-3 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 uppercase"
+            className="flex-1 bg-[#f4eee6] text-[#0d4f3c] border border-[#d6ccc2] py-2.5 px-3 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 uppercase transition-colors"
           >
             <ShoppingBag size={14} />
             <span>Bag</span>
@@ -858,7 +858,7 @@ export default function ProductDetails() {
           <button
             type="button"
             onClick={handleBuyNow}
-            className="flex-1 bg-[#0d4f3c] text-white py-2.5 px-3 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm uppercase"
+            className="flex-1 bg-[#0d4f3c] text-white py-2.5 px-3 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm uppercase transition-colors"
           >
             <Sparkles size={14} className="text-amber-300" />
             <span>Buy Now</span>

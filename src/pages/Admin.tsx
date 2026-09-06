@@ -705,6 +705,8 @@ export default function Admin() {
       await saveProduct(productToSave);
       setIsProductModalOpen(false);
       setEditingProduct(null);
+      setProductSaveSuccess(`Product "${productToSave.name}" & all ${productToSave.colorVariants?.length || 1} color editions saved & published live to boutique! ✓`);
+      setTimeout(() => setProductSaveSuccess(null), 6000);
     } catch (err: any) {
       console.error("Product save failure:", err);
       alert(`Could not save product: ${err?.message || "Please check your network and try again."}`);
@@ -965,7 +967,7 @@ export default function Admin() {
       };
 
       await saveProduct(productToSave);
-      setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved persistently to catalog! ✓`);
+      setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved & published live to boutique! ✓`);
       setTimeout(() => setPaletteSaveNotice(null), 5000);
     } catch (err: any) {
       console.error("Failed to save color palette:", err);
@@ -1414,10 +1416,39 @@ export default function Admin() {
         </div>
       )}
 
+      {/* Quick Mobile Horizontal Tabs Bar for phone and tablet */}
+      <div className="md:hidden bg-[#0a110e] border-b border-[#22332c] px-3 py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        {[
+          { id: "overview", label: "Overview", icon: Sliders },
+          { id: "orders", label: `Orders (${realOrders.length})`, icon: Package },
+          { id: "products", label: `Products (${products.length})`, icon: ShoppingBag },
+          { id: "colors", label: "Colors & Photos", icon: Palette },
+          { id: "categories", label: `Categories (${categories.length})`, icon: Layers },
+          { id: "media", label: "Media", icon: ImageIcon },
+          { id: "banners", label: "Banners", icon: Sparkles },
+          { id: "content", label: "CMS Story", icon: FileText },
+          { id: "settings", label: "Settings", icon: Key },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors shrink-0 ${
+              activeTab === tab.id
+                ? "bg-[#0d4f3c] text-white border border-[#d4af37]/40 shadow-xs"
+                : "bg-[#15221e] text-[#cfc8bc] hover:text-white"
+            }`}
+          >
+            <tab.icon size={13} className={activeTab === tab.id ? "text-[#d4af37]" : "text-[#7a8c83]"} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Main Admin Body */}
       <div className="flex-1 flex flex-col md:flex-row">
-        {/* Sidebar Navigation */}
-        <aside className="w-full md:w-64 bg-[#0d1613] text-[#d1cbbf] border-r border-[#22332c] flex-shrink-0">
+        {/* Sidebar Navigation (Desktop) */}
+        <aside className="hidden md:block w-64 bg-[#0d1613] text-[#d1cbbf] border-r border-[#22332c] flex-shrink-0">
           <div className="p-3 sm:p-4 space-y-1">
             <button
               onClick={() => setActiveTab("overview")}
@@ -2317,6 +2348,14 @@ export default function Admin() {
                 </button>
               </div>
 
+              {/* Product Save & Publish Success Banner */}
+              {productSaveSuccess && (
+                <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl text-xs font-medium animate-in fade-in">
+                  <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                  <span>{productSaveSuccess}</span>
+                </div>
+              )}
+
               {/* Product Search & Category Filter */}
               <div className="bg-white p-3.5 rounded-2xl border border-[#e5ded6] shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
                 <div className="relative w-full sm:w-80">
@@ -2838,9 +2877,10 @@ export default function Admin() {
                           <button
                             type="submit"
                             disabled={savingProduct}
-                            className="px-6 py-2 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528] transition-colors shadow-xs"
+                            className="px-6 py-2 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528] transition-colors shadow-xs flex items-center gap-1.5"
                           >
-                            {savingProduct ? "Saving to Catalog & Cloud..." : "Save Product & All Variants"}
+                            <Save size={14} />
+                            <span>{savingProduct ? "Publishing to Live Boutique..." : "Save & Publish"}</span>
                           </button>
                         </div>
                       </div>
@@ -2880,7 +2920,7 @@ export default function Admin() {
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#0d4f3c] hover:bg-[#083528] text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow self-start sm:self-auto shrink-0"
                   >
                     <Save size={14} />
-                    <span>{paletteSaving ? "Saving to Catalog..." : "Save Color Palette & Photos"}</span>
+                    <span>{paletteSaving ? "Publishing to Live Boutique..." : "Save & Publish"}</span>
                   </button>
                 )}
               </div>
@@ -3482,7 +3522,7 @@ export default function Admin() {
                             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0d4f3c] text-white text-xs font-bold rounded-xl hover:bg-[#083528] transition-colors shadow-xs"
                           >
                             <Save size={14} />
-                            <span>{paletteSaving ? "Saving..." : "Save Color Palette & Photos"}</span>
+                            <span>{paletteSaving ? "Publishing to Live Boutique..." : "Save & Publish"}</span>
                           </button>
                         </div>
                       </div>
