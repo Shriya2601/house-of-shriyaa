@@ -1882,8 +1882,11 @@ function Catalog({
       "Seasonal Drop",
     ];
     if (!categories || categories.length === 0) return defaultPills;
-    const catNames = categories.map((c) => c.name).filter((n) => n !== "Wishlist");
-    return ["All Collections", "Wishlist", ...catNames];
+    // Exclude 'Wishlist' and 'All Collections' to prevent duplicate pill keys since they are prepended
+    const catNames = categories
+      .map((c) => c.name?.trim())
+      .filter((n): n is string => Boolean(n) && n !== "Wishlist" && n !== "All Collections");
+    return ["All Collections", "Wishlist", ...Array.from(new Set(catNames))];
   }, [categories]);
 
   const visibleProducts = useMemo(() => {
@@ -2179,8 +2182,8 @@ export function ProductCard({
           }}
         />
         <div className="product-badges">
-          {(product.badges || []).slice(0, 2).map((badge) => (
-            <BuilderText as="span" key={badge} text={badge} />
+          {(product.badges || []).slice(0, 2).map((badge, bIdx) => (
+            <BuilderText as="span" key={`${badge}-${bIdx}`} text={badge} />
           ))}
         </div>
         <button
@@ -2235,7 +2238,7 @@ export function ProductCard({
               const isSelected = vIdx === selectedVariantIndex;
               return (
                 <button
-                  key={variant.id || vIdx}
+                  key={variant.id ? `${variant.id}-${vIdx}` : `var-${vIdx}`}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
