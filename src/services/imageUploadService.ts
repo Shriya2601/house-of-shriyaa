@@ -442,8 +442,17 @@ export function subscribeUploadedAssets(
 /**
  * Delete an uploaded asset from Firestore and backend storage
  */
-export async function deleteUploadedAsset(assetId: string): Promise<void> {
-  await deleteDoc(doc(db, "uploaded_assets", assetId));
+export async function deleteUploadedAsset(assetId: string, imagePath?: string): Promise<void> {
+  if (imagePath) {
+    try {
+      await fetch("/api/delete-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: imagePath }),
+      });
+    } catch {}
+  }
+  deleteDoc(doc(db, "uploaded_assets", assetId)).catch(() => {});
 }
 
 /**

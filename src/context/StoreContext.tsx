@@ -258,19 +258,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       }
     };
+    const handleProdSaved = (e: any) => {
+      const prod = e.detail;
+      if (prod && prod.id) {
+        setProducts((prev) => {
+          const idx = prev.findIndex((p) => p.id === prod.id);
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = prod;
+            return next;
+          }
+          return [prod, ...prev];
+        });
+      }
+    };
     const handleCatDel = (e: any) => {
       const id = e.detail?.id;
       if (id) setCategories((prev) => prev.filter((c) => c.id !== id));
     };
+    const handleCatSaved = (e: any) => {
+      const cat = e.detail;
+      if (cat && cat.id) {
+        setCategories((prev) => {
+          const idx = prev.findIndex((c) => c.id === cat.id);
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = cat;
+            return next;
+          }
+          return [...prev, cat];
+        });
+      }
+    };
     window.addEventListener("hos-product-deleted", handleProdDel);
+    window.addEventListener("hos-product-saved", handleProdSaved);
     window.addEventListener("hos-category-deleted", handleCatDel);
+    window.addEventListener("hos-category-saved", handleCatSaved);
 
     return () => {
       unsubContent();
       unsubProducts();
       unsubCategories();
       window.removeEventListener("hos-product-deleted", handleProdDel);
+      window.removeEventListener("hos-product-saved", handleProdSaved);
       window.removeEventListener("hos-category-deleted", handleCatDel);
+      window.removeEventListener("hos-category-saved", handleCatSaved);
     };
   }, []);
 

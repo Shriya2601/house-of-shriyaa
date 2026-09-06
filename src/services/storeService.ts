@@ -201,40 +201,67 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
     callback(defaultSiteContent);
   }
 
-  // Background fetch from static data to guarantee latest live deploy updates
-  if (typeof window !== "undefined") {
-    fetch(`/data/siteContent.json?v=${Date.now()}`)
+  // Live fetch from server database API with fallback to static JSON
+  const fetchLatest = () => {
+    fetch(`/api/site-content?v=${Date.now()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) {
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
           const merged = { ...defaultSiteContent, ...data };
           try {
             localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
           } catch {}
           callback(merged);
+        } else {
+          return fetch(`/data/siteContent.json?v=${Date.now()}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((staticData) => {
+              if (staticData) {
+                const merged = { ...defaultSiteContent, ...staticData };
+                try {
+                  localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+                } catch {}
+                callback(merged);
+              }
+            });
         }
       })
       .catch(() => {});
-  }
+  };
 
+  fetchLatest();
+
+  // Instant update across tabs / windows via custom event
+  const handleUpdate = (e: any) => {
+    if (e.detail) callback(e.detail);
+  };
+  window.addEventListener("hos-sitecontent-updated", handleUpdate);
+
+  // Firestore subscription with safe non-blocking handling
   const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
-  return onSnapshot(
-    docRef,
-    (snap) => {
-      if (snap.exists()) {
-        const merged = { ...defaultSiteContent, ...(snap.data() as SiteContent) };
-        try {
-          localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-        } catch {}
-        callback(merged);
-      } else {
-        callback(defaultSiteContent);
+  let unsubFs = () => {};
+  try {
+    unsubFs = onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          const merged = { ...defaultSiteContent, ...(snap.data() as SiteContent) };
+          try {
+            localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+          } catch {}
+          callback(merged);
+        }
+      },
+      (err) => {
+        console.warn("subscribeSiteContent Firestore notice:", err);
       }
-    },
-    (err) => {
-      console.warn("subscribeSiteContent listener error:", err);
-    }
-  );
+    );
+  } catch {}
+
+  return () => {
+    window.removeEventListener("hos-sitecontent-updated", handleUpdate);
+    unsubFs();
+  };
 }
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<void> {
@@ -243,7 +270,18 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
     localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
   } catch {}
 
-  // Sync to repository
+  // 1. Post directly to server database API
+  try {
+    await fetch("/api/site-content", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(merged),
+    });
+  } catch (apiErr) {
+    console.warn("API save site content notice:", apiErr);
+  }
+
+  // 2. Sync to repository
   try {
     fetch("/api/save-repo-changes", {
       method: "POST",
@@ -255,7 +293,12 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
     }).catch(() => {});
   } catch {}
 
-  // Firestore attempt with timeout protection (non-blocking)
+  // 3. Dispatch event for instant UI update
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-sitecontent-updated", { detail: merged }));
+  }
+
+  // 4. Firestore attempt with timeout protection (non-blocking)
   const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
   safeFirestoreSet(docRef, merged, { merge: true }).catch(() => {});
 }
@@ -310,9 +353,9 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
     callback(cached);
   }
 
-  // Background fetch from static data
-  if (typeof window !== "undefined") {
-    fetch(`/data/categories.json?v=${Date.now()}`)
+  // Live fetch from server database API with fallback to static JSON
+  const fetchCategories = () => {
+    fetch(`/api/categories?v=${Date.now()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((remoteCategories) => {
         if (Array.isArray(remoteCategories) && remoteCategories.length > 0) {
@@ -322,35 +365,64 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
             cacheCategoriesLocally(filtered);
             callback(filtered);
           }
+        } else {
+          return fetch(`/data/categories.json?v=${Date.now()}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((remote) => {
+              if (Array.isArray(remote) && remote.length > 0) {
+                const deletedIds = getDeletedCategoryIds();
+                const filtered = remote.filter((c: CategoryItem) => !deletedIds.has(c.id));
+                if (filtered.length > 0) {
+                  cacheCategoriesLocally(filtered);
+                  callback(filtered);
+                }
+              }
+            });
         }
       })
       .catch(() => {});
-  }
+  };
+
+  fetchCategories();
+
+  const handleSaved = () => fetchCategories();
+  const handleDeleted = () => fetchCategories();
+  window.addEventListener("hos-category-saved", handleSaved);
+  window.addEventListener("hos-category-deleted", handleDeleted);
 
   const colRef = collection(db, "categories");
   const q = query(colRef, orderBy("sortOrder", "asc"));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const deletedIds = getDeletedCategoryIds();
-      if (!snapshot.empty) {
-        const list = snapshot.docs
-          .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
-          .filter((c) => !deletedIds.has(c.id));
-        cacheCategoriesLocally(list);
-        callback(list);
-      } else {
-        const fallback = defaultCategories.filter((c) => !deletedIds.has(c.id));
-        cacheCategoriesLocally(fallback);
+  let unsubFs = () => {};
+  try {
+    unsubFs = onSnapshot(
+      q,
+      (snapshot) => {
+        const deletedIds = getDeletedCategoryIds();
+        if (!snapshot.empty) {
+          const list = snapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
+            .filter((c) => !deletedIds.has(c.id));
+          cacheCategoriesLocally(list);
+          callback(list);
+        } else {
+          const fallback = defaultCategories.filter((c) => !deletedIds.has(c.id));
+          cacheCategoriesLocally(fallback);
+          callback(fallback);
+        }
+      },
+      (err) => {
+        console.warn("subscribeCategories Firestore notice:", err);
+        const fallback = getCachedCategories();
         callback(fallback);
       }
-    },
-    (err) => {
-      console.warn("subscribeCategories listener error:", err);
-      const fallback = getCachedCategories();
-      callback(fallback);
-    }
-  );
+    );
+  } catch {}
+
+  return () => {
+    window.removeEventListener("hos-category-saved", handleSaved);
+    window.removeEventListener("hos-category-deleted", handleDeleted);
+    unsubFs();
+  };
 }
 
 export async function saveCategory(category: CategoryItem): Promise<void> {
@@ -375,6 +447,18 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
     }
     cacheCategoriesLocally(updated);
 
+    // 1. Post to Server Database API
+    try {
+      await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sanitized),
+      });
+    } catch (apiErr) {
+      console.warn("API save category notice:", apiErr);
+    }
+
+    // 2. Sync to repository
     try {
       fetch("/api/save-repo-changes", {
         method: "POST",
@@ -407,7 +491,16 @@ export async function deleteCategory(id: string): Promise<void> {
     const filtered = current.filter((c) => c.id !== id);
     cacheCategoriesLocally(filtered);
 
-    // 2. Persist to git/server repository
+    // 2. Delete from Server Database API
+    try {
+      await fetch(`/api/categories/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+    } catch (apiErr) {
+      console.warn("API delete category notice:", apiErr);
+    }
+
+    // 3. Persist to git/server repository
     try {
       fetch("/api/save-repo-changes", {
         method: "POST",
@@ -419,13 +512,13 @@ export async function deleteCategory(id: string): Promise<void> {
       }).catch(() => {});
     } catch {}
 
-    // 3. Dispatch real-time event to all UI elements
+    // 4. Dispatch real-time event to all UI elements
     window.dispatchEvent(new CustomEvent("hos-category-deleted", { detail: { id } }));
   } catch (err) {
     console.warn("deleteCategory cache update error:", err);
   }
 
-  // 4. Non-blocking Firestore deletion with timeout protection
+  // 5. Non-blocking Firestore deletion with timeout protection
   safeFirestoreDelete(doc(db, "categories", id)).catch(() => {});
 }
 
@@ -579,9 +672,9 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     callback(cached);
   }
 
-  // Background fetch latest /data/products.json from server or static deploy
-  if (typeof window !== "undefined") {
-    fetch(`/data/products.json?v=${Date.now()}`)
+  // Live fetch from server database API with fallback to static JSON
+  const fetchRemote = () => {
+    fetch(`/api/products?v=${Date.now()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((remoteProducts) => {
         if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
@@ -591,30 +684,71 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
             cacheProductsLocally(normalized);
             callback(normalized);
           }
+        } else {
+          return fetch(`/data/products.json?v=${Date.now()}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((remote) => {
+              if (Array.isArray(remote) && remote.length > 0) {
+                const deletedIds = getDeletedProductIds();
+                const normalized = remote.map(ensureProductVariants).filter((p) => !deletedIds.has(p.id));
+                if (normalized.length > 0) {
+                  cacheProductsLocally(normalized);
+                  callback(normalized);
+                }
+              }
+            });
         }
       })
       .catch(() => {});
-  }
+  };
+
+  fetchRemote();
+
+  // Listen to window events
+  const handleProductSaved = () => fetchRemote();
+  const handleProductDeleted = () => fetchRemote();
+  const handleCatalogUpdated = () => fetchRemote();
+  const handleVisibility = () => {
+    if (document.visibilityState === "visible") fetchRemote();
+  };
+
+  window.addEventListener("hos-product-saved", handleProductSaved);
+  window.addEventListener("hos-product-deleted", handleProductDeleted);
+  window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
+  document.addEventListener("visibilitychange", handleVisibility);
+
+  // Poll server gently every 6 seconds to ensure instant sync between admin and storefront across tabs
+  const pollTimer = setInterval(fetchRemote, 6000);
 
   const colRef = collection(db, "products");
-  return onSnapshot(
-    colRef,
-    (snapshot) => {
-      const deletedIds = getDeletedProductIds();
-      if (!snapshot.empty) {
-        const list = snapshot.docs
-          .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
-          .filter((p) => !deletedIds.has(p.id));
-        cacheProductsLocally(list);
-        callback(list);
+  let unsubFs = () => {};
+  try {
+    unsubFs = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const deletedIds = getDeletedProductIds();
+        if (!snapshot.empty) {
+          const list = snapshot.docs
+            .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
+            .filter((p) => !deletedIds.has(p.id));
+          cacheProductsLocally(list);
+          callback(list);
+        }
+      },
+      (err) => {
+        console.warn("subscribeProducts Firestore notice (using server database API):", err);
       }
-    },
-    (err) => {
-      console.warn("subscribeProducts listener error, using cached products:", err);
-      const fallback = getCachedProducts();
-      callback(fallback);
-    }
-  );
+    );
+  } catch {}
+
+  return () => {
+    window.removeEventListener("hos-product-saved", handleProductSaved);
+    window.removeEventListener("hos-product-deleted", handleProductDeleted);
+    window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
+    document.removeEventListener("visibilitychange", handleVisibility);
+    clearInterval(pollTimer);
+    unsubFs();
+  };
 }
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<string> {
@@ -647,7 +781,18 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     }
     cacheProductsLocally(updated);
 
-    // 2. Persist to project source files & git repository so changes survive rebuilds, refreshes, and deployments
+    // 2. Persist directly to Server Database API
+    try {
+      await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sanitized),
+      });
+    } catch (apiErr) {
+      console.warn("API save-product notice:", apiErr);
+    }
+
+    // 3. Persist to project source files & git repository so changes survive rebuilds, refreshes, and deployments
     try {
       await fetch("/api/save-repo-changes", {
         method: "POST",
@@ -667,7 +812,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     console.warn("Local storage update warning:", err);
   }
 
-  // 3. Write to Firestore with timeout protection (non-blocking, won't hang if quota exceeded)
+  // 4. Write to Firestore with timeout protection (non-blocking, won't hang if quota exceeded)
   safeFirestoreSet(docRef, sanitized, { merge: true }).catch(() => {});
 
   return id;
@@ -683,6 +828,16 @@ export async function deleteProduct(id: string): Promise<void> {
     const filtered = current.filter((p) => p.id !== id);
     cacheProductsLocally(filtered);
 
+    // 1. Delete from Server Database API
+    try {
+      await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+    } catch (apiErr) {
+      console.warn("API delete product notice:", apiErr);
+    }
+
+    // 2. Persist to git repository
     try {
       await fetch("/api/save-repo-changes", {
         method: "POST",
@@ -744,34 +899,62 @@ export function subscribeOrders(
   callback: (orders: Order[]) => void,
   includeTest = false
 ): () => void {
+  const fetchOrders = () => {
+    fetch(`/api/orders?v=${Date.now()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((ordersList) => {
+        if (Array.isArray(ordersList)) {
+          const filtered = includeTest ? ordersList : ordersList.filter((o) => !o.isTest);
+          callback(filtered);
+        }
+      })
+      .catch(() => {});
+  };
+
+  fetchOrders();
+
+  const handleOrderCreated = () => fetchOrders();
+  const handleOrderUpdated = () => fetchOrders();
+  window.addEventListener("hos-order-created", handleOrderCreated);
+  window.addEventListener("hos-order-updated", handleOrderUpdated);
+
+  const poll = setInterval(fetchOrders, 8000);
+
   const colRef = collection(db, "orders");
   const q = query(colRef, orderBy("createdAt", "desc"));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const ordersList = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Order[];
+  let unsubFs = () => {};
+  try {
+    unsubFs = onSnapshot(
+      q,
+      (snapshot) => {
+        const ordersList = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as Order[];
 
-      // Filter: Keep test data completely separate if requested
-      const filtered = includeTest
-        ? ordersList
-        : ordersList.filter((o) => !o.isTest);
+        const filtered = includeTest
+          ? ordersList
+          : ordersList.filter((o) => !o.isTest);
 
-      callback(filtered);
-    },
-    (err) => {
-      console.warn("subscribeOrders listener notice:", err);
-      callback([]);
-    }
-  );
+        callback(filtered);
+      },
+      (err) => {
+        console.warn("subscribeOrders Firestore notice (using server database API):", err);
+      }
+    );
+  } catch {}
+
+  return () => {
+    window.removeEventListener("hos-order-created", handleOrderCreated);
+    window.removeEventListener("hos-order-updated", handleOrderUpdated);
+    clearInterval(poll);
+    unsubFs();
+  };
 }
 
 export async function createRealOrder(
   orderInput: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt">
 ): Promise<Order> {
-  const colRef = collection(db, "orders");
   const now = new Date();
   const datePrefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -787,8 +970,24 @@ export async function createRealOrder(
     orderStatus: orderInput.orderStatus || "pending",
   };
 
+  // 1. Post to Server Database API
+  try {
+    await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fullOrder),
+    });
+  } catch (err) {
+    console.warn("API create order notice:", err);
+  }
+
+  // 2. Dispatch event for instant storefront / admin update
+  window.dispatchEvent(new CustomEvent("hos-order-created", { detail: fullOrder }));
+
+  // 3. Mirror to Firestore non-blocking
   const docRef = doc(db, "orders", orderId);
-  await setDoc(docRef, fullOrder);
+  safeFirestoreSet(docRef, fullOrder, { merge: true }).catch(() => {});
+
   return fullOrder;
 }
 
@@ -798,7 +997,6 @@ export async function updateOrderStatus(
   trackingCourier?: string,
   trackingNumber?: string
 ): Promise<void> {
-  const docRef = doc(db, "orders", orderId);
   const updates: Record<string, unknown> = {
     orderStatus,
     updatedAt: new Date().toISOString(),
@@ -808,19 +1006,51 @@ export async function updateOrderStatus(
   if (orderStatus === "delivered") updates.paymentStatus = "Paid";
   if (orderStatus === "refunded") updates.paymentStatus = "Refunded";
 
-  await updateDoc(docRef, updates);
+  // 1. Send PATCH to Server Database API
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  } catch (err) {
+    console.warn("API update order notice:", err);
+  }
+
+  // 2. Dispatch event
+  window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: { id: orderId, ...updates } }));
+
+  // 3. Mirror to Firestore non-blocking
+  const docRef = doc(db, "orders", orderId);
+  updateDoc(docRef, updates).catch(() => {});
 }
 
 export async function updateOrderNotes(orderId: string, notes: string): Promise<void> {
+  // 1. Send PATCH to Server Database API
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
+    });
+  } catch {}
+
   const docRef = doc(db, "orders", orderId);
-  await updateDoc(docRef, {
+  updateDoc(docRef, {
     notes,
     updatedAt: new Date().toISOString(),
-  });
+  }).catch(() => {});
 }
 
 export async function deleteOrder(orderId: string): Promise<void> {
-  await deleteDoc(doc(db, "orders", orderId));
+  // 1. Send DELETE to Server Database API
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "DELETE",
+    });
+  } catch {}
+
+  deleteDoc(doc(db, "orders", orderId)).catch(() => {});
 }
 
 /* ============================================================

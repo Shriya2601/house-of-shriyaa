@@ -141,6 +141,27 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
     };
   }, [siteContent, products, brandStyles, customOverrides]);
 
+  // Fetch persisted brand styles and custom overrides from server API on mount
+  useEffect(() => {
+    fetch(`/api/brand-styles?v=${Date.now()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          setBrandStyles((prev) => ({ ...prev, ...data }));
+        }
+      })
+      .catch(() => {});
+
+    fetch(`/api/custom-overrides?v=${Date.now()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          setCustomOverrides((prev) => ({ ...prev, ...data }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Track deliberate user edits so initial Firestore data fetch doesn't trigger spurious git auto-commits
   const userInteractedRef = useRef(false);
 
@@ -524,7 +545,21 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
           console.warn("Firestore product save notice:", prodErr);
         }
 
-        // 4. Persist brand styles and overrides locally
+        // 4. Persist brand styles and overrides locally and to server API
+        try {
+          fetch("/api/brand-styles", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(targetBrandStyles),
+          }).catch(() => {});
+
+          fetch("/api/custom-overrides", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(targetOverrides),
+          }).catch(() => {});
+        } catch {}
+
         localStorage.setItem(STORAGE_KEY_BRAND_STYLES, JSON.stringify(targetBrandStyles));
         localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(targetOverrides));
 
