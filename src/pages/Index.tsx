@@ -264,7 +264,7 @@ const slides = [
     number: "01",
     collection: "Velvet Marigold Edit",
     title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
-    description: "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
+    description: "Crafted in Surat with 100% pure fabrics, classic Alia-cut silhouettes, and delicate zardozi detailing.",
     image: imageUrls.silk,
     season: "AUTUMN/FESTIVE 2026",
     caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
@@ -384,7 +384,7 @@ export function NavigationDrawer({
             <div className="nav-user-card flex items-center justify-between">
               <div>
                 <strong className="text-xs text-[#faf8f5] block font-serif">Welcome to Atelier</strong>
-                <span className="text-[0.68rem] text-[#faf8f5]/70 block mt-0.5">Sign in for orders & bespoke sizing</span>
+                <span className="text-[0.68rem] text-[#faf8f5]/70 block mt-0.5">Sign in for orders & patron privileges</span>
               </div>
               <button
                 type="button"
@@ -668,7 +668,7 @@ export function NavigationDrawer({
                 <div className="nav-item-icon"><Heart size={17} /></div>
                 <div className="nav-item-text">
                   <span className="nav-item-title">Wishlist</span>
-                  <span className="nav-item-sub">Saved bespoke couture pieces</span>
+                  <span className="nav-item-sub">Saved couture pieces</span>
                 </div>
               </div>
               <span className="nav-item-badge">{wishlistCount} Saved</span>
@@ -685,7 +685,7 @@ export function NavigationDrawer({
                 <div className="nav-item-icon"><CreditCard size={17} /></div>
                 <div className="nav-item-text">
                   <span className="nav-item-title">Payment Methods</span>
-                  <span className="nav-item-sub">UPI & Cards (COD Disabled)</span>
+                  <span className="nav-item-sub">Instant UPI & Cards</span>
                 </div>
               </div>
               <ChevronRight size={15} className="text-[#c5a059]" />
@@ -904,7 +904,7 @@ export function InteractiveModal({
                   <div>
                     <span className="text-xs text-[#8c6d37] font-bold block">ORDER #{orderToDisplay.orderNumber}</span>
                     <strong className="text-sm text-[#1e1b18] font-serif">
-                      {orderToDisplay.items[0]?.name || "Bespoke Couture Order"}
+                      {orderToDisplay.items[0]?.name || "Luxury Couture Order"}
                     </strong>
                     <span className="text-xs text-[#706458] block mt-0.5">
                       {orderToDisplay.items.length} {orderToDisplay.items.length === 1 ? "item" : "items"} · Total: ₹{orderToDisplay.totalAmount.toLocaleString()}
@@ -1065,7 +1065,7 @@ export function InteractiveModal({
               <User size={36} className="mx-auto text-[#c5a059]" />
               <div>
                 <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
-                <p className="text-[#706458] mt-1">Please sign in to access your bespoke sizing profile and patron privileges.</p>
+                <p className="text-[#706458] mt-1">Please sign in to access your patron profile and privileges.</p>
               </div>
               {onOpenAuth && (
                 <button
@@ -1110,9 +1110,9 @@ export function InteractiveModal({
               <strong className="text-xs text-[#1e1b18] block">Atelier Attire Preference</strong>
               <div className="grid grid-cols-2 gap-2 text-[#706458]">
                 <span>Attire: <strong>100% Unstitched Luxury Suits</strong></span>
-                <span>Cut Preference: <strong>{customerProfile?.sizingProfile?.cutPreference || "Bespoke Atelier"}</strong></span>
-                <span>Fabric Length: <strong>2.5m Kurta + 2.5m Bottom</strong></span>
-                <span>Dupatta Drape: <strong>{customerProfile?.sizingProfile?.dupattaLength || "2.25m Handloom"}</strong></span>
+                <span>Cut Preference: <strong>{customerProfile?.sizingProfile?.cutPreference || "Classic Atelier"}</strong></span>
+                <span>Fabric Craft: <strong>Surat Handloom Weave</strong></span>
+                <span>Dupatta Drape: <strong>Artisan Handloom</strong></span>
               </div>
             </div>
 
@@ -1317,19 +1317,6 @@ export function InteractiveModal({
               </div>
               <span className="text-[#0d4f3c] font-bold">Supported ✓</span>
             </div>
-
-            {/* Cash on Delivery is strictly disabled per store policy and user request */}
-            <div className="p-3 bg-[#faf7f5] border border-[#e8dfd5] rounded-xl flex items-center justify-between opacity-80">
-              <div>
-                <strong className="text-xs text-[#706458] block">Cash on Delivery (COD)</strong>
-                <span className="text-[0.68rem] text-[#8c827a]">
-                  Disabled for bespoke handcrafted couture to maintain zero transit waste.
-                </span>
-              </div>
-              <span className="px-2 py-0.5 rounded-full bg-[#f0eae1] text-[#706458] text-[0.68rem] font-bold">
-                Disabled
-              </span>
-            </div>
           </div>
         );
       }
@@ -1344,7 +1331,7 @@ export function InteractiveModal({
               </p>
               <div className="pt-2 border-t border-[#f5efeb] space-y-1.5 text-[#706458]">
                 <p>✦ <strong>Domestic Shipping:</strong> Delivered within 4–7 business days via air cargo.</p>
-                <p>✦ <strong>Bespoke Custom Tailoring:</strong> Requires 5–10 business days crafting time.</p>
+                <p>✦ <strong>Artisan Inspection:</strong> Hand-inspected with artisanal care before dispatch.</p>
                 <p>✦ <strong>Packaging:</strong> Sealed in heirloom bridal-grade garment bags.</p>
               </div>
             </div>
@@ -1720,7 +1707,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
         eyebrow: s.eyebrow || "DAILY / Festive Couture",
         number: `0${idx + 1}`,
         collection: s.collection || "Handcrafted Heirloom",
-        title: s.title || "Pure Handloom Silks & Bespoke Suits",
+        title: s.title || "Pure Handloom Silks & Unstitched Suits",
         description: s.description || "Crafted in Surat with 100% pure fabrics and delicate artisan detailing.",
         image: s.image || imageUrls.silk,
         season: s.season || "AUTUMN/FESTIVE 2026",
@@ -1748,7 +1735,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
             <BuilderText as="strong" text="HOUSE OF SHRIYA" />
             <i><BuilderText as="span" text="·" /></i>
           </div>
-          <div className="hero-meta-pills"><BuilderText as="span" text="Pure Fabrics" /><BuilderText as="span" text="Bespoke Fit" /><BuilderText as="span" text="100% handloom" /></div>
+          <div className="hero-meta-pills"><BuilderText as="span" text="Pure Fabrics" /><BuilderText as="span" text="Unstitched Set" /><BuilderText as="span" text="100% handloom" /></div>
         </div>
         <div className="hero-grid">
           <div className="hero-copy" key={slide.number}>
@@ -1887,7 +1874,7 @@ function FeatureStrip() {
   const features = [
     { icon: Crown, title: "Heritage Craftsmanship", text: "Artisanal hand-woven heirlooms" },
     { icon: Sparkles, title: "100% Pure Handlooms", text: "Authentic Banarasi & Chanderi" },
-    { icon: Check, title: "Instant UPI & COD", text: "Zero-hassle secure checkout" },
+    { icon: Check, title: "Instant UPI & Cards", text: "Zero-hassle secure checkout" },
     { icon: PackageCheck, title: "Worldwide Express", text: "Fast insured courier delivery" },
   ];
   return <div className="feature-strip"><div className="site-container feature-grid">{features.map(({ icon: Icon, title, text }) => <div className="feature-item" key={title}><span data-editable="true"><Icon size={17} /></span><div><BuilderText as="strong" text={title} /><BuilderText as="small" text={text} /></div></div>)}</div></div>;

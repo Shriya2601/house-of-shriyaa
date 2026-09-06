@@ -186,11 +186,25 @@ export default function Admin() {
       setSiteContent(content);
     });
 
+    // Listen to real-time custom deletion events
+    const handleProdDeleted = (e: any) => {
+      const deletedId = e.detail?.id;
+      if (deletedId) setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+    };
+    const handleCatDeleted = (e: any) => {
+      const deletedId = e.detail?.id;
+      if (deletedId) setCategories((prev) => prev.filter((c) => c.id !== deletedId));
+    };
+    window.addEventListener("hos-product-deleted", handleProdDeleted);
+    window.addEventListener("hos-category-deleted", handleCatDeleted);
+
     return () => {
       unsubOrders();
       unsubProducts();
       unsubCategories();
       unsubContent();
+      window.removeEventListener("hos-product-deleted", handleProdDeleted);
+      window.removeEventListener("hos-category-deleted", handleCatDeleted);
     };
   }, [isAuthenticated]);
 
@@ -685,6 +699,7 @@ export default function Admin() {
 
   const handleDeleteProduct = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this product from the live boutique?")) return;
+    setProducts((prev) => prev.filter((p) => p.id !== id));
     try {
       await deleteProduct(id);
     } catch (err) {
@@ -721,6 +736,7 @@ export default function Admin() {
 
   const handleDeleteCategory = async (id: string) => {
     if (!window.confirm("Delete this category?")) return;
+    setCategories((prev) => prev.filter((c) => c.id !== id));
     try {
       await deleteCategory(id);
     } catch (err) {

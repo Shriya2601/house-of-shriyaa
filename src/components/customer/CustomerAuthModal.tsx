@@ -97,8 +97,8 @@ export default function CustomerAuthModal({
           </h2>
           <p className="text-xs text-[#faf8f5]/80 mt-1">
             {mode === "signin"
-              ? "Access your couture orders, saved addresses & bespoke sizing"
-              : "Register to enjoy bespoke tailoring records and priority orders"}
+              ? "Access your couture orders, saved addresses & patron privileges"
+              : "Register to enjoy saved addresses, order tracking and priority privileges"}
           </p>
         </div>
 

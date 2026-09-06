@@ -14,6 +14,8 @@ import {
 import {
   defaultSiteContent,
   defaultCategories,
+  getCachedProducts,
+  getCachedCategories,
   subscribeSiteContent,
   subscribeProducts,
   subscribeCategories,
@@ -81,8 +83,8 @@ const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [siteContent, setSiteContent] = useState<SiteContent>(defaultSiteContent);
-  const [products, setProducts] = useState<Product[]>(initialFallbackProducts);
-  const [categories, setCategories] = useState<CategoryItem[]>(defaultCategories);
+  const [products, setProducts] = useState<Product[]>(() => getCachedProducts());
+  const [categories, setCategories] = useState<CategoryItem[]>(() => getCachedCategories());
   const [loadingCatalog, setLoadingCatalog] = useState(true);
 
   // Cart state persisted in localStorage for smooth guest shopping experience
@@ -235,22 +237,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
 
     const unsubProducts = subscribeProducts((fetchedProducts) => {
-      if (fetchedProducts.length > 0) {
-        setProducts(fetchedProducts);
-      }
+      setProducts(fetchedProducts);
       setLoadingCatalog(false);
     });
 
     const unsubCategories = subscribeCategories((cats) => {
-      if (cats.length > 0) {
-        setCategories(cats);
-      }
+      setCategories(cats);
     });
+
+    // Real-time deletion listeners
+    const handleProdDel = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setProducts((prev) => prev.filter((p) => p.id !== id));
+        setCart((prev) => prev.filter((item) => item.product.id !== id));
+        setWishlist((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    };
+    const handleCatDel = (e: any) => {
+      const id = e.detail?.id;
+      if (id) setCategories((prev) => prev.filter((c) => c.id !== id));
+    };
+    window.addEventListener("hos-product-deleted", handleProdDel);
+    window.addEventListener("hos-category-deleted", handleCatDel);
 
     return () => {
       unsubContent();
       unsubProducts();
       unsubCategories();
+      window.removeEventListener("hos-product-deleted", handleProdDel);
+      window.removeEventListener("hos-category-deleted", handleCatDel);
     };
   }, []);
 

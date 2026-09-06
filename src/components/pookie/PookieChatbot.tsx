@@ -413,16 +413,16 @@ export default function PookieChatbot() {
           {/* WhatsApp Atelier Escalation Banner */}
           <div className="px-3 py-1.5 bg-[#09100d] border-t border-white/5 flex items-center justify-between text-[0.68rem] text-[#b8ab9a]">
             <span className="flex items-center gap-1 truncate">
-              Need custom tailoring advice?
+              Need suit styling assistance?
             </span>
             <a
-              href={getWhatsAppHelpUrl(inputText || "Suit styling & bespoke sizing")}
+              href={getWhatsAppHelpUrl(inputText || "Suit styling & collection assistance")}
               target="_blank"
               rel="noopener noreferrer"
               className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-medium whitespace-nowrap"
             >
               <MessageCircle size={12} />
-              WhatsApp Master Tailor ↗
+              WhatsApp Master Stylist ↗
             </a>
           </div>
 

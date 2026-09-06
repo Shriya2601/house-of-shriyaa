@@ -170,6 +170,7 @@ export function gitSyncPlugin(): Plugin {
             const {
               siteContent,
               products,
+              categories,
               brandStyles,
               customOverrides,
               commitMessage = "chore(canva): updated storefront design and catalog updates",
@@ -203,6 +204,12 @@ export function gitSyncPlugin(): Plugin {
               fs.writeFileSync(
                 path.join(dataDir, "products.json"),
                 JSON.stringify(products, null, 2)
+              );
+            }
+            if (categories && Array.isArray(categories)) {
+              fs.writeFileSync(
+                path.join(dataDir, "categories.json"),
+                JSON.stringify(categories, null, 2)
               );
             }
 

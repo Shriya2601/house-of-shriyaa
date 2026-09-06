@@ -198,7 +198,7 @@ export default function CartDrawer() {
 
             <div className="flex items-center justify-center gap-2 text-[11px] text-[#6b6257] pt-1">
               <ShieldCheck size={14} className="text-[#0d4f3c]" />
-              <span>Authentic Handloom Guarantee · COD & UPI available</span>
+              <span>Authentic Handloom Guarantee · 100% Secure Instant UPI & Card</span>
             </div>
           </div>
         )}

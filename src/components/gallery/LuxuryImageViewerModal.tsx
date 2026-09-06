@@ -330,16 +330,6 @@ export default function LuxuryImageViewerModal({
               <ZoomOut size={16} />
             </button>
 
-            {/* Current Scale Percentage Indicator */}
-            <button
-              type="button"
-              onClick={scale === 1 ? handleZoomIn : handleResetZoom}
-              className="px-2.5 py-1 text-[11px] font-mono font-semibold rounded-xl border border-white/15 bg-white/5 text-[#d4af37] hover:bg-white/10 transition-colors"
-              title="Click to reset zoom"
-            >
-              {Math.round(scale * 100)}%
-            </button>
-
             {/* Zoom In */}
             <button
               type="button"

@@ -37,6 +37,7 @@ import {
 } from "../types";
 import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
+import savedCategoriesJson from "../data/categories.json";
 
 // Default Site Content
 export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSiteContentJson as any).brandTagline)
@@ -96,21 +97,22 @@ export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSi
   features: [
     { id: "f1", title: "Heritage Craftsmanship", text: "Artisanal hand-woven heirlooms", iconName: "Crown" },
     { id: "f2", title: "100% Pure Handlooms", text: "Authentic Banarasi & Chanderi", iconName: "Sparkles" },
-    { id: "f3", title: "Instant UPI & COD", text: "Zero-hassle secure checkout", iconName: "Check" },
+    { id: "f3", title: "Instant UPI & Cards", text: "Zero-hassle secure checkout", iconName: "Check" },
     { id: "f4", title: "Worldwide Express", text: "Fast insured courier delivery", iconName: "PackageCheck" },
   ],
   catalogTitle: "Curated Boutique Catalog",
-  catalogSubtitle: "Handcrafted pure fabrics, regal Alia silhouettes, and bespoke unstitched lengths",
+  catalogSubtitle: "Handcrafted pure fabrics, regal Alia silhouettes, and luxury unstitched sets",
   navLinks: [
     { id: "nav-1", label: "Catalog", href: "catalog-section" },
-    { id: "nav-2", label: "Bespoke Fitting", href: "tryon-section" },
     { id: "nav-3", label: "Our Story", href: "/our-story" },
     { id: "nav-4", label: "Craftsmanship", href: "/craftsmanship" },
     { id: "nav-5", label: "Journal", href: "/journal" },
   ],
 };
 
-export const defaultCategories: CategoryItem[] = [
+export const defaultCategories: CategoryItem[] = (savedCategoriesJson && Array.isArray(savedCategoriesJson) && savedCategoriesJson.length > 0)
+  ? (savedCategoriesJson as CategoryItem[])
+  : [
   { id: "cat-1", name: "All Collections", slug: "All Collections", description: "Complete handcrafted luxury catalog", sortOrder: 1 },
   { id: "cat-2", name: "Cotton Suits", slug: "Cotton Suits", description: "Pure Mulmul & Hand-block everyday sets", sortOrder: 2 },
   { id: "cat-3", name: "Satin Wear", slug: "Satin Wear", description: "Lustrous evening & celebration silks", sortOrder: 3 },
@@ -170,37 +172,157 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
 }
 
 /* ============================================================
-   CATEGORIES MANAGEMENT
+   CATEGORIES MANAGEMENT (PERSISTENT CRUD & REMOVALS)
 ============================================================ */
 
+const DELETED_CATEGORIES_KEY = "hos_deleted_category_ids_v2";
+const CATEGORIES_CACHE_KEY = "hos_categories_cache_v2";
+
+export function getDeletedCategoryIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_CATEGORIES_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveDeletedCategoryIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem(DELETED_CATEGORIES_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
+
+export function getCachedCategories(): CategoryItem[] {
+  const deletedIds = getDeletedCategoryIds();
+  try {
+    const raw = localStorage.getItem(CATEGORIES_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((c) => !deletedIds.has(c.id));
+      }
+    }
+  } catch {}
+  return defaultCategories.filter((c) => !deletedIds.has(c.id));
+}
+
+export function cacheCategoriesLocally(categories: CategoryItem[]): void {
+  try {
+    localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(categories));
+  } catch {}
+}
+
 export function subscribeCategories(callback: (categories: CategoryItem[]) => void): () => void {
+  const cached = getCachedCategories();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+
   const colRef = collection(db, "categories");
   const q = query(colRef, orderBy("sortOrder", "asc"));
   return onSnapshot(
     q,
     (snapshot) => {
+      const deletedIds = getDeletedCategoryIds();
       if (!snapshot.empty) {
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CategoryItem));
+        const list = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
+          .filter((c) => !deletedIds.has(c.id));
+        cacheCategoriesLocally(list);
         callback(list);
       } else {
-        callback(defaultCategories);
+        const fallback = defaultCategories.filter((c) => !deletedIds.has(c.id));
+        cacheCategoriesLocally(fallback);
+        callback(fallback);
       }
     },
     (err) => {
       console.warn("subscribeCategories listener error:", err);
-      callback(defaultCategories);
+      const fallback = getCachedCategories();
+      callback(fallback);
     }
   );
 }
 
 export async function saveCategory(category: CategoryItem): Promise<void> {
   const id = category.id || `cat-${Date.now()}`;
+  const sanitized = { ...category, id };
   const docRef = doc(db, "categories", id);
-  await setDoc(docRef, { ...category, id }, { merge: true });
+  await setDoc(docRef, sanitized, { merge: true });
+
+  try {
+    const deletedIds = getDeletedCategoryIds();
+    if (deletedIds.has(id)) {
+      deletedIds.delete(id);
+      saveDeletedCategoryIds(deletedIds);
+    }
+
+    const current = getCachedCategories();
+    const existingIdx = current.findIndex((c) => c.id === id);
+    let updated: CategoryItem[];
+    if (existingIdx > -1) {
+      updated = [...current];
+      updated[existingIdx] = sanitized;
+    } else {
+      updated = [...current, sanitized];
+    }
+    cacheCategoriesLocally(updated);
+
+    try {
+      fetch("/api/save-repo-changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categories: updated,
+          commitMessage: `chore(catalog): saved category folder ${sanitized.name}`,
+        }),
+      }).catch(() => {});
+    } catch {}
+
+    window.dispatchEvent(new CustomEvent("hos-category-saved", { detail: sanitized }));
+  } catch (err) {
+    console.warn("Category local storage save warning:", err);
+  }
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  await deleteDoc(doc(db, "categories", id));
+  // 1. Remove from Firestore
+  try {
+    await deleteDoc(doc(db, "categories", id));
+  } catch (e) {
+    console.warn("Firestore deleteCategory error:", e);
+  }
+
+  // 2. Mark in persistent deleted set and local cache
+  try {
+    const deletedIds = getDeletedCategoryIds();
+    deletedIds.add(id);
+    saveDeletedCategoryIds(deletedIds);
+
+    const current = getCachedCategories();
+    const filtered = current.filter((c) => c.id !== id);
+    cacheCategoriesLocally(filtered);
+
+    // 3. Persist to git/server repository
+    try {
+      fetch("/api/save-repo-changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categories: filtered,
+          commitMessage: `chore(catalog): permanently deleted category folder ${id}`,
+        }),
+      }).catch(() => {});
+    } catch {}
+
+    // 4. Dispatch real-time event to all UI elements
+    window.dispatchEvent(new CustomEvent("hos-category-deleted", { detail: { id } }));
+  } catch (err) {
+    console.warn("deleteCategory cache update error:", err);
+  }
 }
 
 /* ============================================================
@@ -312,18 +434,38 @@ function cacheProductsLocally(products: Product[]): void {
   }
 }
 
-// Helper to load cached products from localStorage
+// Helper to load cached products from localStorage with deleted filtering
+const DELETED_PRODUCTS_KEY = "hos_deleted_product_ids_v2";
+
+export function getDeletedProductIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveDeletedProductIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem(DELETED_PRODUCTS_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
+
 export function getCachedProducts(): Product[] {
+  const deletedIds = getDeletedProductIds();
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(ensureProductVariants);
+        return parsed.map(ensureProductVariants).filter((p) => !deletedIds.has(p.id));
       }
     }
   } catch {}
-  return defaultProducts.map(ensureProductVariants);
+  return defaultProducts.map(ensureProductVariants).filter((p) => !deletedIds.has(p.id));
 }
 
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
@@ -337,12 +479,17 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   return onSnapshot(
     colRef,
     (snapshot) => {
+      const deletedIds = getDeletedProductIds();
       if (!snapshot.empty) {
-        const list = snapshot.docs.map((d) => ensureProductVariants({ id: d.id, ...d.data() }));
+        const list = snapshot.docs
+          .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
+          .filter((p) => !deletedIds.has(p.id));
         cacheProductsLocally(list);
         callback(list);
       } else {
-        const fallback = defaultProducts.map(ensureProductVariants);
+        const fallback = defaultProducts
+          .map(ensureProductVariants)
+          .filter((p) => !deletedIds.has(p.id));
         cacheProductsLocally(fallback);
         callback(fallback);
       }
@@ -369,8 +516,14 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   // 1. Write to Firestore
   await setDoc(docRef, sanitized, { merge: true });
 
-  // 2. Update local cache immediately so refresh or redeployment never loses state
+  // 2. Update local cache and un-delete if previously marked
   try {
+    const deletedIds = getDeletedProductIds();
+    if (deletedIds.has(id)) {
+      deletedIds.delete(id);
+      saveDeletedProductIds(deletedIds);
+    }
+
     const current = getCachedProducts();
     const existingIdx = current.findIndex((p) => p.id === id);
     let updated: Product[];
@@ -404,8 +557,17 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  await deleteDoc(doc(db, "products", id));
   try {
+    await deleteDoc(doc(db, "products", id));
+  } catch (e) {
+    console.warn("Firestore deleteDoc error:", e);
+  }
+
+  try {
+    const deletedIds = getDeletedProductIds();
+    deletedIds.add(id);
+    saveDeletedProductIds(deletedIds);
+
     const current = getCachedProducts();
     const filtered = current.filter((p) => p.id !== id);
     cacheProductsLocally(filtered);
@@ -416,13 +578,15 @@ export async function deleteProduct(id: string): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           products: filtered,
-          commitMessage: `chore(catalog): deleted product ${id}`,
+          commitMessage: `chore(catalog): permanently deleted product ${id}`,
         }),
       }).catch(() => {});
     } catch {}
 
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
-  } catch {}
+  } catch (err) {
+    console.warn("deleteProduct cache update warning:", err);
+  }
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {
@@ -430,7 +594,11 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
     const colRef = collection(db, "products");
     const snap = await getDocs(colRef);
     if (snap.empty) {
+      const deletedProdIds = getDeletedProductIds();
+      const deletedCatIds = getDeletedCategoryIds();
+
       for (const p of defaultProducts) {
+        if (deletedProdIds.has(p.id)) continue;
         await setDoc(doc(db, "products", p.id), {
           ...p,
           inStock: true,
@@ -441,6 +609,7 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
       }
       // Also seed categories
       for (const c of defaultCategories) {
+        if (deletedCatIds.has(c.id)) continue;
         await setDoc(doc(db, "categories", c.id), c);
       }
       // Also seed site content

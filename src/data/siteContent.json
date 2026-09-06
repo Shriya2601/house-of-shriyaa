@@ -67,7 +67,7 @@
       "iconName": "Check",
       "text": "Zero-hassle secure checkout",
       "id": "f3",
-      "title": "Instant UPI & COD"
+      "title": "Instant UPI & Cards"
     },
     {
       "text": "Fast insured courier delivery",
@@ -77,17 +77,12 @@
     }
   ],
   "catalogTitle": "Curated Boutique Catalog",
-  "catalogSubtitle": "Handcrafted pure fabrics, regal Alia silhouettes, and bespoke unstitched lengths",
+  "catalogSubtitle": "Handcrafted pure fabrics, regal Alia silhouettes, and luxury unstitched sets",
   "navLinks": [
     {
       "href": "catalog-section",
       "id": "nav-1",
       "label": "Catalog"
-    },
-    {
-      "href": "tryon-section",
-      "label": "Bespoke Fitting",
-      "id": "nav-2"
     },
     {
       "href": "/our-story",

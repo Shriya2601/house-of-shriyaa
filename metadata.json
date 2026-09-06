@@ -1,6 +1,6 @@
 {
   "name": "House of Shriya",
-  "description": "Heirloom Indian couture, handcrafted unstitched silks, and bespoke ready-to-wear ensembles.",
+  "description": "Heirloom Indian couture, handcrafted unstitched silks, and luxury suit ensembles.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

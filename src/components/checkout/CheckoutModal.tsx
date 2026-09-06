@@ -101,10 +101,6 @@ export default function CheckoutModal() {
       setErrorMessage("Please provide your city and delivery pincode.");
       return;
     }
-    if (paymentMethod === "Cash on Delivery (COD)") {
-      setErrorMessage("Cash on Delivery is currently disabled. Please pay securely via Instant UPI / NetBanking or Card.");
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -403,34 +399,7 @@ export default function CheckoutModal() {
                   <span className="w-5 h-5 rounded-full bg-[#0d4f3c] text-white text-[11px] flex items-center justify-center font-mono">3</span>
                   Payment Selection
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div
-                    className="border border-dashed border-[#d6ccc2] p-3 rounded-xl flex items-start gap-2.5 bg-[#fbf9f6] text-[#8c827a] opacity-60 cursor-not-allowed select-none"
-                    title="Cash on Delivery is currently disabled"
-                  >
-                    <input
-                      type="radio"
-                      name="payment"
-                      className="mt-0.5 cursor-not-allowed"
-                      disabled
-                      checked={false}
-                      readOnly
-                    />
-                    <div className="flex-1">
-                      <div className="text-xs font-bold flex items-center justify-between text-[#8c827a]">
-                        <span className="flex items-center gap-1">
-                          <Banknote size={14} /> Cash on Delivery
-                        </span>
-                        <span className="text-[9px] bg-[#eedede] text-[#9b2c2c] px-1.5 py-0.5 rounded font-semibold uppercase">
-                          Disabled
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-[#8c827a] mt-0.5 leading-tight">
-                        COD is disabled. Please pay online via UPI or Card.
-                      </div>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label
                     className={`cursor-pointer border p-3 rounded-xl flex items-start gap-2.5 transition-all ${
                       paymentMethod === "Instant UPI / NetBanking"

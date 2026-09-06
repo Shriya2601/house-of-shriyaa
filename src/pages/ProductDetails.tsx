@@ -499,7 +499,7 @@ export default function ProductDetails() {
             )}
 
             {/* Atelier Trust Strip Underneath Gallery */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#e8dfd5]/80 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-[#e8dfd5]/80 text-xs">
               <div className="flex items-center gap-2 text-[#5a544c]">
                 <Award className="text-[#c5a059] shrink-0" size={18} />
                 <span className="font-medium leading-tight">100% Pure Handloom</span>
@@ -509,12 +509,8 @@ export default function ProductDetails() {
                 <span className="font-medium leading-tight">Free Express Delivery</span>
               </div>
               <div className="flex items-center gap-2 text-[#5a544c]">
-                <RotateCcw className="text-[#c5a059] shrink-0" size={18} />
-                <span className="font-medium leading-tight">7-Day Easy Exchange</span>
-              </div>
-              <div className="flex items-center gap-2 text-[#5a544c]">
                 <ShieldCheck className="text-[#0d4f3c] shrink-0" size={18} />
-                <span className="font-medium leading-tight">COD & Prepaid Safe</span>
+                <span className="font-medium leading-tight">100% Secure Online Payment</span>
               </div>
             </div>
           </div>
@@ -660,7 +656,7 @@ export default function ProductDetails() {
                 </span>
               </div>
               <p className="text-[#6b6257] leading-relaxed text-[11px]">
-                Complete 3-piece pure handloom unstitched set in <strong>{displayFabric}</strong>: <strong>2.5m Kurta length</strong>, <strong>2.5m Bottom length</strong>, and <strong>2.25m artisan Dupatta</strong>. Generous cuts ready to be tailored to your bespoke measurements.
+                Complete 3-piece pure handloom unstitched set in <strong>{displayFabric}</strong>: Kurta, Bottom, and artisan Dupatta. Pure heirloom weave crafted with authentic Surat zari artistry.
               </p>
             </div>
 
@@ -731,7 +727,7 @@ export default function ProductDetails() {
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-[#2a241e] flex items-center gap-1.5">
                   <Truck size={14} className="text-[#0d4f3c]" />
-                  <span>Check Delivery & Cash on Delivery:</span>
+                  <span>Check Delivery Estimate:</span>
                 </span>
               </div>
               <div className="flex gap-2">
@@ -759,7 +755,7 @@ export default function ProductDetails() {
                 <div className="mt-2 text-[11px] text-[#0d4f3c] bg-[#eef7f3] p-2 rounded-md flex items-center gap-1.5">
                   <CheckCircle2 size={14} />
                   <span>
-                    Express delivery available to <strong>{pincode}</strong> in 3–4 days. Cash on Delivery is active.
+                    Express delivery available to <strong>{pincode}</strong> in 3–4 days across India.
                   </span>
                 </div>
               )}
@@ -787,7 +783,7 @@ export default function ProductDetails() {
                 </div>
                 <div>
                   <span className="text-[#8c827a] block text-[10px] uppercase font-bold">Dupatta Style</span>
-                  <span className="font-medium text-[#2a241e]">Handloom Zari Bordered Dupatta (2.25m)</span>
+                  <span className="font-medium text-[#2a241e]">Handloom Zari Bordered Dupatta</span>
                 </div>
                 <div>
                   <span className="text-[#8c827a] block text-[10px] uppercase font-bold">Wash Care</span>
@@ -898,7 +894,7 @@ export default function ProductDetails() {
         onClose={() => setIsAuthOpen(false)}
       />
 
-      {/* Interactive Info Modals (Order Tracker, Size Chart, Exchange Policy) */}
+      {/* Interactive Info Modals */}
       <InteractiveModal
         type={activeModal}
         onClose={() => setActiveModal(null)}

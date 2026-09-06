@@ -8,7 +8,7 @@ export interface PookieResponse {
 
 export const POOKIE_WELCOME_MESSAGE = 
   "Hi, I'm Pookie! ✨ Your personal AI styling concierge at House of Shriya.\n\n" +
-  "I'm here to help you find the perfect handcrafted suit, explore fabrics & festive colours, check bespoke sizing, or pick an outfit for your next celebration. How can I style you today?";
+  "I'm here to help you find the perfect handcrafted suit, explore fabrics & festive colours, or pick an outfit for your next celebration. How can I style you today?";
 
 export const POOKIE_INITIAL_QUICK_REPLIES = [
   "🌸 Recommend a wedding suit",
@@ -350,7 +350,7 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     };
   }
 
-  // 6. SIZING, FABRIC & UNSTITCHED SUITS
+  // 6. FABRIC & UNSTITCHED SUITS
   if (
     q.includes("size") ||
     q.includes("sizing") ||
@@ -362,15 +362,14 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     q.includes("unstitched") ||
     q.includes("plus size") ||
     q.includes("xxl") ||
-    q.includes("3xl") ||
-    q.includes("bespoke")
+    q.includes("3xl")
   ) {
     return {
       text:
         "✨ **All Suits Are Premium Unstitched Suits**:\n\n" +
         "• Every piece at House of Shriya is an **Unstitched 3-Piece Luxury Suit Set**.\n" +
-        "• Each suit includes generous fabric lengths: **2.5m Kurta length**, **2.5m Bottom/Salwar length**, and **2.25m full-width artisan Dupatta**.\n" +
-        "• Because all suits are unstitched, there are no sizing constraints—your local master tailor can create your exact dream fit, customized sleeves, and bespoke necklines!\n\n" +
+        "• Each suit includes complete fabric: Kurta fabric, Bottom fabric, and full-width artisan Dupatta.\n" +
+        "• Because all suits are unstitched, you can have your preferred tailor craft your exact silhouette, neckline, and sleeves!\n\n" +
         "Need styling advice or have questions? Click 'POOKIE NEED A HELP' to connect directly on WhatsApp!",
       quickReplies: [
         "🌸 Show Anarkali Collections",
@@ -380,15 +379,11 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     };
   }
 
-  // 7. SHIPPING, DELIVERY & RETURNS
+  // 7. SHIPPING & DELIVERY
   if (
     q.includes("ship") ||
     q.includes("delivery") ||
     q.includes("track") ||
-    q.includes("return") ||
-    q.includes("exchange") ||
-    q.includes("cod") ||
-    q.includes("cash on delivery") ||
     q.includes("how long")
   ) {
     return {
@@ -397,8 +392,7 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
         "• **Dispatch Time**: Ready orders are dispatched within 24–48 hours from our Surat boutique atelier.\n" +
         "• **Delivery Timeframe**: 3–5 business days across metro cities in India; 5–7 days for other locations.\n" +
         "• **Shipping Fee**: Absolutely FREE delivery across all of India.\n" +
-        "• **Returns & Exchanges**: 7-day hassle-free exchange policy for sizing issues or fabric defects.\n" +
-        "• **Payment Methods**: UPI (Google Pay, PhonePe, Paytm), Credit/Debit Cards, Net Banking, and Verified COD.",
+        "• **Payment Methods**: 100% Secure Instant UPI (Google Pay, PhonePe, Paytm), Credit/Debit Cards, and Net Banking.",
       quickReplies: [
         "🌸 Browse Festive Collection",
         "📱 Contact WhatsApp Support",
