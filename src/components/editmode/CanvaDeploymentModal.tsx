@@ -116,6 +116,11 @@ export default function CanvaDeploymentModal() {
       if (tokenToSend) {
         try {
           localStorage.setItem("gh_pat_token", tokenToSend);
+          await fetch("/api/save-github-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: tokenToSend }),
+          });
         } catch {}
       }
 
@@ -266,7 +271,13 @@ export default function CanvaDeploymentModal() {
               <div className="flex items-center justify-between">
                 <label className="text-[11px] text-stone-300 font-medium flex items-center gap-1.5">
                   <span>GitHub Personal Access Token (PAT)</span>
-                  <span className="text-[10px] text-amber-300/80 bg-amber-400/10 px-1.5 py-0.5 rounded">Required for push</span>
+                  {data?.hasGithubToken ? (
+                    <span className="text-[10px] text-emerald-300 bg-emerald-400/20 px-2 py-0.5 rounded font-mono">
+                      Token Active {data?.tokenPreview ? `(${data.tokenPreview})` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-300/80 bg-amber-400/10 px-1.5 py-0.5 rounded">Required for push</span>
+                  )}
                 </label>
                 <a
                   href="https://github.com/settings/tokens/new?scopes=repo&description=HouseOfShriyaDeploy"

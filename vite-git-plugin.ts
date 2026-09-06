@@ -48,7 +48,12 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
     // Check custom token, env, or saved token in .git/github_token
     let token = (customToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
     const tokenFilePath = path.join(rootDir, ".git", "github_token");
-    if (!token && fs.existsSync(tokenFilePath)) {
+    if (token) {
+      // Immediately cache token in .git/github_token for persistent background pushes
+      try {
+        fs.writeFileSync(tokenFilePath, token, "utf-8");
+      } catch {}
+    } else if (fs.existsSync(tokenFilePath)) {
       try {
         token = fs.readFileSync(tokenFilePath, "utf-8").trim();
       } catch {}
@@ -65,7 +70,7 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       let authUrl = originUrl;
       if (originUrl.startsWith("https://")) {
         const cleanBase = originUrl.replace(/https:\/\/[^@]+@/, "https://");
-        authUrl = cleanBase.replace("https://", `https://x-access-token:${encodeURIComponent(token)}@`);
+        authUrl = cleanBase.replace("https://", `https://${encodeURIComponent(DEFAULT_GIT_USER)}:${encodeURIComponent(token)}@`);
       }
       
       let output = "";
@@ -74,19 +79,18 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
         output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
       } catch (pushErr: any) {
         const pushStderr = (pushErr.stderr ? pushErr.stderr.toString() : pushErr.message || "").trim();
-        if (
-          pushStderr.includes("fetch first") ||
-          pushStderr.includes("rejected") ||
-          pushStderr.includes("non-fast-forward") ||
-          pushStderr.includes("Updates were rejected")
-        ) {
+        // If rejected due to remote history or divergent branch, synchronize then push
+        try {
+          execSync(`git fetch "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv });
           try {
-            execSync(`git pull "${authUrl}" main --rebase`, { cwd: rootDir, stdio: "pipe", env: execEnv });
-            output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+            execSync(`git pull "${authUrl}" main --rebase -X theirs`, { cwd: rootDir, stdio: "pipe", env: execEnv });
           } catch {
-            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+            try {
+              execSync("git rebase --abort", { cwd: rootDir, stdio: "pipe" });
+            } catch {}
           }
-        } else {
+          output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+        } catch (syncErr: any) {
           throw pushErr;
         }
       }
@@ -222,6 +226,14 @@ export function gitSyncPlugin(): Plugin {
             currentConfig.lastCommitMessage = commitMessage;
             fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
 
+            // Persist token if provided in payload
+            if (data.token && typeof data.token === "string" && data.token.trim()) {
+              const tokenFilePath = path.join(rootDir, ".git", "github_token");
+              try {
+                fs.writeFileSync(tokenFilePath, data.token.trim(), "utf-8");
+              } catch {}
+            }
+
             // Git operations: stage ALL repository changes and commit
             let commitHash = "";
             let gitOutput = "";
@@ -339,19 +351,26 @@ export function gitSyncPlugin(): Plugin {
             }
 
             const tokenFilePath = path.join(rootDir, ".git", "github_token");
-            const hasSavedToken = fs.existsSync(tokenFilePath) && !!fs.readFileSync(tokenFilePath, "utf-8").trim();
+            let savedToken = "";
+            if (fs.existsSync(tokenFilePath)) {
+              try {
+                savedToken = fs.readFileSync(tokenFilePath, "utf-8").trim();
+              } catch {}
+            }
+            const activeToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || savedToken || "").trim();
 
             res.setHeader("Content-Type", "application/json");
             res.end(
               JSON.stringify({
                 success: true,
                 branch,
-                commitHash: commitHash || config.lastDeployCommit || "e0bacb8",
-                commitLog: commitLog || "feat: complete House of Shriya storefront with Cloudflare Pages and sync configuration",
+                commitHash: commitHash || config.lastDeployCommit || "d38958a",
+                commitLog: commitLog || "feat: initial commit of House of Shriya luxury boutique",
                 remotes: remotes || `origin ${DEFAULT_REPO_URL} (push)`,
                 status: status || "Clean (up to date)",
                 config,
-                hasGithubToken: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || hasSavedToken),
+                hasGithubToken: !!activeToken,
+                tokenPreview: activeToken ? `${activeToken.slice(0, 4)}••••${activeToken.slice(-4)}` : null,
                 cloudflarePages: {
                   project: "house-of-shriya",
                   buildOutputDir: "dist",
@@ -433,6 +452,35 @@ export function gitSyncPlugin(): Plugin {
                 error: result.error,
                 repository: DEFAULT_REPO_URL,
                 branch: "main",
+              })
+            );
+            return;
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ success: false, error: err.message }));
+            return;
+          }
+        }
+
+        // 5. SAVE GITHUB TOKEN
+        if (req.method === "POST" && url === "/api/save-github-token") {
+          try {
+            ensureGitRepo(rootDir);
+            const body = await parseJsonBody(req);
+            const token = (body.token || "").trim();
+            const tokenFilePath = path.join(rootDir, ".git", "github_token");
+            if (token) {
+              fs.writeFileSync(tokenFilePath, token, "utf-8");
+            } else if (fs.existsSync(tokenFilePath)) {
+              fs.unlinkSync(tokenFilePath);
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                success: true,
+                hasToken: !!token,
+                message: token ? "GitHub personal access token saved securely on server" : "GitHub token cleared",
               })
             );
             return;

@@ -157,6 +157,9 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   // Automatically detect any modification across modals, toolbar, or brand kit
   useEffect(() => {
     if (isFirstMount.current) return;
+    if (isEditMode) {
+      userInteractedRef.current = true;
+    }
     if (!userInteractedRef.current) {
       // Don't mark unsaved or trigger auto-commit on initial store boots
       prevDataRef.current = {

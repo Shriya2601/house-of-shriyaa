@@ -5,9 +5,9 @@
   "cloudflareProject": "house-of-shriya",
   "buildOutputDir": "dist",
   "buildCommand": "npm run build",
-  "lastDeployCommit": "960241d",
-  "lastDeployTime": "2026-09-05T18:05:00.000Z",
+  "lastDeployCommit": "ba61227",
+  "lastDeployTime": "2026-09-06T00:30:00.000Z",
   "autoSyncToGit": true,
-  "lastDeployFullHash": "960241dcfe9735121e35665f80b9bf63f7a7dbe3",
-  "lastCommitMessage": "fix(deploy): configure Cloudflare Pages build and eliminate invalid redirects infinite loop"
+  "lastDeployFullHash": "ba61227d318a8d7350a89db3c5e7d11e1c3c31ed",
+  "lastCommitMessage": "fix(deploy): finalize automated publishing workflow for Canva Edit mode to GitHub and Cloudflare Pages"
 }
