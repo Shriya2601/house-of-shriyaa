@@ -18,10 +18,14 @@
       },
       "tier": "House Patron",
       "createdAt": "2026-09-06T22:48:56.230Z",
-      "updatedAt": "2026-09-06T22:48:56.230Z"
+      "updatedAt": "2026-09-06T22:48:56.230Z",
+      "referralCode": "HOS-NF82V",
+      "referralCount": 0,
+      "referralEarnings": 0
     },
     "createdAt": "2026-09-06T22:48:56.230Z",
-    "lastLoginAt": "2026-09-06T22:48:56.346Z"
+    "lastLoginAt": "2026-09-06T22:48:56.346Z",
+    "referralCode": "HOS-NF82V"
   },
   {
     "id": "cust_c7dc9163a65e00c1",
@@ -42,9 +46,43 @@
       },
       "tier": "House Patron",
       "createdAt": "2026-09-06T22:50:05.175Z",
-      "updatedAt": "2026-09-06T22:50:05.175Z"
+      "updatedAt": "2026-09-06T22:50:05.175Z",
+      "referralCode": "HOS-R3W5J",
+      "referralCount": 0,
+      "referralEarnings": 0
     },
     "createdAt": "2026-09-06T22:50:05.175Z",
-    "lastLoginAt": "2026-09-06T22:50:05.296Z"
+    "lastLoginAt": "2026-09-06T22:50:05.296Z",
+    "referralCode": "HOS-R3W5J"
+  },
+  {
+    "id": "cust_5252cb3b80f34045",
+    "email": "priya.test@example.com",
+    "fullName": "Priya Sharma",
+    "phone": "9876543210",
+    "passwordHash": "75cd831d76b5b1bc546f3dc5b77485243cce088a036f7f0e8d78135718fb369cc8428a8eb1f27301fc6ef6c0c122a0fef5d09a7a44e8d0fd60469b7f4276ba2a",
+    "salt": "ae0c3fbb8f1616f812a19c1da9c03735",
+    "profile": {
+      "uid": "cust_5252cb3b80f34045",
+      "email": "priya.test@example.com",
+      "fullName": "Priya Sharma",
+      "phone": "9876543210",
+      "savedAddresses": [],
+      "measurements": {
+        "standardSize": "M",
+        "cutPreference": "Straight Kurta Set"
+      },
+      "tier": "House Patron",
+      "createdAt": "2026-09-06T23:21:00.193Z",
+      "updatedAt": "2026-09-06T23:21:00.193Z",
+      "referralCode": "HOS-YCE7H",
+      "referralCount": 1,
+      "referralEarnings": 100
+    },
+    "createdAt": "2026-09-06T23:21:00.193Z",
+    "lastLoginAt": "2026-09-06T23:22:00.543Z",
+    "referralCode": "HOS-YCE7H",
+    "referralCount": 1,
+    "referralEarnings": 100
   }
 ]

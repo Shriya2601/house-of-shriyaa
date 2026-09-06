@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   CreditCard,
   Crown,
   Edit3,
@@ -38,6 +39,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share2,
   ShieldAlert,
   ShieldCheck,
   Shirt,
@@ -642,6 +644,32 @@ export function NavigationDrawer({
                 if (!currentUser) {
                   onOpenAuth();
                 } else {
+                  onOpenModal("referral");
+                }
+              }}
+            >
+              <div className="nav-item-left">
+                <div className="nav-item-icon text-[#0d4f3c]"><Gift size={17} /></div>
+                <div className="nav-item-text">
+                  <span className="nav-item-title flex items-center gap-1.5">
+                    Refer & Earn ₹100
+                    <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      Rewards
+                    </span>
+                  </span>
+                  <span className="nav-item-sub">Give ₹100, get ₹100 on every friend</span>
+                </div>
+              </div>
+              <ChevronRight size={15} className="text-[#c5a059]" />
+            </button>
+
+            <button
+              className="nav-item-btn"
+              onClick={() => {
+                onClose();
+                if (!currentUser) {
+                  onOpenAuth();
+                } else {
                   onOpenModal("addresses");
                 }
               }}
@@ -819,6 +847,7 @@ export function InteractiveModal({
   const [searchedOrder, setSearchedOrder] = useState<Order | null>(null);
   const [trackError, setTrackError] = useState("");
   const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [referralCopied, setReferralCopied] = useState(false);
   const [newAddr, setNewAddr] = useState<Omit<SavedAddress, "id">>({
     label: "Home",
     fullName: customerProfile?.fullName || "",
@@ -1128,6 +1157,26 @@ export function InteractiveModal({
               </span>
             </div>
 
+            {/* Referral Privilege Summary */}
+            <div className="p-3.5 bg-gradient-to-br from-[#fdfbf7] to-[#f5eee6] border border-[#d4af37]/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-[#0d4f3c]">
+                  <Gift size={16} />
+                  <span>Referral Code: <span className="font-mono text-[#1e1b18]">{customerProfile?.referralCode || "ACTIVE"}</span></span>
+                </div>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                  Earn ₹100 / Friend
+                </span>
+              </div>
+              <p className="text-[11px] text-[#706458]">
+                Share with friends to give ₹100 instant discount and earn ₹100 rewards on their first suit order.
+              </p>
+              <div className="flex items-center justify-between pt-1 border-t border-[#e8dfd8] text-[11px]">
+                <span>Rewards Earned: <strong className="text-emerald-700">₹{customerProfile?.referralEarnings || 0}</strong></span>
+                <span>Referrals: <strong>{customerProfile?.referralCount || 0}</strong></span>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={async () => {
@@ -1139,6 +1188,160 @@ export function InteractiveModal({
               <LogOut size={14} />
               <span>Sign Out</span>
             </button>
+          </div>
+        );
+      }
+
+      case "referral": {
+        if (!currentUser) {
+          return (
+            <div className="text-center py-8 space-y-3 text-xs">
+              <Gift size={36} className="mx-auto text-[#c5a059]" />
+              <div>
+                <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
+                <p className="text-[#706458] mt-1">
+                  Sign in or create an account to view your unique referral code and earn ₹100 rewards.
+                </p>
+              </div>
+              {onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth();
+                  }}
+                  className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                >
+                  Sign In / Register
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        const myRefCode = customerProfile?.referralCode || "";
+        const shareUrl = `${window.location.origin}/?ref=${myRefCode}`;
+        const whatsappShareText = `Namaste! Use my House of Shriya referral code *${myRefCode}* to get ₹100 instant discount on your first luxury unstitched suit: ${shareUrl}`;
+
+        const handleCopyCode = () => {
+          if (!myRefCode) return;
+          navigator.clipboard.writeText(myRefCode);
+          setReferralCopied(true);
+          setTimeout(() => setReferralCopied(false), 2500);
+        };
+
+        return (
+          <div className="space-y-4 text-xs">
+            {/* Promo Header Banner */}
+            <div className="p-4 bg-gradient-to-br from-[#f8f5ee] to-[#ece3d4] border border-[#d4af37]/40 rounded-xl space-y-1.5 text-center">
+              <span className="text-[10px] font-bold tracking-widest text-[#0d4f3c] uppercase block">
+                PATRON PRIVILEGE PROGRAM
+              </span>
+              <h3 className="font-serif font-bold text-lg text-[#1e1b18]">
+                Give ₹100, Get ₹100
+              </h3>
+              <p className="text-[11px] text-[#63594e] max-w-sm mx-auto leading-relaxed">
+                Invite friends and family to House of Shriya. When they purchase their first unstitched suit using your code, they get ₹100 off, and you earn ₹100 in atelier rewards!
+              </p>
+            </div>
+
+            {/* Unique Referral Code Card */}
+            <div className="p-4 bg-white border border-[#ebe2d8] rounded-xl space-y-3">
+              <span className="text-[11px] font-bold text-[#1e1b18] block">Your Unique Referral Code</span>
+              <div className="flex items-center justify-between bg-[#f5efeb] border border-[#e2d5c5] rounded-xl p-3">
+                <span className="font-mono text-base font-bold text-[#0d4f3c] tracking-widest">
+                  {myRefCode || "GENERATING..."}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d4f3c] text-white font-bold text-xs hover:bg-[#083528] transition-colors"
+                >
+                  {referralCopied ? (
+                    <>
+                      <Check size={14} className="text-emerald-300" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} />
+                      <span>Copy Code</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(whatsappShareText)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 rounded-lg bg-[#25D366] text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#1faa53] transition-colors"
+                >
+                  <MessageCircle size={15} />
+                  <span>Share on WhatsApp</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.share) {
+                      navigator.share({
+                        title: "House of Shriya - Luxury Suits",
+                        text: whatsappShareText,
+                        url: shareUrl,
+                      }).catch(() => {});
+                    } else {
+                      handleCopyCode();
+                    }
+                  }}
+                  className="w-full py-2.5 rounded-lg bg-[#f4eee6] border border-[#dcd2c4] text-[#1e1b18] font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#ece2d4] transition-colors"
+                >
+                  <Share2 size={15} className="text-[#0d4f3c]" />
+                  <span>Share Link</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Performance Stats */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
+                <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
+                  Friends Referred
+                </span>
+                <strong className="text-xl font-serif text-[#0d4f3c] block mt-1">
+                  {customerProfile?.referralCount || 0}
+                </strong>
+                <span className="text-[10px] text-[#8c6d37]">Patrons Joined</span>
+              </div>
+              <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
+                <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
+                  Rewards Earned
+                </span>
+                <strong className="text-xl font-serif text-emerald-700 block mt-1">
+                  ₹{customerProfile?.referralEarnings || 0}
+                </strong>
+                <span className="text-[10px] text-emerald-800">Available Balance</span>
+              </div>
+            </div>
+
+            {/* Program Details */}
+            <div className="p-3.5 bg-[#faf8f5] border border-[#ebe2d8] rounded-xl space-y-2">
+              <strong className="text-xs text-[#1e1b18] block font-serif">How the Referral Program Works:</strong>
+              <div className="space-y-1.5 text-[11px] text-[#706458]">
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">1</span>
+                  <span>Share your unique code or link with friends who appreciate fine handloom.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">2</span>
+                  <span>They apply your code when registering or checking out to get ₹100 instant discount.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">3</span>
+                  <span>Once their order is placed, your account is credited with ₹100 in rewards automatically!</span>
+                </div>
+              </div>
+            </div>
           </div>
         );
       }
@@ -1410,6 +1613,8 @@ export function InteractiveModal({
         return "My Order History";
       case "profile":
         return "My Atelier Profile";
+      case "referral":
+        return "Refer & Earn ₹100";
       case "addresses":
         return "Saved Addresses";
       case "payments":

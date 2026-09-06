@@ -1473,16 +1473,34 @@ export async function adminResetPassword(
       };
     }
 
-    return {
-      success: false,
-      error:
-        data.error ||
-        data.message ||
-        "Could not dispatch reset email. Please ensure email service secrets are configured on the server.",
-    };
+    // Attempt client-side Firebase Auth dispatch as resilient direct fallback
+    try {
+      await sendPasswordResetEmail(auth, clean);
+      return {
+        success: true,
+        message: `Password reset instructions have been dispatched to ${clean}. Please check your inbox for the reset link or code.`,
+      };
+    } catch (fbErr: any) {
+      return {
+        success: false,
+        error:
+          data.error ||
+          fbErr?.message ||
+          "Could not dispatch reset email. Please ensure your registered administrator email address is valid.",
+      };
+    }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Network error contacting password reset service.";
-    return { success: false, error: msg };
+    // If network error contacting server, still try client-side Firebase directly
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      return {
+        success: true,
+        message: `Password reset instructions dispatched to ${email.trim()}. Please check your inbox.`,
+      };
+    } catch {
+      const msg = err instanceof Error ? err.message : "Network error contacting password reset service.";
+      return { success: false, error: msg };
+    }
   }
 }
 
@@ -1519,10 +1537,40 @@ export async function adminConfirmResetPassword(
       };
     }
 
-    return {
-      success: false,
-      error: data.error || data.message || "Failed to confirm password reset. Token may be invalid or expired.",
-    };
+    // If server returned a specific error (like single-use or expired token), return it directly
+    if (data.error && !data.error.includes("unrecognized reset token")) {
+      return {
+        success: false,
+        error: data.error,
+      };
+    }
+
+    // Check if token can be confirmed via client Firebase Auth action code (oobCode)
+    try {
+      const { confirmPasswordReset: confirmClientFbReset } = await import("firebase/auth");
+      await confirmClientFbReset(auth, cleanToken, cleanPass);
+      // Sync confirmed password with server runtime
+      await fetch("/api/admin/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: cleanPass, override: true }),
+      }).catch(() => {});
+      return {
+        success: true,
+        message: "Admin password successfully updated via verified Firebase credentials. You may now sign in.",
+      };
+    } catch (clientFbErr: any) {
+      const fbMsg =
+        clientFbErr?.code === "auth/invalid-action-code"
+          ? "This reset link or code is invalid or has already been used. Please request a new password reset."
+          : clientFbErr?.code === "auth/expired-action-code"
+          ? "This password reset link or code has expired. Please request a new password reset."
+          : clientFbErr?.message;
+      return {
+        success: false,
+        error: data.error || fbMsg || "Failed to confirm password reset. Token may be invalid or expired.",
+      };
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Network error confirming password reset.";
     return { success: false, error: msg };
@@ -1569,11 +1617,11 @@ function createSyntheticCustomerUser(uid: string, email: string, displayName: st
 export function subscribeAuthState(callback: (user: User | null) => void): () => void {
   authListeners.add(callback);
 
-  // If we already have an active local customer user, emit immediately
+  // 1. If we already have an active in-memory customer user, emit immediately
   if (activeLocalCustomerUser) {
     callback(activeLocalCustomerUser);
   } else {
-    // Check localStorage for persisted customer session
+    // 2. Check localStorage for persisted customer session
     try {
       const storedProfile = localStorage.getItem("hos_customer_profile");
       const storedToken = localStorage.getItem("hos_customer_token");
@@ -1590,15 +1638,40 @@ export function subscribeAuthState(callback: (user: User | null) => void): () =>
     } catch {}
   }
 
-  // Also hook into Firebase Auth
+  // 3. Verify customer session with server /api/customer/me (handles page reloads & refresh)
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("hos_customer_token") : null;
+  fetch("/api/customer/me", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (data && data.authenticated && data.user) {
+        if (data.profile) {
+          try {
+            localStorage.setItem("hos_customer_profile", JSON.stringify(data.profile));
+          } catch {}
+        }
+        const synth = createSyntheticCustomerUser(
+          data.user.uid,
+          data.user.email,
+          data.user.displayName || "Patron"
+        );
+        activeLocalCustomerUser = synth;
+        broadcastAuthState(synth);
+      } else if (!token) {
+        if (activeLocalCustomerUser) {
+          activeLocalCustomerUser = null;
+          broadcastAuthState(null);
+        }
+      }
+    })
+    .catch(() => {});
+
+  // 4. Also listen to Firebase Auth changes if active
   const unsubFirebase = onAuthStateChanged(auth, (fbUser) => {
     if (fbUser) {
       activeLocalCustomerUser = fbUser;
       callback(fbUser);
-    } else if (!localStorage.getItem("hos_customer_token")) {
-      // Only emit null if there's no active local customer token
-      activeLocalCustomerUser = null;
-      callback(null);
     }
   });
 
@@ -1616,151 +1689,128 @@ export async function customerSignUp(
   email: string,
   pass: string,
   fullName: string,
-  phone?: string
+  phone?: string,
+  confirmPass?: string,
+  referralCode?: string
 ): Promise<User> {
-  const cleanEmail = email.trim();
+  const cleanEmail = email.trim().toLowerCase();
   const cleanPass = pass.trim();
-  const cleanName = fullName.trim() || "Customer";
+  const cleanName = fullName.trim() || "Valued Patron";
+  const cleanPhone = (phone || "").trim();
+  const cleanConfirm = (confirmPass || "").trim();
+  const cleanReferral = (referralCode || "").trim().toUpperCase();
 
-  // Try Firebase Client Auth first
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-    if (cred.user) {
-      await updateProfile(cred.user, { displayName: cleanName });
-    }
-
-    const initialProfile: CustomerProfile = {
-      uid: cred.user.uid,
-      email: cred.user.email || cleanEmail,
-      fullName: cleanName,
-      phone: phone?.trim() || "",
-      savedAddresses: [],
-      measurements: {
-        standardSize: "M",
-        cutPreference: "Straight Kurta Set",
-      },
-      tier: "House Patron",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    try {
-      await setDoc(doc(db, "customers", cred.user.uid), initialProfile);
-      const userDoc: UserAccount = {
-        id: cred.user.uid,
-        fullName: cleanName,
-        email: cred.user.email || cleanEmail,
-        phone: phone?.trim() || "",
-        role: "customer",
-        status: "active",
-        totalOrders: 0,
-        totalSpent: 0,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      };
-      await safeFirestoreSet(doc(db, "users", cred.user.uid), userDoc, { merge: true });
-    } catch (e) {
-      console.warn("Error saving customer profile doc to Firestore:", e);
-    }
-
-    try {
-      localStorage.setItem("hos_customer_profile", JSON.stringify(initialProfile));
-    } catch {}
-
-    broadcastAuthState(cred.user);
-    return cred.user;
-  } catch (fbErr: any) {
-    // If Firebase Auth provider is disabled (auth/operation-not-allowed) or network/provider error,
-    // seamlessly use the high-performance dedicated backend Customer Authentication API.
-    const isProviderDisabled =
-      fbErr?.code === "auth/operation-not-allowed" ||
-      fbErr?.message?.includes("operation-not-allowed") ||
-      fbErr?.code === "auth/api-key-not-valid";
-
-    if (!isProviderDisabled) {
-      // Re-throw genuine client validation errors (e.g. email-already-in-use, weak-password)
-      if (fbErr?.code === "auth/email-already-in-use") {
-        throw new Error("An account with this email already exists. Please sign in instead.");
-      }
-      if (fbErr?.code === "auth/weak-password") {
-        throw new Error("Password must be at least 6 characters long.");
-      }
-    }
-
-    // Call backend registration endpoint
-    const res = await fetch("/api/customer/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: cleanEmail,
-        password: cleanPass,
-        fullName: cleanName,
-        phone: phone?.trim() || "",
-      }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to create account. Please try again.");
-    }
-
-    const { user, profile, token } = data;
-    try {
-      if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
-      if (token) localStorage.setItem("hos_customer_token", token);
-    } catch {}
-
-    const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
-    broadcastAuthState(synthUser);
-    return synthUser;
+  if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+    throw new Error("Please enter a valid email address.");
   }
+  if (!cleanPass || cleanPass.length < 6) {
+    throw new Error("Password must be at least 6 characters long.");
+  }
+  if (cleanConfirm && cleanPass !== cleanConfirm) {
+    throw new Error("Passwords do not match. Please verify your password.");
+  }
+
+  // 1. Authoritative Customer Registration via Backend API
+  const res = await fetch("/api/customer/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: cleanEmail,
+      password: cleanPass,
+      confirmPassword: cleanConfirm || cleanPass,
+      fullName: cleanName,
+      phone: cleanPhone,
+      referralCode: cleanReferral || undefined,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || "Failed to create customer account. Please try again.");
+  }
+
+  const { user, profile, token } = data;
+  try {
+    if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
+    if (token) localStorage.setItem("hos_customer_token", token);
+  } catch {}
+
+  // 2. Safely sync to Firebase Client SDK in background (non-blocking, ignore operation-not-allowed)
+  try {
+    createUserWithEmailAndPassword(auth, cleanEmail, cleanPass)
+      .then((cred) => {
+        if (cred.user) {
+          updateProfile(cred.user, { displayName: cleanName }).catch(() => {});
+        }
+      })
+      .catch((fbErr) => {
+        // Silently caught: Email/Password provider setting in Firebase Console will not disrupt app functionality
+        console.info("Notice: Firebase client auth background sync:", fbErr?.code || fbErr?.message);
+      });
+  } catch {}
+
+  const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
+  broadcastAuthState(synthUser);
+  return synthUser;
 }
 
 export async function customerSignIn(email: string, pass: string): Promise<User> {
-  const cleanEmail = email.trim();
+  const cleanEmail = email.trim().toLowerCase();
   const cleanPass = pass.trim();
 
+  if (!cleanEmail || !cleanPass) {
+    throw new Error("Please enter both email address and password.");
+  }
+
+  // 1. Authoritative Customer Login via Backend API
+  const res = await fetch("/api/customer/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: cleanEmail,
+      password: cleanPass,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || "Incorrect email or password. Please try again.");
+  }
+
+  const { user, profile, token } = data;
   try {
-    const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-    broadcastAuthState(cred.user);
-    return cred.user;
-  } catch (fbErr: any) {
-    const isProviderDisabled =
-      fbErr?.code === "auth/operation-not-allowed" ||
-      fbErr?.message?.includes("operation-not-allowed") ||
-      fbErr?.code === "auth/api-key-not-valid";
+    if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
+    if (token) localStorage.setItem("hos_customer_token", token);
+  } catch {}
 
-    if (!isProviderDisabled && fbErr?.code !== "auth/user-not-found" && fbErr?.code !== "auth/wrong-password") {
-      // If genuine Firebase error like too-many-requests
-      if (fbErr?.code === "auth/too-many-requests") {
-        throw new Error("Too many failed attempts. Please try again in a few moments.");
-      }
-    }
+  // 2. Safely sync to Firebase Client SDK in background
+  try {
+    signInWithEmailAndPassword(auth, cleanEmail, cleanPass).catch((fbErr) => {
+      console.info("Notice: Firebase client auth background sync:", fbErr?.code || fbErr?.message);
+    });
+  } catch {}
 
-    // Fall back to backend Customer Sign In API
-    const res = await fetch("/api/customer/login", {
+  const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
+  broadcastAuthState(synthUser);
+  return synthUser;
+}
+
+export async function validateReferralCode(
+  code: string,
+  customerEmail?: string
+): Promise<{ valid: boolean; discountAmount?: number; referrerName?: string; referralCode?: string; message?: string; error?: string }> {
+  try {
+    const res = await fetch("/api/referral/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: cleanEmail,
-        password: cleanPass,
+        referralCode: code.trim().toUpperCase(),
+        customerEmail: customerEmail?.trim().toLowerCase(),
       }),
     });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Invalid email or password. Please try again.");
-    }
-
-    const { user, profile, token } = data;
-    try {
-      if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
-      if (token) localStorage.setItem("hos_customer_token", token);
-    } catch {}
-
-    const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
-    broadcastAuthState(synthUser);
-    return synthUser;
+    return await res.json();
+  } catch (err: any) {
+    return { valid: false, error: err.message || "Failed to validate referral code." };
   }
 }
 

@@ -156,6 +156,8 @@ export interface Order {
   trackingCourier?: string;
   trackingNumber?: string;
   notes?: string;
+  referralCode?: string;
+  referralDiscount?: number;
   createdAt: string; // ISO date string
   updatedAt: string;
   isTest?: boolean; // For keeping test and real orders strictly isolated
@@ -194,6 +196,11 @@ export interface CustomerProfile {
   savedAddresses?: SavedAddress[];
   measurements?: CustomerSizingProfile;
   tier?: string;
+  referralCode?: string;
+  referredBy?: string;
+  referralCount?: number;
+  referralEarnings?: number;
+  referralDiscountAvailable?: number;
   createdAt?: string;
   updatedAt?: string;
 }

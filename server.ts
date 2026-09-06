@@ -4,6 +4,13 @@ import fs from "fs";
 import { execSync } from "child_process";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
+import { initializeApp as initFbApp, getApps as getFbApps, getApp as getFbApp } from "firebase/app";
+import {
+  getAuth as getFbAuth,
+  sendPasswordResetEmail as sendFbPasswordResetEmail,
+  verifyPasswordResetCode as verifyFbPasswordResetCode,
+  confirmPasswordReset as confirmFbPasswordReset,
+} from "firebase/auth";
 
 const app = express();
 const PORT = 3000;
@@ -273,26 +280,21 @@ export function reloadAdminResetTokens(): void {
 reloadAdminResetTokens();
 
 // Server-side Firebase Auth Singleton helper for official email dispatch & action verification
-let serverFirebaseApp: any = null;
+let serverFirebaseInstance: any = null;
 export function getServerFirebaseAuth(): any {
-  if (!serverFirebaseApp) {
-    try {
-      const { initializeApp, getApps, getApp } = require("firebase/app");
-      const { getAuth } = require("firebase/auth");
-      const configPath = path.join(rootDir, "firebase-applet-config.json");
-      if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-        serverFirebaseApp = getApps().length > 0 ? getApp() : initializeApp(config);
-        return getAuth(serverFirebaseApp);
-      }
-    } catch (err) {
-      console.warn("Notice: Server Firebase Auth initialization error:", err);
+  if (serverFirebaseInstance) {
+    return serverFirebaseInstance;
+  }
+  try {
+    const configPath = path.join(rootDir, "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      const app = getFbApps().length > 0 ? getFbApp() : initFbApp(config);
+      serverFirebaseInstance = getFbAuth(app);
+      return serverFirebaseInstance;
     }
-  } else {
-    try {
-      const { getAuth } = require("firebase/auth");
-      return getAuth(serverFirebaseApp);
-    } catch {}
+  } catch (err) {
+    console.warn("Notice: Server Firebase Auth initialization error:", err);
   }
   return null;
 }
@@ -635,10 +637,45 @@ app.post("/api/orders", (req, res) => {
     const orderId = orderData.id || `ord_${Date.now()}`;
     const orderNumber = orderData.orderNumber || `HOS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    let referralDiscount = 0;
+    let referralCodeUsed = "";
+
+    // Process referral code if applied
+    if (orderData.referralCode) {
+      const cleanRefCode = String(orderData.referralCode).trim().toUpperCase();
+      const customers = getCustomersList();
+      const referrer = customers.find(
+        (c) => (c.referralCode && c.referralCode.toUpperCase() === cleanRefCode) ||
+               (c.profile?.referralCode && c.profile.referralCode.toUpperCase() === cleanRefCode)
+      );
+      const buyerEmail = String(orderData.customer?.email || "").trim().toLowerCase();
+
+      // Check anti-self-referral
+      if (referrer && referrer.email.toLowerCase() !== buyerEmail) {
+        referralDiscount = 100;
+        referralCodeUsed = referrer.referralCode || cleanRefCode;
+
+        // Credit referrer: +1 friend referred and +₹100 reward earnings
+        referrer.referralCount = (referrer.referralCount || 0) + 1;
+        referrer.referralEarnings = (referrer.referralEarnings || 0) + 100;
+        if (!referrer.profile) referrer.profile = {};
+        referrer.profile.referralCount = referrer.referralCount;
+        referrer.profile.referralEarnings = referrer.referralEarnings;
+        saveCustomersList(customers);
+      }
+    }
+
+    const subtotal = Number(orderData.subtotal) || 0;
+    const shippingFee = Number(orderData.shippingFee) || 0;
+    const computedTotal = Math.max(0, subtotal - referralDiscount + shippingFee);
+
     const fullOrder = {
       ...orderData,
       id: orderId,
       orderNumber,
+      referralDiscount: referralDiscount || orderData.referralDiscount || 0,
+      referralCode: referralCodeUsed || orderData.referralCode || undefined,
+      total: orderData.total !== undefined ? orderData.total : computedTotal,
       createdAt: orderData.createdAt || new Date().toISOString(),
       status: orderData.status || "confirmed",
     };
@@ -1560,17 +1597,22 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
       const fbAuth = getServerFirebaseAuth();
       if (fbAuth) {
         try {
-          const { sendPasswordResetEmail } = await import("firebase/auth");
-          const actionCodeSettings = {
-            url: resetUrl,
-            handleCodeInApp: true,
-          };
-          await sendPasswordResetEmail(fbAuth, cleanEmail, actionCodeSettings);
+          try {
+            await sendFbPasswordResetEmail(fbAuth, cleanEmail, {
+              url: resetUrl,
+              handleCodeInApp: true,
+            });
+          } catch (continueUrlErr: any) {
+            console.log("[SECURITY AUDIT] Continuing with direct Firebase password reset email dispatch:", continueUrlErr?.message);
+            await sendFbPasswordResetEmail(fbAuth, cleanEmail);
+          }
           emailDelivered = true;
           deliveryProvider = "Google Firebase Auth Delivery";
         } catch (fbErr: any) {
           providerError = fbErr?.message || "Firebase email delivery failed";
         }
+      } else {
+        providerError = "Firebase Auth service unavailable on server.";
       }
     }
 
@@ -1579,6 +1621,7 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
       res.json({
         success: true,
         emailSent: true,
+        deliveryProvider,
         message: `Password reset instructions have been successfully sent to ${cleanEmail}. Please check your inbox.`,
       });
     } else {
@@ -1662,18 +1705,30 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
     const fbAuth = getServerFirebaseAuth();
     if (fbAuth) {
       try {
-        const { verifyPasswordResetCode, confirmPasswordReset } = await import("firebase/auth");
-        await verifyPasswordResetCode(fbAuth, cleanToken);
-        await confirmPasswordReset(fbAuth, cleanToken, cleanNewPass);
+        const verifiedEmail = await verifyFbPasswordResetCode(fbAuth, cleanToken);
+        await confirmFbPasswordReset(fbAuth, cleanToken, cleanNewPass);
         setRuntimeAdminPassword(cleanNewPass);
-        console.log(`[SECURITY AUDIT] Master admin password successfully reset via verified Firebase credentials.`);
+        console.log(`[SECURITY AUDIT] Master admin password successfully reset via verified Firebase credentials for ${verifiedEmail}.`);
         res.json({
           success: true,
           message: "Admin password successfully updated. You may now sign in with your new password.",
         });
         return;
       } catch (fbErr: any) {
-        // Not a valid Firebase code
+        console.warn("[SECURITY AUDIT] Firebase verifyFbPasswordResetCode notice:", fbErr?.code, fbErr?.message);
+        if (fbErr?.code === "auth/invalid-action-code") {
+          res.status(400).json({
+            success: false,
+            error: "This reset link or code is invalid or has already been used. Please request a new password reset.",
+          });
+          return;
+        } else if (fbErr?.code === "auth/expired-action-code") {
+          res.status(400).json({
+            success: false,
+            error: "This password reset link or code has expired. Please request a new password reset.",
+          });
+          return;
+        }
       }
     }
 
@@ -1696,6 +1751,10 @@ interface CustomerAccount {
   phone?: string;
   passwordHash: string;
   salt: string;
+  referralCode?: string;
+  referredBy?: string;
+  referralCount?: number;
+  referralEarnings?: number;
   profile: any;
   createdAt: string;
   lastLoginAt: string;
@@ -1709,6 +1768,51 @@ function getCustomersList(): CustomerAccount[] {
 function saveCustomersList(customers: CustomerAccount[]) {
   writeDataFile("customers.json", customers);
 }
+
+function generateReferralCode(existingCodes: Set<string>): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  let attempts = 0;
+  do {
+    let rand = "";
+    for (let i = 0; i < 5; i++) {
+      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    code = `HOS-${rand}`;
+    attempts++;
+  } while (existingCodes.has(code) && attempts < 100);
+  return code;
+}
+
+function ensureCustomerReferralCodes() {
+  try {
+    const customers = getCustomersList();
+    let modified = false;
+    const existingCodes = new Set<string>();
+    customers.forEach((c) => {
+      if (c.referralCode) existingCodes.add(c.referralCode);
+    });
+    customers.forEach((c) => {
+      if (!c.referralCode) {
+        c.referralCode = generateReferralCode(existingCodes);
+        existingCodes.add(c.referralCode);
+        if (!c.profile) c.profile = {};
+        c.profile.referralCode = c.referralCode;
+        c.profile.referralCount = c.referralCount || 0;
+        c.profile.referralEarnings = c.referralEarnings || 0;
+        modified = true;
+      }
+    });
+    if (modified) {
+      saveCustomersList(customers);
+    }
+  } catch (err) {
+    console.warn("Notice checking customer referral codes:", err);
+  }
+}
+
+// Ensure existing customers have valid referral codes on startup
+ensureCustomerReferralCodes();
 
 function hashCustomerPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString("hex");
@@ -1735,14 +1839,22 @@ function verifyCustomerToken(token: string | undefined): { valid: boolean; user?
     }
     const customers = getCustomersList();
     const customer = customers.find((c) => c.id === customerId || c.email.toLowerCase() === email.toLowerCase());
+    const profile = customer?.profile || {};
+    if (customer?.referralCode) {
+      profile.referralCode = customer.referralCode;
+      profile.referralCount = customer.referralCount || 0;
+      profile.referralEarnings = customer.referralEarnings || 0;
+      if (customer.referredBy) profile.referredBy = customer.referredBy;
+    }
     return {
       valid: true,
       user: {
         uid: customerId,
         email,
         displayName: customer?.fullName || email.split("@")[0],
+        referralCode: customer?.referralCode,
       },
-      profile: customer?.profile,
+      profile,
     };
   } catch (err: any) {
     return { valid: false, error: err.message };
@@ -1770,18 +1882,31 @@ export function extractCustomerToken(req: express.Request): string | undefined {
 // Customer Registration API
 app.post("/api/customer/register", (req, res) => {
   try {
-    const { email = "", password = "", fullName = "", phone = "" } = req.body || {};
+    const { email = "", password = "", confirmPassword = "", fullName = "", phone = "", referralCode = "" } = req.body || {};
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanPass = String(password).trim();
-    const cleanName = String(fullName).trim() || "Valued Patron";
+    const cleanConfirm = String(confirmPassword).trim();
+    const cleanName = String(fullName).trim();
+    const cleanPhone = String(phone).trim();
+    const cleanReferral = String(referralCode).trim().toUpperCase();
 
-    if (!cleanEmail || !cleanEmail.includes("@")) {
+    if (!cleanName) {
+      res.status(400).json({ success: false, error: "Please enter your full name." });
+      return;
+    }
+
+    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
       res.status(400).json({ success: false, error: "Please enter a valid email address." });
       return;
     }
 
     if (!cleanPass || cleanPass.length < 6) {
       res.status(400).json({ success: false, error: "Password must be at least 6 characters long." });
+      return;
+    }
+
+    if (cleanConfirm && cleanPass !== cleanConfirm) {
+      res.status(400).json({ success: false, error: "Passwords do not match. Please re-enter your password." });
       return;
     }
 
@@ -1795,6 +1920,37 @@ app.post("/api/customer/register", (req, res) => {
       return;
     }
 
+    // Validate referral code if supplied
+    let referrer: CustomerAccount | undefined;
+    if (cleanReferral) {
+      referrer = customers.find(
+        (c) => (c.referralCode && c.referralCode.toUpperCase() === cleanReferral) ||
+               (c.profile?.referralCode && c.profile.referralCode.toUpperCase() === cleanReferral)
+      );
+
+      if (!referrer) {
+        res.status(400).json({
+          success: false,
+          error: "Invalid referral code. Please double-check the code or proceed without one.",
+        });
+        return;
+      }
+
+      if (referrer.email.toLowerCase() === cleanEmail) {
+        res.status(400).json({
+          success: false,
+          error: "Self-referral is not permitted. You cannot use your own referral code.",
+        });
+        return;
+      }
+    }
+
+    const existingCodes = new Set<string>();
+    customers.forEach((c) => {
+      if (c.referralCode) existingCodes.add(c.referralCode);
+    });
+    const newReferralCode = generateReferralCode(existingCodes);
+
     const salt = crypto.randomBytes(16).toString("hex");
     const passwordHash = hashCustomerPassword(cleanPass, salt);
     const customerId = "cust_" + crypto.randomBytes(8).toString("hex");
@@ -1803,13 +1959,18 @@ app.post("/api/customer/register", (req, res) => {
       uid: customerId,
       email: cleanEmail,
       fullName: cleanName,
-      phone: String(phone).trim(),
+      phone: cleanPhone,
       savedAddresses: [],
       measurements: {
         standardSize: "M",
         cutPreference: "Straight Kurta Set",
       },
       tier: "House Patron",
+      referralCode: newReferralCode,
+      referredBy: referrer ? referrer.referralCode : undefined,
+      referralCount: 0,
+      referralEarnings: 0,
+      referralDiscountAvailable: referrer ? 100 : 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1818,13 +1979,24 @@ app.post("/api/customer/register", (req, res) => {
       id: customerId,
       email: cleanEmail,
       fullName: cleanName,
-      phone: String(phone).trim(),
+      phone: cleanPhone,
       passwordHash,
       salt,
+      referralCode: newReferralCode,
+      referredBy: referrer ? referrer.referralCode : undefined,
+      referralCount: 0,
+      referralEarnings: 0,
       profile,
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
     };
+
+    // If referred by someone, record referral on referrer
+    if (referrer) {
+      referrer.referralCount = (referrer.referralCount || 0) + 1;
+      if (!referrer.profile) referrer.profile = {};
+      referrer.profile.referralCount = referrer.referralCount;
+    }
 
     customers.push(newCustomer);
     saveCustomersList(customers);
@@ -1847,10 +2019,13 @@ app.post("/api/customer/register", (req, res) => {
         uid: customerId,
         email: cleanEmail,
         displayName: cleanName,
+        referralCode: newReferralCode,
       },
       profile,
       token,
-      message: "Patron account created successfully.",
+      message: referrer
+        ? "Patron account registered successfully! ₹100 referral discount unlocked for your first order."
+        : "Patron account created successfully.",
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || "Failed to create customer account." });
@@ -1865,7 +2040,7 @@ app.post("/api/customer/login", (req, res) => {
     const cleanPass = String(password).trim();
 
     if (!cleanEmail || !cleanPass) {
-      res.status(400).json({ success: false, error: "Please enter both email and password." });
+      res.status(400).json({ success: false, error: "Please enter both email address and password." });
       return;
     }
 
@@ -1884,6 +2059,17 @@ app.post("/api/customer/login", (req, res) => {
     }
 
     customer.lastLoginAt = new Date().toISOString();
+
+    // Ensure referral code is initialized
+    if (!customer.referralCode) {
+      const existingCodes = new Set<string>(customers.map((c) => c.referralCode || "").filter(Boolean));
+      customer.referralCode = generateReferralCode(existingCodes);
+    }
+    if (!customer.profile) customer.profile = {};
+    customer.profile.referralCode = customer.referralCode;
+    customer.profile.referralCount = customer.referralCount || 0;
+    customer.profile.referralEarnings = customer.referralEarnings || 0;
+
     saveCustomersList(customers);
 
     const issuedAt = Date.now();
@@ -1903,6 +2089,7 @@ app.post("/api/customer/login", (req, res) => {
         uid: customer.id,
         email: customer.email,
         displayName: customer.fullName,
+        referralCode: customer.referralCode,
       },
       profile: customer.profile,
       token,
@@ -1910,6 +2097,49 @@ app.post("/api/customer/login", (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || "Failed to sign in." });
+  }
+});
+
+// Referral Code Validation API
+app.post("/api/referral/validate", (req, res) => {
+  try {
+    const { referralCode = "", customerEmail = "" } = req.body || {};
+    const cleanCode = String(referralCode).trim().toUpperCase();
+    const cleanEmail = String(customerEmail).trim().toLowerCase();
+
+    if (!cleanCode) {
+      res.status(400).json({ valid: false, error: "Please enter a referral code to apply." });
+      return;
+    }
+
+    const customers = getCustomersList();
+    const referrer = customers.find(
+      (c) => (c.referralCode && c.referralCode.toUpperCase() === cleanCode) ||
+             (c.profile?.referralCode && c.profile.referralCode.toUpperCase() === cleanCode)
+    );
+
+    if (!referrer) {
+      res.status(404).json({ valid: false, error: "Invalid referral code. Please check and try again." });
+      return;
+    }
+
+    if (cleanEmail && referrer.email.toLowerCase() === cleanEmail) {
+      res.status(400).json({
+        valid: false,
+        error: "Self-referral is not allowed. You cannot apply your own referral code.",
+      });
+      return;
+    }
+
+    res.json({
+      valid: true,
+      referralCode: referrer.referralCode,
+      discountAmount: 100,
+      referrerName: referrer.fullName,
+      message: `Valid referral code from ${referrer.fullName}! ₹100 discount applied to your order.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ valid: false, error: err.message || "Failed to validate referral code." });
   }
 });
 
@@ -2110,10 +2340,14 @@ app.post("/api/customer/forgot-password", async (req, res) => {
       const fbAuth = getServerFirebaseAuth();
       if (fbAuth) {
         try {
-          const { sendPasswordResetEmail } = await import("firebase/auth");
-          await sendPasswordResetEmail(fbAuth, cleanEmail, { url: resetUrl, handleCodeInApp: true });
+          try {
+            await sendFbPasswordResetEmail(fbAuth, cleanEmail, { url: resetUrl, handleCodeInApp: true });
+          } catch (continueUrlErr: any) {
+            console.log("[SECURITY AUDIT] Continuing with direct customer Firebase password reset email:", continueUrlErr?.message);
+            await sendFbPasswordResetEmail(fbAuth, cleanEmail);
+          }
           emailDelivered = true;
-          deliveryProvider = "Firebase Auth";
+          deliveryProvider = "Google Firebase Auth Delivery";
         } catch (fbErr: any) {
           providerError = fbErr?.message;
         }

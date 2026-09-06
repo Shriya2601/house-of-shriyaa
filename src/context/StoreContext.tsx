@@ -58,6 +58,8 @@ interface StoreContextType {
     shippingAddress: ShippingAddress;
     paymentMethod: PaymentMethod;
     notes?: string;
+    referralCode?: string;
+    referralDiscount?: number;
   }) => Promise<Order>;
 
   // Wishlist (Persisted)
@@ -138,6 +140,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       console.warn("Cart local storage sync notice:", e);
     }
   }, [cart]);
+
+  // Capture referral code from URL parameter if present (?ref=CODE)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const refCode = params.get("ref");
+      if (refCode) {
+        localStorage.setItem("hos_pending_referral", refCode.trim().toUpperCase());
+      }
+    } catch {}
+  }, []);
 
   // Sync Wishlist to localStorage
   useEffect(() => {
@@ -391,6 +404,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     shippingAddress: ShippingAddress;
     paymentMethod: PaymentMethod;
     notes?: string;
+    referralCode?: string;
+    referralDiscount?: number;
   }): Promise<Order> => {
     let orderItems: {
       productId: string;
@@ -439,8 +454,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     // Free delivery on ₹1,999+ otherwise ₹150 express shipping
+    const discount = Math.max(0, details.referralDiscount || 0);
     const shippingFee = subtotal >= 1999 || subtotal === 0 ? 0 : 150;
-    const total = subtotal + shippingFee;
+    const total = Math.max(0, subtotal - discount + shippingFee);
 
     // Create real order in Firestore database
     const newOrder = await createRealOrder({
@@ -450,6 +466,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       subtotal,
       shippingFee,
       total,
+      referralDiscount: discount,
+      referralCode: details.referralCode,
       paymentMethod: details.paymentMethod,
       paymentStatus: details.paymentMethod === "Cash on Delivery (COD)" ? "Pending" : "Paid",
       orderStatus: "pending",

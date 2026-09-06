@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, ShieldCheck, Truck, CreditCard, Banknote, Sparkles, MessageCircle, ArrowRight, Loader2 } from "lucide-react";
+import { X, CheckCircle2, ShieldCheck, Truck, CreditCard, Banknote, Sparkles, MessageCircle, ArrowRight, Loader2, Gift, Tag } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { Order, PaymentMethod } from "../../types";
+import { validateReferralCode } from "../../services/storeService";
 
 export default function CheckoutModal() {
   const {
@@ -26,7 +27,20 @@ export default function CheckoutModal() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Instant UPI / NetBanking");
   const [notes, setNotes] = useState("");
 
-  // Auto-fill from logged in profile if available
+  // Referral code state
+  const [referralInput, setReferralInput] = useState("");
+  const [appliedReferral, setAppliedReferral] = useState<{
+    code: string;
+    discount: number;
+    referrerName?: string;
+  } | null>(null);
+  const [validatingRef, setValidatingRef] = useState(false);
+  const [referralFeedback, setReferralFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  // Auto-fill from logged in profile if available & auto-check referral
   useEffect(() => {
     if (customerProfile || currentUser) {
       if (!fullName) {
@@ -50,6 +64,91 @@ export default function CheckoutModal() {
       }
     }
   }, [customerProfile, currentUser, isCheckoutOpen]);
+
+  // Initial referral auto-detection
+  useEffect(() => {
+    if (isCheckoutOpen && !appliedReferral) {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const refUrl = urlParams.get("ref");
+        const pendingRef = refUrl || customerProfile?.referredBy || localStorage.getItem("hos_pending_referral") || "";
+        if (pendingRef && !referralInput) {
+          const clean = pendingRef.trim().toUpperCase();
+          setReferralInput(clean);
+          autoApplyReferral(clean);
+        }
+      } catch (err) {
+        console.warn("Referral auto-fill check error:", err);
+      }
+    }
+  }, [isCheckoutOpen, customerProfile]);
+
+  const autoApplyReferral = async (code: string) => {
+    if (!code) return;
+    setValidatingRef(true);
+    try {
+      const buyerEmail = email || customerProfile?.email || currentUser?.email;
+      const res = await validateReferralCode(code, buyerEmail);
+      if (res.valid) {
+        setAppliedReferral({
+          code: res.referralCode || code,
+          discount: res.discountAmount || 100,
+          referrerName: res.referrerName,
+        });
+        setReferralFeedback({
+          type: "success",
+          message: `₹${res.discountAmount || 100} Referral discount applied! (Referred by ${res.referrerName || "Patron"})`,
+        });
+      }
+    } catch {
+      // Non-blocking on auto-apply
+    } finally {
+      setValidatingRef(false);
+    }
+  };
+
+  const handleApplyReferral = async () => {
+    if (!referralInput.trim()) {
+      setReferralFeedback({ type: "error", message: "Please enter a referral code." });
+      return;
+    }
+    setValidatingRef(true);
+    setReferralFeedback(null);
+    try {
+      const buyerEmail = email.trim() || customerProfile?.email || currentUser?.email;
+      const res = await validateReferralCode(referralInput.trim(), buyerEmail);
+      if (res.valid) {
+        setAppliedReferral({
+          code: res.referralCode || referralInput.trim().toUpperCase(),
+          discount: res.discountAmount || 100,
+          referrerName: res.referrerName,
+        });
+        setReferralFeedback({
+          type: "success",
+          message: `₹${res.discountAmount || 100} Referral discount applied! (Referred by ${res.referrerName || "Patron"})`,
+        });
+      } else {
+        setAppliedReferral(null);
+        setReferralFeedback({
+          type: "error",
+          message: res.error || "Invalid referral code. Please check and try again.",
+        });
+      }
+    } catch {
+      setReferralFeedback({ type: "error", message: "Unable to validate referral code right now." });
+    } finally {
+      setValidatingRef(false);
+    }
+  };
+
+  const handleRemoveReferral = () => {
+    setAppliedReferral(null);
+    setReferralInput("");
+    setReferralFeedback(null);
+    try {
+      localStorage.removeItem("hos_pending_referral");
+    } catch {}
+  };
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -78,8 +177,9 @@ export default function CheckoutModal() {
     ? parsePrice(instantCheckoutProduct.product.price)
     : cartSubtotal;
 
+  const referralDiscount = appliedReferral ? appliedReferral.discount : 0;
   const shippingFee = subtotal >= 1999 || subtotal === 0 ? 0 : 150;
-  const total = subtotal + shippingFee;
+  const total = Math.max(0, subtotal - referralDiscount + shippingFee);
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,6 +219,8 @@ export default function CheckoutModal() {
         },
         paymentMethod,
         notes: notes.trim(),
+        referralCode: appliedReferral?.code,
+        referralDiscount: appliedReferral?.discount,
       });
 
       setPlacedOrder(order);
@@ -207,6 +309,15 @@ export default function CheckoutModal() {
                   <span className="text-[#6b6257]">Payment Mode</span>
                   <span className="font-semibold text-[#0d4f3c]">{placedOrder.paymentMethod}</span>
                 </div>
+                {Boolean(placedOrder.referralDiscount && placedOrder.referralDiscount > 0) && (
+                  <div className="flex justify-between items-center text-xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-200">
+                    <span className="flex items-center gap-1">
+                      <Gift size={12} />
+                      Referral Code ({placedOrder.referralCode})
+                    </span>
+                    <span>-₹{placedOrder.referralDiscount}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-xs pt-1 border-t border-[#e0d7cb]">
                   <span className="font-bold text-[#1e1b18]">Total Amount</span>
                   <span className="font-serif font-bold text-base text-[#0d4f3c]">₹{placedOrder.total.toLocaleString("en-IN")}</span>
@@ -274,9 +385,28 @@ export default function CheckoutModal() {
                   ))}
                 </div>
 
-                <div className="mt-2.5 pt-2 border-t border-[#e0d7cb] flex justify-between text-xs font-bold">
-                  <span>Grand Total (Free Shipping Included)</span>
-                  <span className="text-[#0d4f3c] font-serif text-sm">₹{total.toLocaleString("en-IN")}</span>
+                <div className="mt-3 pt-2.5 border-t border-[#e0d7cb] space-y-1.5 text-xs">
+                  <div className="flex justify-between text-[#5a544c]">
+                    <span>Subtotal</span>
+                    <span>₹{subtotal.toLocaleString("en-IN")}</span>
+                  </div>
+                  {appliedReferral && (
+                    <div className="flex justify-between text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-200">
+                      <span className="flex items-center gap-1">
+                        <Gift size={12} />
+                        Referral Discount ({appliedReferral.code})
+                      </span>
+                      <span>-₹{appliedReferral.discount}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-[#5a544c]">
+                    <span>Express Atelier Courier</span>
+                    <span className="text-emerald-700 font-medium">{shippingFee === 0 ? "FREE" : `₹${shippingFee}`}</span>
+                  </div>
+                  <div className="pt-1.5 border-t border-[#e0d7cb] flex justify-between font-bold text-[#1e1b18]">
+                    <span>Grand Total</span>
+                    <span className="text-[#0d4f3c] font-serif text-sm">₹{total.toLocaleString("en-IN")}</span>
+                  </div>
                 </div>
               </div>
 
@@ -448,6 +578,73 @@ export default function CheckoutModal() {
                     </div>
                   </label>
                 </div>
+              </div>
+
+              {/* Referral Code / Privilege Code */}
+              <div className="bg-[#f4eee6] border border-[#e8dfd8] rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#1e1b18]">
+                    <Gift size={15} className="text-[#0d4f3c]" />
+                    <span>Have a Referral or Privilege Code?</span>
+                  </div>
+                  <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                    Save ₹100
+                  </span>
+                </div>
+
+                {appliedReferral ? (
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-300/80 px-3 py-2 rounded-lg text-xs">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={15} className="text-emerald-700" />
+                      <div>
+                        <span className="font-mono font-bold text-emerald-900">{appliedReferral.code}</span>
+                        <span className="text-emerald-700 ml-1.5">(₹{appliedReferral.discount} applied)</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveReferral}
+                      className="text-[11px] font-semibold text-red-600 hover:text-red-800 underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter friend's referral code (e.g. HOS-ABC12)"
+                      value={referralInput}
+                      onChange={(e) => {
+                        setReferralInput(e.target.value.toUpperCase());
+                        if (referralFeedback) setReferralFeedback(null);
+                      }}
+                      className="flex-1 text-xs px-3 py-2 bg-white border border-[#d6ccc2] rounded-lg uppercase tracking-wider font-mono focus:outline-hidden focus:border-[#0d4f3c]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyReferral}
+                      disabled={validatingRef || !referralInput.trim()}
+                      className="bg-[#0d4f3c] text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-[#083528] disabled:opacity-50 transition-colors flex items-center gap-1"
+                    >
+                      {validatingRef ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        "Apply"
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {referralFeedback && (
+                  <p
+                    className={`text-[11px] ${
+                      referralFeedback.type === "success" ? "text-emerald-700 font-medium" : "text-red-600"
+                    }`}
+                  >
+                    {referralFeedback.message}
+                  </p>
+                )}
               </div>
 
               {/* Special Atelier Customization Notes */}

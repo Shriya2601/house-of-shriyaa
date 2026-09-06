@@ -119,15 +119,27 @@ export default function Admin() {
   const [authSuccess, setAuthSuccess] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  // Auto-detect resetToken in URL
+  // Auto-detect resetToken / oobCode in URL
   useEffect(() => {
-    const tokenFromUrl = searchParams.get("resetToken") || searchParams.get("token");
+    const tokenFromUrl =
+      searchParams.get("resetToken") ||
+      searchParams.get("token") ||
+      searchParams.get("oobCode") ||
+      searchParams.get("code") ||
+      searchParams.get("resetCode");
     const emailFromUrl = searchParams.get("email");
-    if (tokenFromUrl) {
-      setResetTokenParam(tokenFromUrl);
+    const modeFromUrl = searchParams.get("mode");
+
+    if (tokenFromUrl || modeFromUrl === "resetPassword" || modeFromUrl === "confirm_reset") {
+      if (tokenFromUrl) setResetTokenParam(tokenFromUrl);
       if (emailFromUrl) setAuthEmail(emailFromUrl);
       setAuthMode("confirm_reset");
-      setAuthSuccess("Reset token detected. Please enter your new administrator password below.");
+      setAuthSuccess(
+        tokenFromUrl
+          ? "Reset code/token detected. Please enter your new administrator password below."
+          : "Please enter your security code/token and new administrator password below."
+      );
+      setAuthError("");
     }
   }, [searchParams]);
 
