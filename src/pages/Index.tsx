@@ -1,5 +1,5 @@
 import React, { createElement, useEffect, useMemo, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import { Product } from "../types";
 import { useStore } from "../context/StoreContext";
@@ -66,7 +66,7 @@ type BuilderTextProps = {
   type?: "text" | "heading" | "button" | "brand";
 };
 
-function BuilderText({
+export function BuilderText({
   as: Tag = "span",
   id,
   text,
@@ -292,7 +292,7 @@ const slides = [
   },
 ];
 
-function LogoMark({ small = false }: { small?: boolean }) {
+export function LogoMark({ small = false }: { small?: boolean }) {
   return (
     <span data-editable="true" className={small ? "logo-mark-small" : "logo-mark"}>
       <Crown size={small ? 14 : 28} strokeWidth={1.75} />
@@ -305,7 +305,7 @@ function IntroOverlay({ onEnter }: { onEnter: () => void }) {
 }
 
 // Navigation Drawer Component (Myntra-style E-Commerce Side Menu)
-function NavigationDrawer({
+export function NavigationDrawer({
   isOpen,
   onClose,
   onSelectCategory,
@@ -803,7 +803,7 @@ function NavigationDrawer({
 }
 
 // Interactive Information Modal System
-function InteractiveModal({
+export function InteractiveModal({
   type,
   onClose,
   onOpenAuth,
@@ -1456,7 +1456,7 @@ function InteractiveModal({
   );
 }
 
-function StoreHeader({
+export function StoreHeader({
   onPookie,
   onOpenDrawer,
   onOpenAuth,
@@ -1473,11 +1473,17 @@ function StoreHeader({
   wishlistCount: number;
   onSelectCategory?: (category: string) => void;
 }) {
+  const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
   const { siteContent, totalCartCount, setIsCartOpen, currentUser, customerProfile } = useStore();
 
   const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    } else {
+      navigate(`/#${id}`);
+    }
   };
 
   return (
@@ -2048,7 +2054,7 @@ function Catalog({
   );
 }
 
-function ProductCard({
+export function ProductCard({
   product,
   isWishlisted,
   onWishlist,
@@ -2060,9 +2066,8 @@ function ProductCard({
   index: number;
   key?: React.Key;
 }) {
-  const [quickView, setQuickView] = useState(false);
-  const [selectedSize, setSelectedSize] = useState<string>("Unstitched Fabric");
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const navigate = useNavigate();
+  const [activeImageIndex] = useState(0);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
 
@@ -2075,12 +2080,20 @@ function ProductCard({
 
   const activeImage = productImages[activeImageIndex] || product.image;
 
-  const handleAddToCart = () => {
-    addToCart(product as Product, selectedSize);
+  const handleOpenDetails = () => {
+    navigate(`/product/${product.id}`);
   };
 
-  const handleBuyNow = () => {
-    startInstantCheckout(product as Product, selectedSize);
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const defaultSize = product.sizes?.[0] || "Unstitched Fabric";
+    addToCart(product as Product, defaultSize);
+  };
+
+  const handleBuyNow = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const defaultSize = product.sizes?.[0] || "Unstitched Fabric";
+    startInstantCheckout(product as Product, defaultSize);
   };
 
   const whatsappMsg = encodeURIComponent(
@@ -2089,7 +2102,8 @@ function ProductCard({
 
   return (
     <motion.article
-      className="product-card relative"
+      className="product-card relative cursor-pointer"
+      onClick={handleOpenDetails}
       initial={{ opacity: 0, y: 28, scale: 0.96 }}
       whileInView={{ opacity: 1, y: 0, scale: 1 }}
       viewport={{ once: true, margin: "-40px" }}
@@ -2139,15 +2153,27 @@ function ProductCard({
           ))}
         </div>
         <button
+          type="button"
           data-editable="true"
           className={`wishlist-button ${isWishlisted ? "wishlisted" : ""}`}
           aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
-          onClick={() => onWishlist(product.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onWishlist(product.id);
+          }}
         >
           <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} />
         </button>
-        <button data-editable="true" className="quick-view" onClick={() => setQuickView(!quickView)}>
-          <BuilderText as="span" text={quickView ? "Close Details" : "Quick View"} />
+        <button
+          type="button"
+          data-editable="true"
+          className="quick-view"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenDetails();
+          }}
+        >
+          <BuilderText as="span" text="View Details" />
         </button>
       </div>
       <div className="product-content">
@@ -2194,58 +2220,6 @@ function ProductCard({
             />
           )}
         </div>
-
-        {quickView && (
-          <div className="quick-view-copy" style={{ marginTop: "0.5rem", marginBottom: "0.75rem", padding: "0.5rem", backgroundColor: "#f9f6f0", borderRadius: "8px", border: "1px solid #e8dfd5" }}>
-            <p className="text-xs text-[#554a40] mb-2">
-              <strong>Fabric:</strong> {product.fabricType || "Pure Surat Handloom Silk"} · <strong>Fit:</strong> {product.cut || "Classic"}
-            </p>
-
-            {productImages.length > 1 && (
-              <div className="mb-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[0.65rem] text-[#8c827a] uppercase font-bold">
-                    Gallery ({activeImageIndex + 1} of {productImages.length}):
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                  {productImages.map((img, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setActiveImageIndex(i)}
-                      className={`relative w-8 h-10 rounded overflow-hidden border transition-all shrink-0 ${
-                        activeImageIndex === i
-                          ? "border-[#0d4f3c] ring-1 ring-[#0d4f3c]"
-                          : "border-[#d6ccc2] opacity-70 hover:opacity-100"
-                      }`}
-                    >
-                      <img src={img} alt="" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[0.68rem] text-[#8c827a] uppercase font-bold">Select Size:</span>
-              {["Unstitched Fabric", "S", "M", "L", "XL"].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSelectedSize(s)}
-                  className={`text-[0.65rem] px-2 py-0.5 rounded border transition-colors ${
-                    selectedSize === s
-                      ? "bg-[#0d4f3c] text-white border-[#0d4f3c]"
-                      : "bg-white text-[#2a241e] border-[#d6ccc2] hover:border-[#0d4f3c]"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="product-actions" style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "0.5rem" }}>
           <button
@@ -2298,6 +2272,7 @@ function ProductCard({
             href={`https://wa.me/919501698356?text=${whatsappMsg}`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="whatsapp-button"
             aria-label={`Inquire on WhatsApp about ${product.name}`}
             style={{
@@ -2320,7 +2295,7 @@ function ProductCard({
   );
 }
 
-function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }) {
+export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }) {
   const { siteContent } = useStore();
   const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
 

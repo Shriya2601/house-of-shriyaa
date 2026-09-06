@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
+import ProductDetails from "./pages/ProductDetails";
 import InfoPage from "./pages/InfoPage";
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
@@ -35,6 +36,7 @@ export default function App() {
           <PookieChatbot />
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/product/:id" element={<ProductDetails />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/login" element={<Admin />} />
             <Route path="/our-story" element={<InfoPage path="/our-story" />} />
