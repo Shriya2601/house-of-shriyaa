@@ -105,8 +105,8 @@ export default function CartDrawer() {
                     {item.product.name}
                   </h4>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[11px] text-[#6b6257] bg-[#ede5db] px-2 py-0.5 rounded">
-                      {item.size}
+                    <span className="text-[11px] font-medium text-[#0d4f3c] bg-[#ede5db] px-2 py-0.5 rounded">
+                      Unstitched Suit
                     </span>
                     <span className="text-[11px] text-[#6b6257]">
                       {item.product.color}

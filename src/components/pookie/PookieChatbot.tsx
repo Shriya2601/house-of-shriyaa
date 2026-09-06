@@ -439,7 +439,7 @@ export default function PookieChatbot() {
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ask Pookie about suits, colors, fabrics, sizes..."
+              placeholder="Ask Pookie about suits, colors, fabrics, unstitched sets..."
               className="flex-1 bg-[#0a120e] text-[#faf8f5] text-xs px-3.5 py-2.5 rounded-xl border border-[#d4af37]/25 focus:border-[#d4af37] focus:outline-none placeholder:text-[#7f7467]"
             />
             <button

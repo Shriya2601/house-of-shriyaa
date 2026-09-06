@@ -350,7 +350,7 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     };
   }
 
-  // 6. SIZING, CUSTOM TAILORING, MADE-TO-MEASURE
+  // 6. SIZING, FABRIC & UNSTITCHED SUITS
   if (
     q.includes("size") ||
     q.includes("sizing") ||
@@ -367,15 +367,15 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
   ) {
     return {
       text:
-        "📏 **Sizing & Bespoke Tailoring Options**:\n\n" +
-        "• **Standard Ready Sizes**: Available in XS (Bust 34\"), S (36\"), M (38\"), L (40\"), XL (42\"), and 2XL (44\").\n" +
-        "• **Unstitched Fabric Sets**: Comes with 2.5m Kurta fabric, 2.5m Bottom fabric, and 2.25m Dupatta so your local master tailor can create your exact dream fit.\n" +
-        "• **Made-to-Measure Surat Atelier Tailoring**: Want custom sleeve length, deeper necklines, or plus size customization? You can leave your measurements in checkout notes, or connect with our Master Tailor on WhatsApp.\n\n" +
-        "All our stitched garments include 2 inches of inner margin for easy future adjustments!",
+        "✨ **All Suits Are Premium Unstitched Suits**:\n\n" +
+        "• Every piece at House of Shriya is an **Unstitched 3-Piece Luxury Suit Set**.\n" +
+        "• Each suit includes generous fabric lengths: **2.5m Kurta length**, **2.5m Bottom/Salwar length**, and **2.25m full-width artisan Dupatta**.\n" +
+        "• Because all suits are unstitched, there are no sizing constraints—your local master tailor can create your exact dream fit, customized sleeves, and bespoke necklines!\n\n" +
+        "Need styling advice or have questions? Click 'POOKIE NEED A HELP' to connect directly on WhatsApp!",
       quickReplies: [
-        "📱 Chat with tailor on WhatsApp",
-        "🌸 Show Alia Cut Anarkali",
+        "🌸 Show Anarkali Collections",
         "🌿 Pure Mulmul Cotton suits",
+        "✨ Banarasi Silk Suits",
       ],
     };
   }

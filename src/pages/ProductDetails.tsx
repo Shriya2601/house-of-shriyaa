@@ -16,7 +16,6 @@ import {
   Share2,
   MessageCircle,
   RotateCcw,
-  Ruler,
   Clock,
   Layers,
   Award,
@@ -36,15 +35,6 @@ import {
 } from "./Index";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
-
-const STANDARD_SIZES = [
-  { id: "Unstitched Fabric", label: "Unstitched Fabric", sub: "2.5m Kurta + 2.5m Salwar + 2.25m Dupatta" },
-  { id: "S", label: "S (36)", sub: "Bust 36\" | Waist 32\"" },
-  { id: "M", label: "M (38)", sub: "Bust 38\" | Waist 34\"" },
-  { id: "L", label: "L (40)", sub: "Bust 40\" | Waist 36\"" },
-  { id: "XL", label: "XL (42)", sub: "Bust 42\" | Waist 38\"" },
-  { id: "XXL", label: "XXL (44)", sub: "Bust 44\" | Waist 40\"" },
-];
 
 export default function ProductDetails() {
   const { id } = useParams<{ id: string }>();
@@ -85,10 +75,9 @@ export default function ProductDetails() {
   }, [product]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [selectedSize, setSelectedSize] = useState("Unstitched Fabric");
+  const selectedFormat = "Unstitched Suit";
   const [quantity, setQuantity] = useState(1);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [showSizeGuide, setShowSizeGuide] = useState(false);
   const [pincode, setPincode] = useState("");
   const [pincodeChecked, setPincodeChecked] = useState(false);
   const [addedToast, setAddedToast] = useState(false);
@@ -114,21 +103,16 @@ export default function ProductDetails() {
     setActiveImageIndex(0);
     setQuantity(1);
     setPincodeChecked(false);
-    if (product?.sizes?.[0]) {
-      setSelectedSize(product.sizes[0]);
-    } else {
-      setSelectedSize("Unstitched Fabric");
-    }
     if (product?.name) {
       document.title = `${product.name} | House of Shriya Atelier`;
     }
-  }, [id, product?.name, product?.sizes]);
+  }, [id, product?.name]);
 
   const isWishlisted = Boolean(product && wishlist.has(product.id));
 
   const handleAddToCart = () => {
     if (!product) return;
-    addToCart(product, selectedSize, quantity);
+    addToCart(product, selectedFormat, quantity);
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 2500);
     setIsCartOpen(true);
@@ -136,7 +120,7 @@ export default function ProductDetails() {
 
   const handleBuyNow = () => {
     if (!product) return;
-    startInstantCheckout(product, selectedSize);
+    startInstantCheckout(product, selectedFormat);
   };
 
   const handleShare = async () => {
@@ -163,9 +147,9 @@ export default function ProductDetails() {
 
   const whatsappInquiryUrl = useMemo(() => {
     if (!product) return "https://wa.me/919501698356";
-    const msg = `Namaste House of Shriya! I am interested in the ${product.name} (${product.price}, ${product.color || "Surat Handloom"}, Size: ${selectedSize}). Could you share more details and availability?`;
+    const msg = `Namaste House of Shriya! I am interested in the ${product.name} (${product.price}, ${product.color || "Surat Handloom"}, Unstitched Suit). Could you share more details and availability?`;
     return `https://wa.me/919501698356?text=${encodeURIComponent(msg)}`;
-  }, [product, selectedSize]);
+  }, [product]);
 
   // Product not found state
   if (!product && !loadingCatalog) {
@@ -455,56 +439,20 @@ export default function ProductDetails() {
               </p>
             </div>
 
-            {/* Size & Stitching Preference */}
-            <div className="flex flex-col gap-2.5">
+            {/* Format & Material Specifications */}
+            <div className="p-3.5 bg-[#faf8f5] rounded-xl border border-[#ebe2d8] space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#2a241e] uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Select Size & Stitching:</span>
-                  <span className="text-[#0d4f3c] font-semibold">{selectedSize}</span>
+                <span className="font-bold text-[#2a241e] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-[#c5a059]" />
+                  <span>Format: Unstitched 3-Piece Luxury Suit</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowSizeGuide(true)}
-                  className="text-xs text-[#0d4f3c] hover:underline font-medium inline-flex items-center gap-1"
-                >
-                  <Ruler size={13} />
-                  <span>Size & Fabric Guide</span>
-                </button>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#0d4f3c]/10 text-[#0d4f3c] border border-[#0d4f3c]/20">
+                  Unstitched Suit
+                </span>
               </div>
-
-              {/* Interactive Size Pills */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {STANDARD_SIZES.map((size) => {
-                  const isSelected = selectedSize === size.id;
-                  return (
-                    <button
-                      key={size.id}
-                      type="button"
-                      onClick={() => setSelectedSize(size.id)}
-                      className={`text-left p-2.5 rounded-xl border transition-all ${
-                        isSelected
-                          ? "bg-[#0d4f3c] text-white border-[#0d4f3c] shadow-xs"
-                          : "bg-white text-[#2a241e] border-[#e8dfd5] hover:border-[#0d4f3c] hover:bg-[#faf8f5]"
-                      }`}
-                    >
-                      <div className="font-semibold text-xs flex items-center justify-between">
-                        <span>{size.label}</span>
-                        {isSelected && <Check size={13} className="text-amber-300" />}
-                      </div>
-                      <div className={`text-[10px] mt-0.5 truncate ${isSelected ? "text-white/80" : "text-[#786d65]"}`}>
-                        {size.sub}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Helper tip for unstitched */}
-              {selectedSize === "Unstitched Fabric" && (
-                <div className="bg-[#f9f6f0] p-3 rounded-xl border border-[#e8dfd5] text-xs text-[#6a5e53]">
-                  <strong>Unstitched Fabric Set:</strong> Includes generous 2.5m Kurta material, 2.5m Salwar/Pants bottom material, and 2.25m full-width handwoven Dupatta. Ideal for tailoring bespoke necklines, sleeves, and customized fits.
-                </div>
-              )}
+              <p className="text-[#6b6257] leading-relaxed text-[11px]">
+                Complete 3-piece pure handloom unstitched set: <strong>2.5m Kurta length</strong>, <strong>2.5m Bottom length</strong>, and <strong>2.25m artisan Dupatta</strong>. Generous cuts ready to be tailored to your bespoke measurements.
+              </p>
             </div>
 
             {/* Quantity Selector */}
@@ -690,7 +638,7 @@ export default function ProductDetails() {
           <span className="text-xs text-[#8c827a] line-clamp-1">{product?.name}</span>
           <div className="flex items-baseline gap-1.5">
             <span className="text-base font-bold text-[#0d4f3c]">{product?.price}</span>
-            <span className="text-[10px] text-[#5a544c]">({selectedSize})</span>
+            <span className="text-[10px] font-semibold text-[#0d4f3c] bg-[#0d4f3c]/10 px-2 py-0.5 rounded">Unstitched Suit</span>
           </div>
         </div>
         <div className="flex-1 flex items-center gap-2">
@@ -747,81 +695,6 @@ export default function ProductDetails() {
         onClose={() => setActiveModal(null)}
         onOpenAuth={() => setIsAuthOpen(true)}
       />
-
-      {/* Size Guide Modal */}
-      {showSizeGuide && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
-          onClick={() => setShowSizeGuide(false)}
-        >
-          <div
-            className="bg-white max-w-lg w-full rounded-2xl p-6 border border-[#e8dfd5] shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-[#e8dfd5] pb-3 mb-4">
-              <h3 className="font-serif text-xl text-[#1a1612] font-semibold flex items-center gap-2">
-                <Ruler size={18} className="text-[#0d4f3c]" />
-                <span>House of Shriya Sizing & Fabric Guide</span>
-              </h3>
-              <button
-                onClick={() => setShowSizeGuide(false)}
-                className="text-[#8c827a] hover:text-[#2a241e] text-lg font-bold p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs text-[#5a544c]">
-              <div className="bg-[#faf8f5] p-3 rounded-xl border border-[#e8dfd5]">
-                <h4 className="font-bold text-[#0d4f3c] mb-1">Unstitched Fabric Option:</h4>
-                <p>
-                  Every unstitched suit box provides ample fabric lengths:
-                </p>
-                <ul className="list-disc list-inside mt-1 space-y-0.5 text-[#2a241e]">
-                  <li><strong>Kurta / Top:</strong> 2.50 Meters (Pure Handloom Silk/Chanderi)</li>
-                  <li><strong>Bottom / Salwar:</strong> 2.50 Meters (Santoon / Cotton Silk Blend)</li>
-                  <li><strong>Dupatta:</strong> 2.25 Meters (Full width artisan zari border)</li>
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-[#2a241e] mb-2">Standard Stitched Measurements (Inches):</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border border-[#e8dfd5] rounded-lg">
-                    <thead className="bg-[#faf8f5] text-[#2a241e]">
-                      <tr>
-                        <th className="p-2 border-b border-[#e8dfd5]">Size</th>
-                        <th className="p-2 border-b border-[#e8dfd5]">Bust</th>
-                        <th className="p-2 border-b border-[#e8dfd5]">Waist</th>
-                        <th className="p-2 border-b border-[#e8dfd5]">Hip</th>
-                        <th className="p-2 border-b border-[#e8dfd5]">Kurta Length</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#e8dfd5]">
-                      <tr><td className="p-2 font-bold">S</td><td className="p-2">36"</td><td className="p-2">32"</td><td className="p-2">38"</td><td className="p-2">46"</td></tr>
-                      <tr><td className="p-2 font-bold">M</td><td className="p-2">38"</td><td className="p-2">34"</td><td className="p-2">40"</td><td className="p-2">46"</td></tr>
-                      <tr><td className="p-2 font-bold">L</td><td className="p-2">40"</td><td className="p-2">36"</td><td className="p-2">42"</td><td className="p-2">47"</td></tr>
-                      <tr><td className="p-2 font-bold">XL</td><td className="p-2">42"</td><td className="p-2">38"</td><td className="p-2">44"</td><td className="p-2">47"</td></tr>
-                      <tr><td className="p-2 font-bold">XXL</td><td className="p-2">44"</td><td className="p-2">40"</td><td className="p-2">46"</td><td className="p-2">48"</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-[#786d65] italic">
-                Need custom boutique tailoring or sleeve adjustments? Connect with our master stylist on WhatsApp (+91 95016 98356).
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowSizeGuide(false)}
-              className="mt-5 w-full bg-[#0d4f3c] text-white py-2.5 rounded-full text-xs font-semibold uppercase tracking-wider hover:bg-[#0a3f30] transition-colors"
-            >
-              Got It, Continue
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Copy link confirmation toast */}
       {copiedLink && (

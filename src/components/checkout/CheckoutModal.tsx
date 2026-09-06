@@ -224,7 +224,7 @@ export default function CheckoutModal() {
               <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2 max-w-md mx-auto">
                 <a
                   href={`https://wa.me/919501698356?text=${encodeURIComponent(
-                    `Namaste House of Shriya! I just placed order ${placedOrder.orderNumber} for ₹${placedOrder.total}. Please confirm my bespoke sizing.`
+                    `Namaste House of Shriya! I just placed order ${placedOrder.orderNumber} for ₹${placedOrder.total}. Please confirm my order dispatch.`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -268,7 +268,7 @@ export default function CheckoutModal() {
                           {item.product.name}
                         </div>
                         <div className="text-[11px] text-[#6b6257]">
-                          {item.size} · Qty: {item.quantity}
+                          Unstitched Suit · Qty: {item.quantity}
                         </div>
                       </div>
                       <div className="text-xs font-bold text-[#0d4f3c]">

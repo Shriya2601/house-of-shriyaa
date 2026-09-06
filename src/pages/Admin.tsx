@@ -442,7 +442,7 @@ export default function Admin() {
         hoverImage: "",
         images: [],
         inStock: true,
-        sizes: ["Unstitched Fabric", "XS", "S", "M", "L", "XL", "2XL"],
+        sizes: ["Unstitched Suit"],
       });
     }
     setIsProductModalOpen(true);
@@ -1666,7 +1666,7 @@ export default function Admin() {
                                   {item.productName}
                                 </h4>
                                 <div className="text-[11px] text-[#6b6257] mt-0.5">
-                                  Size: <span className="font-bold text-[#0d4f3c]">{item.size}</span> · Color: {item.color} · Qty: {item.quantity}
+                                  Format: <span className="font-bold text-[#0d4f3c]">{item.size || "Unstitched Suit"}</span> · Color: {item.color} · Qty: {item.quantity}
                                 </div>
                               </div>
                               <div className="font-serif font-bold text-xs text-[#0d4f3c]">

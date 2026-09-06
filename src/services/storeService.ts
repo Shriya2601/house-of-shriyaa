@@ -268,7 +268,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     fabricType: product.fabricType || "Pure Chanderi Silk",
     tags: product.tags || [product.category || "Party Wear"],
     inStock: product.inStock !== false,
-    sizes: product.sizes || ["Unstitched Fabric", "XS", "S", "M", "L", "XL", "2XL", "3XL"],
+    sizes: product.sizes || ["Unstitched Suit"],
     activeWishlist: Boolean(product.activeWishlist),
     updatedAt: new Date().toISOString(),
   };
@@ -290,7 +290,7 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
         await setDoc(doc(db, "products", p.id), {
           ...p,
           inStock: true,
-          sizes: ["Unstitched Fabric", "XS", "S", "M", "L", "XL", "2XL"],
+          sizes: ["Unstitched Suit"],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });

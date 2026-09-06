@@ -1105,12 +1105,12 @@ export function InteractiveModal({
             </div>
 
             <div className="p-3 bg-white border border-[#ebe2d8] rounded-xl space-y-1.5">
-              <strong className="text-xs text-[#1e1b18] block">Bespoke Sizing Profile</strong>
+              <strong className="text-xs text-[#1e1b18] block">Atelier Attire Preference</strong>
               <div className="grid grid-cols-2 gap-2 text-[#706458]">
-                <span>Standard Size: <strong>{customerProfile?.sizingProfile?.size || "M (38\")"}</strong></span>
-                <span>Cut Preference: <strong>{customerProfile?.sizingProfile?.cutPreference || "Alia Cut / Anarkali"}</strong></span>
-                <span>Pant Length: <strong>{customerProfile?.sizingProfile?.pantLength || "38 inches"}</strong></span>
-                <span>Dupatta Drape: <strong>{customerProfile?.sizingProfile?.dupattaLength || "2.5m Handloom"}</strong></span>
+                <span>Attire: <strong>100% Unstitched Luxury Suits</strong></span>
+                <span>Cut Preference: <strong>{customerProfile?.sizingProfile?.cutPreference || "Bespoke Atelier"}</strong></span>
+                <span>Fabric Length: <strong>2.5m Kurta + 2.5m Bottom</strong></span>
+                <span>Dupatta Drape: <strong>{customerProfile?.sizingProfile?.dupattaLength || "2.25m Handloom"}</strong></span>
               </div>
             </div>
 
@@ -2086,13 +2086,13 @@ export function ProductCard({
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const defaultSize = product.sizes?.[0] || "Unstitched Fabric";
+    const defaultSize = product.sizes?.[0] || "Unstitched Suit";
     addToCart(product as Product, defaultSize);
   };
 
   const handleBuyNow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const defaultSize = product.sizes?.[0] || "Unstitched Fabric";
+    const defaultSize = product.sizes?.[0] || "Unstitched Suit";
     startInstantCheckout(product as Product, defaultSize);
   };
 
