@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Crown,
   ShoppingBag,
@@ -76,6 +76,7 @@ import {
   adminSignUp,
   adminSignOut,
   adminResetPassword,
+  adminConfirmResetPassword,
   subscribeAuthState,
   verifyAdminLogin,
   checkAdminSession,
@@ -105,14 +106,30 @@ export default function Admin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Auth form states
-  const [authMode, setAuthMode] = useState<"signin" | "setup" | "reset">("signin");
+  const [searchParams] = useSearchParams();
+  const [authMode, setAuthMode] = useState<"signin" | "setup" | "reset" | "confirm_reset">("signin");
   const [authUsername, setAuthUsername] = useState("House of Shriya");
   const [authPassword, setAuthPassword] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authDisplayName, setAuthDisplayName] = useState("");
+  const [resetTokenParam, setResetTokenParam] = useState("");
+  const [newResetPassword, setNewResetPassword] = useState("");
+  const [confirmResetPassword, setConfirmResetPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  // Auto-detect resetToken in URL
+  useEffect(() => {
+    const tokenFromUrl = searchParams.get("resetToken") || searchParams.get("token");
+    const emailFromUrl = searchParams.get("email");
+    if (tokenFromUrl) {
+      setResetTokenParam(tokenFromUrl);
+      if (emailFromUrl) setAuthEmail(emailFromUrl);
+      setAuthMode("confirm_reset");
+      setAuthSuccess("Reset token detected. Please enter your new administrator password below.");
+    }
+  }, [searchParams]);
 
   // Credentials management in Settings tab
   const [credCurrentPassword, setCredCurrentPassword] = useState("");
@@ -302,6 +319,45 @@ export default function Admin() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to process reset request.";
+      setAuthError(msg);
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthSuccess("");
+
+    if (!resetTokenParam.trim()) {
+      setAuthError("Please enter your 8-character code or reset link token.");
+      return;
+    }
+    if (!newResetPassword || newResetPassword.length < 6) {
+      setAuthError("New password must be at least 6 characters long.");
+      return;
+    }
+    if (newResetPassword !== confirmResetPassword) {
+      setAuthError("New passwords do not match. Please re-enter.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      const res = await adminConfirmResetPassword(resetTokenParam, newResetPassword, authEmail);
+      if (res.success) {
+        setAuthSuccess(res.message || "Password updated successfully! Please sign in with your new password.");
+        setAuthMode("signin");
+        setAuthPassword("");
+        setResetTokenParam("");
+        setNewResetPassword("");
+        setConfirmResetPassword("");
+      } else {
+        setAuthError(res.error || "Failed to update password. Code may be expired or already used.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to confirm password reset.";
       setAuthError(msg);
     } finally {
       setAuthSubmitting(false);
@@ -1187,7 +1243,7 @@ export default function Admin() {
                 type="button"
                 onClick={() => { setAuthMode("reset"); setAuthError(""); setAuthSuccess(""); }}
                 className={`flex-1 pb-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-                  authMode === "reset"
+                  authMode === "reset" || authMode === "confirm_reset"
                     ? "border-[#d4af37] text-[#d4af37]"
                     : "border-transparent text-[#8a857b] hover:text-white"
                 }`}
@@ -1355,6 +1411,117 @@ export default function Admin() {
                   <Mail size={15} />
                   <span>{authSubmitting ? "Sending Link..." : "Send Reset Link"}</span>
                 </button>
+
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("confirm_reset");
+                      setAuthError("");
+                      setAuthSuccess("");
+                    }}
+                    className="text-xs text-[#d4af37] hover:underline"
+                  >
+                    Already have a reset code or link token? Set new password →
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {authMode === "confirm_reset" && (
+              <form onSubmit={handleConfirmReset} className="space-y-4">
+                <p className="text-xs text-[#a39e93]">
+                  Enter your single-use reset code or token received via email, along with your desired new password.
+                </p>
+
+                <div>
+                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
+                    Registered Email (Optional)
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="e.g. shriyapusha01@gmail.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
+                    Security Code / Reset Token
+                  </label>
+                  <div className="relative">
+                    <Key size={15} className="absolute left-3 top-3 text-[#7a7469]" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter 8-character code or token"
+                      value={resetTokenParam}
+                      onChange={(e) => setResetTokenParam(e.target.value)}
+                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
+                    New Security Password (Min 6 characters)
+                  </label>
+                  <div className="relative">
+                    <Lock size={15} className="absolute left-3 top-3 text-[#7a7469]" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="••••••••"
+                      value={newResetPassword}
+                      onChange={(e) => setNewResetPassword(e.target.value)}
+                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <Lock size={15} className="absolute left-3 top-3 text-[#7a7469]" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="••••••••"
+                      value={confirmResetPassword}
+                      onChange={(e) => setConfirmResetPassword(e.target.value)}
+                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  className="w-full mt-2 bg-[#d4af37] hover:bg-[#e6c34f] text-[#080e0c] font-bold text-xs uppercase tracking-widest py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  <CheckCircle2 size={15} />
+                  <span>{authSubmitting ? "Updating Password..." : "Update Password & Sign In"}</span>
+                </button>
+
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("reset");
+                      setAuthError("");
+                      setAuthSuccess("");
+                    }}
+                    className="text-xs text-[#a39e93] hover:text-[#d4af37] transition-colors"
+                  >
+                    ← Back to Request Reset Link
+                  </button>
+                </div>
               </form>
             )}
 

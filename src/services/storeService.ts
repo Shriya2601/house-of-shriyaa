@@ -1486,8 +1486,126 @@ export async function adminResetPassword(
   }
 }
 
+export async function adminConfirmResetPassword(
+  token: string,
+  newPassword: string,
+  email?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const cleanToken = token.trim();
+    const cleanPass = newPassword.trim();
+    if (!cleanToken) {
+      return { success: false, error: "Please enter your password reset code or link token." };
+    }
+    if (!cleanPass || cleanPass.length < 6) {
+      return { success: false, error: "New password must be at least 6 characters long." };
+    }
+
+    const res = await fetch("/api/admin/confirm-reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: cleanToken,
+        newPassword: cleanPass,
+        email: email?.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      return {
+        success: true,
+        message: data.message || "Admin password has been successfully updated. You may now sign in.",
+      };
+    }
+
+    return {
+      success: false,
+      error: data.error || data.message || "Failed to confirm password reset. Token may be invalid or expired.",
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Network error confirming password reset.";
+    return { success: false, error: msg };
+  }
+}
+
+// Global state broadcaster for customer and admin auth changes
+const authListeners = new Set<(user: User | null) => void>();
+let activeLocalCustomerUser: User | null = null;
+
+function broadcastAuthState(user: User | null) {
+  activeLocalCustomerUser = user;
+  authListeners.forEach((cb) => {
+    try {
+      cb(user);
+    } catch (e) {
+      console.warn("Auth subscriber callback error:", e);
+    }
+  });
+}
+
+function createSyntheticCustomerUser(uid: string, email: string, displayName: string): User {
+  return {
+    uid,
+    email,
+    displayName,
+    emailVerified: true,
+    isAnonymous: false,
+    metadata: {},
+    providerData: [],
+    refreshToken: "",
+    tenantId: null,
+    delete: async () => {},
+    getIdToken: async () => localStorage.getItem("hos_customer_token") || "",
+    getIdTokenResult: async () => ({} as any),
+    reload: async () => {},
+    toJSON: () => ({ uid, email, displayName }),
+    phoneNumber: null,
+    photoURL: null,
+    providerId: "houseofshriya.custom",
+  } as unknown as User;
+}
+
 export function subscribeAuthState(callback: (user: User | null) => void): () => void {
-  return onAuthStateChanged(auth, callback);
+  authListeners.add(callback);
+
+  // If we already have an active local customer user, emit immediately
+  if (activeLocalCustomerUser) {
+    callback(activeLocalCustomerUser);
+  } else {
+    // Check localStorage for persisted customer session
+    try {
+      const storedProfile = localStorage.getItem("hos_customer_profile");
+      const storedToken = localStorage.getItem("hos_customer_token");
+      if (storedProfile && storedToken) {
+        const parsed = JSON.parse(storedProfile);
+        const synth = createSyntheticCustomerUser(
+          parsed.uid || "cust_anon",
+          parsed.email || "",
+          parsed.fullName || parsed.displayName || "Patron"
+        );
+        activeLocalCustomerUser = synth;
+        callback(synth);
+      }
+    } catch {}
+  }
+
+  // Also hook into Firebase Auth
+  const unsubFirebase = onAuthStateChanged(auth, (fbUser) => {
+    if (fbUser) {
+      activeLocalCustomerUser = fbUser;
+      callback(fbUser);
+    } else if (!localStorage.getItem("hos_customer_token")) {
+      // Only emit null if there's no active local customer token
+      activeLocalCustomerUser = null;
+      callback(null);
+    }
+  });
+
+  return () => {
+    authListeners.delete(callback);
+    unsubFirebase();
+  };
 }
 
 /* ============================================================
@@ -1500,68 +1618,167 @@ export async function customerSignUp(
   fullName: string,
   phone?: string
 ): Promise<User> {
-  const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+  const cleanEmail = email.trim();
+  const cleanPass = pass.trim();
   const cleanName = fullName.trim() || "Customer";
-  if (cred.user) {
-    await updateProfile(cred.user, { displayName: cleanName });
-  }
 
-  const initialProfile: CustomerProfile = {
-    uid: cred.user.uid,
-    email: cred.user.email || email.trim(),
-    fullName: cleanName,
-    phone: phone?.trim() || "",
-    savedAddresses: [],
-    measurements: {
-      standardSize: "M",
-      cutPreference: "Straight Kurta Set",
-    },
-    tier: "House Patron",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
+  // Try Firebase Client Auth first
   try {
-    await setDoc(doc(db, "customers", cred.user.uid), initialProfile);
-    // Also mirror to global users collection for Admin Dashboard User Management
-    const userDoc: UserAccount = {
-      id: cred.user.uid,
+    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
+    if (cred.user) {
+      await updateProfile(cred.user, { displayName: cleanName });
+    }
+
+    const initialProfile: CustomerProfile = {
+      uid: cred.user.uid,
+      email: cred.user.email || cleanEmail,
       fullName: cleanName,
-      email: cred.user.email || email.trim(),
       phone: phone?.trim() || "",
-      role: "customer",
-      status: "active",
-      totalOrders: 0,
-      totalSpent: 0,
+      savedAddresses: [],
+      measurements: {
+        standardSize: "M",
+        cutPreference: "Straight Kurta Set",
+      },
+      tier: "House Patron",
       createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    await safeFirestoreSet(doc(db, "users", cred.user.uid), userDoc, { merge: true });
-  } catch (e) {
-    console.warn("Error saving customer profile doc:", e);
-  }
 
-  try {
-    localStorage.setItem("hos_customer_profile", JSON.stringify(initialProfile));
-  } catch {
-    // ignore
-  }
+    try {
+      await setDoc(doc(db, "customers", cred.user.uid), initialProfile);
+      const userDoc: UserAccount = {
+        id: cred.user.uid,
+        fullName: cleanName,
+        email: cred.user.email || cleanEmail,
+        phone: phone?.trim() || "",
+        role: "customer",
+        status: "active",
+        totalOrders: 0,
+        totalSpent: 0,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      };
+      await safeFirestoreSet(doc(db, "users", cred.user.uid), userDoc, { merge: true });
+    } catch (e) {
+      console.warn("Error saving customer profile doc to Firestore:", e);
+    }
 
-  return cred.user;
+    try {
+      localStorage.setItem("hos_customer_profile", JSON.stringify(initialProfile));
+    } catch {}
+
+    broadcastAuthState(cred.user);
+    return cred.user;
+  } catch (fbErr: any) {
+    // If Firebase Auth provider is disabled (auth/operation-not-allowed) or network/provider error,
+    // seamlessly use the high-performance dedicated backend Customer Authentication API.
+    const isProviderDisabled =
+      fbErr?.code === "auth/operation-not-allowed" ||
+      fbErr?.message?.includes("operation-not-allowed") ||
+      fbErr?.code === "auth/api-key-not-valid";
+
+    if (!isProviderDisabled) {
+      // Re-throw genuine client validation errors (e.g. email-already-in-use, weak-password)
+      if (fbErr?.code === "auth/email-already-in-use") {
+        throw new Error("An account with this email already exists. Please sign in instead.");
+      }
+      if (fbErr?.code === "auth/weak-password") {
+        throw new Error("Password must be at least 6 characters long.");
+      }
+    }
+
+    // Call backend registration endpoint
+    const res = await fetch("/api/customer/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: cleanPass,
+        fullName: cleanName,
+        phone: phone?.trim() || "",
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to create account. Please try again.");
+    }
+
+    const { user, profile, token } = data;
+    try {
+      if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
+      if (token) localStorage.setItem("hos_customer_token", token);
+    } catch {}
+
+    const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
+    broadcastAuthState(synthUser);
+    return synthUser;
+  }
 }
 
 export async function customerSignIn(email: string, pass: string): Promise<User> {
-  const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
-  return cred.user;
+  const cleanEmail = email.trim();
+  const cleanPass = pass.trim();
+
+  try {
+    const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+    broadcastAuthState(cred.user);
+    return cred.user;
+  } catch (fbErr: any) {
+    const isProviderDisabled =
+      fbErr?.code === "auth/operation-not-allowed" ||
+      fbErr?.message?.includes("operation-not-allowed") ||
+      fbErr?.code === "auth/api-key-not-valid";
+
+    if (!isProviderDisabled && fbErr?.code !== "auth/user-not-found" && fbErr?.code !== "auth/wrong-password") {
+      // If genuine Firebase error like too-many-requests
+      if (fbErr?.code === "auth/too-many-requests") {
+        throw new Error("Too many failed attempts. Please try again in a few moments.");
+      }
+    }
+
+    // Fall back to backend Customer Sign In API
+    const res = await fetch("/api/customer/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: cleanPass,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Invalid email or password. Please try again.");
+    }
+
+    const { user, profile, token } = data;
+    try {
+      if (profile) localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
+      if (token) localStorage.setItem("hos_customer_token", token);
+    } catch {}
+
+    const synthUser = createSyntheticCustomerUser(user.uid, user.email, user.displayName);
+    broadcastAuthState(synthUser);
+    return synthUser;
+  }
 }
 
 export async function customerSignOut(): Promise<void> {
   try {
     localStorage.removeItem("hos_customer_profile");
-  } catch {
-    // ignore
-  }
-  await signOut(auth);
+    localStorage.removeItem("hos_customer_token");
+  } catch {}
+
+  try {
+    await fetch("/api/customer/logout", { method: "POST" }).catch(() => {});
+  } catch {}
+
+  try {
+    await signOut(auth).catch(() => {});
+  } catch {}
+
+  broadcastAuthState(null);
 }
 
 export async function customerResetPassword(email: string): Promise<void> {

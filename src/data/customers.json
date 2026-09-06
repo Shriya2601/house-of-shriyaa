@@ -1,0 +1,50 @@
+[
+  {
+    "id": "cust_bc6a3c49b0bcfc7c",
+    "email": "customer_1788734936163@example.com",
+    "fullName": "Ananya Roy",
+    "phone": "+91 98765 43210",
+    "passwordHash": "5e844e7c338628fe4e741fa72fce21512f69ffb8367e047e886f32e02755a718bd632c1b7737f665cd532517ce5c768f2e7b8a1d52ccdce812648ef425e6af9c",
+    "salt": "274555d8025376ffedce306bbf248c92",
+    "profile": {
+      "uid": "cust_bc6a3c49b0bcfc7c",
+      "email": "customer_1788734936163@example.com",
+      "fullName": "Ananya Roy",
+      "phone": "+91 98765 43210",
+      "savedAddresses": [],
+      "measurements": {
+        "standardSize": "M",
+        "cutPreference": "Straight Kurta Set"
+      },
+      "tier": "House Patron",
+      "createdAt": "2026-09-06T22:48:56.230Z",
+      "updatedAt": "2026-09-06T22:48:56.230Z"
+    },
+    "createdAt": "2026-09-06T22:48:56.230Z",
+    "lastLoginAt": "2026-09-06T22:48:56.346Z"
+  },
+  {
+    "id": "cust_c7dc9163a65e00c1",
+    "email": "customer_1788735005110@example.com",
+    "fullName": "Ananya Roy",
+    "phone": "+91 98765 43210",
+    "passwordHash": "d40da0ca4e63f5b1fcdb2852cb5b051db0855a8dc269751849a74a4a3779982e2df4475d96abc530803344c03c4cfd93e349595e324ba5466c4107e293238501",
+    "salt": "dfe4b6a8e5ca9cb27f6d558f30689746",
+    "profile": {
+      "uid": "cust_c7dc9163a65e00c1",
+      "email": "customer_1788735005110@example.com",
+      "fullName": "Ananya Roy",
+      "phone": "+91 98765 43210",
+      "savedAddresses": [],
+      "measurements": {
+        "standardSize": "M",
+        "cutPreference": "Straight Kurta Set"
+      },
+      "tier": "House Patron",
+      "createdAt": "2026-09-06T22:50:05.175Z",
+      "updatedAt": "2026-09-06T22:50:05.175Z"
+    },
+    "createdAt": "2026-09-06T22:50:05.175Z",
+    "lastLoginAt": "2026-09-06T22:50:05.296Z"
+  }
+]
