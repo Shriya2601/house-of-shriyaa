@@ -635,98 +635,156 @@ export function gitSyncPlugin(): Plugin {
         }
 
         // 8. ADMIN VERIFY
-        if (req.method === "POST" && url === "/api/admin/verify") {
-          try {
-            const body = await parseJsonBody(req);
-            const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
-            const username = (body.username || "").trim().toLowerCase();
-            const password = (body.password || "").trim();
+        if (url === "/api/admin/verify") {
+          if (req.method === "OPTIONS") {
+            res.statusCode = 204;
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            res.end();
+            return;
+          }
 
-            const isValidUsername =
-              username === "house of shriya" ||
-              username === "house of shreya" ||
-              username === "admin" ||
-              username === "care@houseofshriya.com";
+          if (req.method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+              const username = (body.username || "").trim().toLowerCase();
+              const password = (body.password || "").trim();
 
-            const isValidPassword =
-              password === "house of shriya@2601" ||
-              password === "house of shreya@2601" ||
-              password.length >= 8;
+              const isValidUsername =
+                username === "house of shriya" ||
+                username === "house of shreya" ||
+                username === "admin" ||
+                username === "care@houseofshriya.com";
 
-            if (!isValidUsername || !isValidPassword) {
-              res.statusCode = 401;
+              const isValidPassword =
+                password === "house of shriya@2601" ||
+                password === "house of shreya@2601" ||
+                password.length >= 8;
+
+              if (!isValidUsername || !isValidPassword) {
+                res.statusCode = 401;
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Access-Control-Allow-Origin", "*");
+                res.end(JSON.stringify({ success: false, error: "Invalid admin credentials." }));
+                return;
+              }
+
+              const issuedAt = Date.now();
+              const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
+              const payload = `${username}:${issuedAt}:${expiresAt}`;
+              const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+              const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
+
+              const reqHost = (req.headers["host"] || "").toLowerCase();
+              const isCustomDomain = reqHost.includes("houseofshriya.com");
+              const domainAttr = isCustomDomain ? "; Domain=.houseofshriya.com" : "";
+
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ success: false, error: "Invalid admin credentials." }));
+              res.setHeader("Access-Control-Allow-Origin", "*");
+              res.setHeader(
+                "Set-Cookie",
+                `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}`
+              );
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  username,
+                  token,
+                  expiresAt,
+                  message: "Authentication successful.",
+                })
+              );
+              return;
+            } catch (err: any) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.setHeader("Access-Control-Allow-Origin", "*");
+              res.end(JSON.stringify({ success: false, error: err.message || "Request failed." }));
               return;
             }
-
-            const issuedAt = Date.now();
-            const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
-            const payload = `${username}:${issuedAt}:${expiresAt}`;
-            const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-            const token = `${Buffer.from(payload).toString("base64")}.${signature}`;
-
-            res.setHeader("Content-Type", "application/json");
-            res.end(
-              JSON.stringify({
-                success: true,
-                username,
-                token,
-                expiresAt,
-                message: "Authentication successful.",
-              })
-            );
-            return;
-          } catch (err: any) {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ success: false, error: err.message || "Request failed." }));
-            return;
           }
         }
 
         // 9. ADMIN SESSION CHECK
-        if (req.method === "POST" && url === "/api/admin/session") {
-          try {
-            const body = await parseJsonBody(req);
-            const token = body.token || "";
-            const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
-
-            if (!token || !token.includes(".")) {
-              res.statusCode = 401;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ valid: false, error: "Malformed token." }));
-              return;
-            }
-
-            const [b64Payload, signature] = token.split(".");
-            const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
-            const [username, , expiresAtStr] = payload.split(":");
-            const expiresAt = parseInt(expiresAtStr, 10);
-
-            if (Date.now() > expiresAt) {
-              res.statusCode = 401;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ valid: false, error: "Token expired." }));
-              return;
-            }
-
-            const expectedSig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-            if (expectedSig !== signature) {
-              res.statusCode = 401;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ valid: false, error: "Invalid signature." }));
-              return;
-            }
-
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ valid: true, username, expiresAt }));
+        if (url === "/api/admin/session") {
+          if (req.method === "OPTIONS") {
+            res.statusCode = 204;
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            res.end();
             return;
-          } catch (err: any) {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ valid: false, error: "Verification failed." }));
-            return;
+          }
+
+          if (req.method === "POST") {
+            try {
+              let token = "";
+              try {
+                const body = await parseJsonBody(req);
+                token = body?.token || "";
+              } catch {}
+
+              if (!token) {
+                const cookieHeader = req.headers["cookie"] || "";
+                const match = cookieHeader.match(/hos_admin_session=([^;]+)/);
+                if (match) {
+                  try {
+                    const rawVal = decodeURIComponent(match[1]);
+                    if (rawVal.startsWith("{")) {
+                      const parsed = JSON.parse(rawVal);
+                      token = parsed.token || "";
+                    } else {
+                      token = rawVal;
+                    }
+                  } catch {}
+                }
+              }
+
+              const secret = process.env.ADMIN_SECRET_KEY || "hos-admin-master-secret-2026";
+
+              if (!token || !token.includes(".")) {
+                res.statusCode = 401;
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Access-Control-Allow-Origin", "*");
+                res.end(JSON.stringify({ valid: false, error: "Malformed or missing token." }));
+                return;
+              }
+
+              const [b64Payload, signature] = token.split(".");
+              const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
+              const [username, , expiresAtStr] = payload.split(":");
+              const expiresAt = parseInt(expiresAtStr, 10);
+
+              if (Date.now() > expiresAt) {
+                res.statusCode = 401;
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Access-Control-Allow-Origin", "*");
+                res.end(JSON.stringify({ valid: false, error: "Token expired." }));
+                return;
+              }
+
+              const expectedSig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+              if (expectedSig !== signature) {
+                res.statusCode = 401;
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Access-Control-Allow-Origin", "*");
+                res.end(JSON.stringify({ valid: false, error: "Invalid signature." }));
+                return;
+              }
+
+              res.setHeader("Content-Type", "application/json");
+              res.setHeader("Access-Control-Allow-Origin", "*");
+              res.end(JSON.stringify({ valid: true, username, expiresAt }));
+              return;
+            } catch (err: any) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.setHeader("Access-Control-Allow-Origin", "*");
+              res.end(JSON.stringify({ valid: false, error: "Verification failed." }));
+              return;
+            }
           }
         }
 

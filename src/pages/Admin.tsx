@@ -78,6 +78,7 @@ import {
   verifyAdminLogin,
   changeAdminCredentials,
   getStoredAdminSession,
+  setStoredAdminSession,
   clearStoredAdminSession,
   defaultSiteContent,
 } from "../services/storeService";
@@ -225,39 +226,38 @@ export default function Admin() {
     setAuthSuccess("");
     setAuthSubmitting(true);
     try {
-      // 1. Edge Worker Authentication verify (production edge HMAC verification)
+      // 1. Edge Worker Authentication verify (production edge HMAC verification with 1500ms timeout)
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
         const edgeRes = await fetch("/api/admin/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: authUsername, password: authPassword }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
         if (edgeRes.ok) {
           const edgeData = await edgeRes.json();
           if (edgeData.success) {
-            setAdminSession({ authenticated: true, username: edgeData.username || authUsername });
-            try {
-              localStorage.setItem("hos_admin_session", JSON.stringify({
-                authenticated: true,
-                username: edgeData.username || authUsername,
-                token: edgeData.token,
-                expiresAt: edgeData.expiresAt,
-              }));
-            } catch {
-              // non-blocking
-            }
-            setAuthSuccess("Authentication verified via Edge Worker. Entering dashboard...");
+            const verifiedName = edgeData.username || authUsername;
+            setStoredAdminSession(verifiedName, edgeData.token);
+            setAdminSession({ authenticated: true, username: verifiedName });
+            setAuthSuccess("Authentication verified. Entering dashboard...");
             return;
           }
         }
-      } catch {
-        // Fallback to Firestore verification below
+      } catch (edgeErr) {
+        console.warn("Edge verification unavailable or timed out, proceeding to direct verification:", edgeErr);
       }
 
-      // 2. Database verification via verifyAdminLogin (Firestore SHA-256 hashed salt)
+      // 2. Direct cryptographic & database verification via verifyAdminLogin
       const verified = await verifyAdminLogin(authUsername, authPassword);
       if (verified.success) {
-        setAdminSession({ authenticated: true, username: verified.username || authUsername });
+        const verifiedName = verified.username || authUsername;
+        setStoredAdminSession(verifiedName);
+        setAdminSession({ authenticated: true, username: verifiedName });
         setAuthSuccess("Authentication verified. Entering dashboard...");
         return;
       }
@@ -266,10 +266,12 @@ export default function Admin() {
       if (authUsername.includes("@")) {
         try {
           await adminSignIn(authUsername, authPassword);
+          setStoredAdminSession(authUsername);
           setAdminSession({ authenticated: true, username: authUsername });
+          setAuthSuccess("Authentication verified. Entering dashboard...");
           return;
         } catch {
-          // fallback
+          // fallback to error display
         }
       }
 

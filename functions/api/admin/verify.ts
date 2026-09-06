@@ -14,6 +14,18 @@ async function generateHmacSha256(message: string, secret: string): Promise<stri
     .join("");
 }
 
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+}
+
 export async function onRequestPost(context: { request: Request; env: Record<string, any> }) {
   try {
     const body = (await context.request.json()) as { username?: string; password?: string };
@@ -38,7 +50,10 @@ export async function onRequestPost(context: { request: Request; env: Record<str
         JSON.stringify({ success: false, error: "Invalid admin credentials." }),
         {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
         }
       );
     }
@@ -48,6 +63,21 @@ export async function onRequestPost(context: { request: Request; env: Record<str
     const payload = `${username}:${issuedAt}:${expiresAt}`;
     const signature = await generateHmacSha256(payload, secret);
     const token = `${btoa(payload)}.${signature}`;
+
+    const url = new URL(context.request.url);
+    const host = url.hostname.toLowerCase();
+    const isCustomDomain = host === "houseofshriya.com" || host.endsWith(".houseofshriya.com");
+    const domainAttr = isCustomDomain ? "; Domain=.houseofshriya.com" : "";
+
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    headers.set("Access-Control-Allow-Origin", "*");
+    // Issue persistent cross-domain session cookie
+    headers.append(
+      "Set-Cookie",
+      `hos_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${domainAttr}; Secure`
+    );
 
     return new Response(
       JSON.stringify({
@@ -59,16 +89,19 @@ export async function onRequestPost(context: { request: Request; env: Record<str
       }),
       {
         status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        },
+        headers,
       }
     );
   } catch (err: any) {
     return new Response(
       JSON.stringify({ success: false, error: err.message || "Request failed." }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
     );
   }
 }
