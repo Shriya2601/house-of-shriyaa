@@ -51,7 +51,9 @@ import {
   UserRound,
   X,
   Zap,
+  ZoomIn,
 } from "lucide-react";
+import LuxuryImageViewerModal from "../components/gallery/LuxuryImageViewerModal";
 
 type BuilderTextProps = {
   key?: React.Key;
@@ -2068,6 +2070,7 @@ export function ProductCard({
 }) {
   const navigate = useNavigate();
   const [activeImageIndex] = useState(0);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
 
@@ -2163,6 +2166,19 @@ export function ProductCard({
           }}
         >
           <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} />
+        </button>
+        <button
+          type="button"
+          data-editable="true"
+          className="absolute top-2.5 right-12 z-20 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-[#2a241e] hover:text-[#0d4f3c] flex items-center justify-center shadow-md opacity-90 sm:opacity-0 group-hover:opacity-100 transition-all hover:scale-110 border border-black/5"
+          title="Zoom and Inspect High-Resolution Photos"
+          aria-label={`Zoom ${product.name} photos`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsViewerOpen(true);
+          }}
+        >
+          <ZoomIn size={15} />
         </button>
         <button
           type="button"
@@ -2291,6 +2307,17 @@ export function ProductCard({
           </a>
         </div>
       </div>
+
+      {/* Fullscreen High-Resolution Image Viewer */}
+      <LuxuryImageViewerModal
+        isOpen={isViewerOpen}
+        onClose={() => setIsViewerOpen(false)}
+        images={productImages}
+        title={product.name}
+        subtitle={product.category}
+        colorName={product.color}
+        price={product.price}
+      />
     </motion.article>
   );
 }

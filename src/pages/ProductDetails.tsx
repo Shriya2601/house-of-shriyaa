@@ -21,7 +21,10 @@ import {
   Award,
   ChevronDown,
   Palette,
+  ZoomIn,
+  Maximize2,
 } from "lucide-react";
+import LuxuryImageViewerModal from "../components/gallery/LuxuryImageViewerModal";
 import { useStore } from "../context/StoreContext";
 import { useEditMode, CanvaEditable } from "../components/editmode";
 import { Product, ColorVariant } from "../types";
@@ -130,6 +133,14 @@ export default function ProductDetails() {
   }, [currentColorVariant, product]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+
+  const handleOpenViewer = (index?: number) => {
+    setViewerInitialIndex(typeof index === "number" ? index : activeImageIndex);
+    setIsViewerOpen(true);
+  };
+
   const selectedFormat = "Unstitched Suit";
   const [quantity, setQuantity] = useState(1);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -339,12 +350,19 @@ export default function ProductDetails() {
           {/* LEFT: Luxury Image Gallery (7 cols) */}
           <div className="lg:col-span-7 flex flex-col gap-4">
             {/* Primary Main Image Frame */}
-            <div className="relative aspect-[3/4] sm:aspect-[4/5] lg:aspect-[3/4] w-full rounded-2xl overflow-hidden bg-[#f4eee6] border border-[#e8dfd5] shadow-xs group">
+            <div
+              onClick={() => handleOpenViewer()}
+              className="relative aspect-[3/4] sm:aspect-[4/5] lg:aspect-[3/4] w-full rounded-2xl overflow-hidden bg-[#f4eee6] border border-[#e8dfd5] shadow-xs group cursor-zoom-in"
+              title="Click to open full high-resolution image viewer (Zoom & Pan)"
+            >
               {/* Canva Edit Button in Edit Mode */}
               {isEditMode && !isPreviewOnly && product && (
                 <button
                   type="button"
-                  onClick={() => quickEditProduct(product)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    quickEditProduct(product);
+                  }}
                   className="absolute top-3 left-3 z-30 bg-[#7D2AE8] hover:bg-[#6d20d8] text-white text-xs px-3 py-1.5 rounded-md shadow-lg flex items-center gap-1.5 font-sans font-semibold border border-white/20 transition-all"
                 >
                   <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
@@ -367,7 +385,10 @@ export default function ProductDetails() {
               {/* Wishlist Button Overlay */}
               <button
                 type="button"
-                onClick={() => product && toggleWishlist(product.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  product && toggleWishlist(product.id);
+                }}
                 className={`absolute top-3 right-3 z-20 w-10 h-10 rounded-full flex items-center justify-center border backdrop-blur-md shadow-md transition-all ${
                   isWishlisted
                     ? "bg-[#9b2c2c] border-[#9b2c2c] text-white"
@@ -397,9 +418,10 @@ export default function ProductDetails() {
                 <>
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : productImages.length - 1))
-                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : productImages.length - 1));
+                    }}
                     className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white text-[#2a241e] flex items-center justify-center shadow-md opacity-80 hover:opacity-100 transition-all"
                     aria-label="Previous image"
                   >
@@ -407,9 +429,10 @@ export default function ProductDetails() {
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveImageIndex((prev) => (prev < productImages.length - 1 ? prev + 1 : 0))
-                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImageIndex((prev) => (prev < productImages.length - 1 ? prev + 1 : 0));
+                    }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white text-[#2a241e] flex items-center justify-center shadow-md opacity-80 hover:opacity-100 transition-all"
                     aria-label="Next image"
                   >
@@ -417,6 +440,20 @@ export default function ProductDetails() {
                   </button>
                 </>
               )}
+
+              {/* Click to Zoom Pill Indicator */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenViewer();
+                }}
+                className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-xs font-medium backdrop-blur-md border border-white/20 transition-all shadow-md group-hover:scale-105"
+                title="Click to open full-screen high-resolution zoom viewer"
+              >
+                <ZoomIn size={14} className="text-[#d4af37]" />
+                <span>Click to Zoom</span>
+              </button>
 
               {/* Image Counter Indicator */}
               {productImages.length > 1 && (
@@ -433,12 +470,20 @@ export default function ProductDetails() {
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`relative w-16 sm:w-20 aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
+                    onClick={() => {
+                      if (activeImageIndex === idx) {
+                        handleOpenViewer(idx);
+                      } else {
+                        setActiveImageIndex(idx);
+                      }
+                    }}
+                    onDoubleClick={() => handleOpenViewer(idx)}
+                    className={`relative w-16 sm:w-20 aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
                       activeImageIndex === idx
                         ? "border-[#0d4f3c] ring-2 ring-[#0d4f3c]/25 shadow-sm scale-102"
                         : "border-[#e8dfd5] opacity-75 hover:opacity-100 hover:border-[#0d4f3c]/50"
                     }`}
+                    title={activeImageIndex === idx ? "Click to open full-screen zoom" : `Switch to photo ${idx + 1}`}
                   >
                     <img
                       src={img}
@@ -858,6 +903,18 @@ export default function ProductDetails() {
         type={activeModal}
         onClose={() => setActiveModal(null)}
         onOpenAuth={() => setIsAuthOpen(true)}
+      />
+
+      {/* High-Resolution Myntra-Style Fullscreen Image Viewer with Smooth Zoom */}
+      <LuxuryImageViewerModal
+        isOpen={isViewerOpen}
+        onClose={() => setIsViewerOpen(false)}
+        images={productImages}
+        initialIndex={viewerInitialIndex}
+        title={product?.name}
+        subtitle={product?.category}
+        colorName={displayColor}
+        price={displayPrice}
       />
 
       {/* Copy link confirmation toast */}

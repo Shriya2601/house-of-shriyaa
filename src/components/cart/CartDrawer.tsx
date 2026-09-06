@@ -1,8 +1,11 @@
-import React from "react";
-import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
+import React, { useState } from "react";
+import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, ShieldCheck, Sparkles, ZoomIn } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
+import LuxuryImageViewerModal from "../gallery/LuxuryImageViewerModal";
+import { Product } from "../../types";
 
 export default function CartDrawer() {
+  const [viewerProduct, setViewerProduct] = useState<Product | null>(null);
   const {
     cart,
     isCartOpen,
@@ -95,11 +98,20 @@ export default function CartDrawer() {
           ) : (
             cart.map((item) => (
               <div key={`${item.product.id}-${item.size}`} className="py-4 flex gap-3.5 items-start">
-                <img
-                  src={item.product.image}
-                  alt={item.product.name}
-                  className="w-18 h-22 object-cover rounded-md border border-[#e8dfd8] shrink-0"
-                />
+                <div
+                  className="relative group cursor-zoom-in shrink-0"
+                  onClick={() => setViewerProduct(item.product as Product)}
+                  title="Click to view high-resolution photo"
+                >
+                  <img
+                    src={item.product.image}
+                    alt={item.product.name}
+                    className="w-18 h-22 object-cover rounded-md border border-[#e8dfd8] transition-transform group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 rounded-md transition-opacity flex items-center justify-center text-white">
+                    <ZoomIn size={14} />
+                  </div>
+                </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-medium text-sm text-[#1e1b18] truncate leading-snug">
                     {item.product.name}
@@ -191,6 +203,19 @@ export default function CartDrawer() {
           </div>
         )}
       </div>
+
+      {/* High-Resolution Viewer for Cart Items */}
+      {viewerProduct && (
+        <LuxuryImageViewerModal
+          isOpen={!!viewerProduct}
+          onClose={() => setViewerProduct(null)}
+          images={Array.isArray(viewerProduct.images) && viewerProduct.images.length > 0 ? viewerProduct.images : [viewerProduct.image]}
+          title={viewerProduct.name}
+          subtitle={viewerProduct.category}
+          colorName={viewerProduct.color}
+          price={viewerProduct.price}
+        />
+      )}
     </div>
   );
 }
