@@ -86,7 +86,7 @@ export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSi
   contactEmail: "houseofshriya.in@gmail.com",
   whatsappNumber: "+919501698356",
   atelierCity: "Surat, Gujarat, India",
-  footerNote: "© House of Shriya. Made for your forever wardrobe. SURAT · WORLDWIDE SHIPPING",
+  footerNote: "© House of Shriya. Made for your forever wardrobe.",
   heroSlides: [
     {
       eyebrow: "DAILY / Festive Couture",

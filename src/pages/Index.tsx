@@ -2406,14 +2406,6 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
                 onClick={() => onOpenModal?.("support")}
                 className="text-left text-[#faf8f5]/70 hover:text-white transition-colors"
               >
-                <BuilderText as="span" text="Book a Styling" />
-              </button>
-              <button
-                type="button"
-                data-editable="true"
-                onClick={() => onOpenModal?.("support")}
-                className="text-left text-[#faf8f5]/70 hover:text-white transition-colors"
-              >
                 <BuilderText as="span" text="Contact Us" />
               </button>
             </div>
@@ -2428,8 +2420,8 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
           </div>
         </div>
         <div className="footer-bottom">
-          <BuilderText as="span" text={siteContent?.footerNote || "© House of Shriya. Made for your forever wardrobe."} />
-          <BuilderText as="span" text={`${siteContent?.atelierCity || "SURAT"} · WORLDWIDE SHIPPING`} />
+          <BuilderText as="span" text={siteContent?.footerNote ? siteContent.footerNote.replace(/\s*·?\s*(?:SURAT|WORLDWIDE SHIPPING).*$/i, "").trim() : "© House of Shriya. Made for your forever wardrobe."} />
+          <BuilderText as="span" text={`${siteContent?.atelierCity || "Surat, Gujarat, India"} · Worldwide Shipping`} />
         </div>
       </div>
     </footer>
