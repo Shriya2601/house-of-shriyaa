@@ -169,6 +169,35 @@ export function gitSyncPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
 
+        // STATIC SERVING FOR /uploads/* (ensures newly added upload images are immediately accessible with correct MIME type)
+        if (req.method === "GET" && url?.startsWith("/uploads/")) {
+          const fileName = path.basename(url);
+          const candidateDirs = [
+            path.join(rootDir, "public", "uploads"),
+            path.join(rootDir, "dist", "uploads"),
+          ];
+          for (const dir of candidateDirs) {
+            const filePath = path.join(dir, fileName);
+            if (fs.existsSync(filePath)) {
+              const ext = path.extname(fileName).toLowerCase();
+              const mimeTypes: Record<string, string> = {
+                ".webp": "image/webp",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".gif": "image/gif",
+                ".svg": "image/svg+xml",
+              };
+              res.statusCode = 200;
+              res.setHeader("Content-Type", mimeTypes[ext] || "image/webp");
+              res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+              const stream = fs.createReadStream(filePath);
+              stream.pipe(res);
+              return;
+            }
+          }
+        }
+
         // 0. PERSISTENT IMAGE UPLOAD HANDLER
         if (req.method === "POST" && url === "/api/upload-image") {
           try {

@@ -39,6 +39,37 @@ import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
 import savedCategoriesJson from "../data/categories.json";
 
+/**
+ * Safe Firestore write helper that sanitizes input and enforces a strict 2000ms timeout
+ * so that exhausted quotas, offline states, or network stalls never hang the application UI.
+ */
+export async function safeFirestoreSet(docRef: any, data: any, options: { merge?: boolean } = { merge: true }): Promise<boolean> {
+  try {
+    const sanitized = JSON.parse(JSON.stringify(data));
+    await Promise.race([
+      setDoc(docRef, sanitized, options),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore write timeout")), 2000)),
+    ]);
+    return true;
+  } catch (err) {
+    console.warn("Firestore sync skipped or unavailable (persisting locally & to repository):", err);
+    return false;
+  }
+}
+
+export async function safeFirestoreDelete(docRef: any): Promise<boolean> {
+  try {
+    await Promise.race([
+      deleteDoc(docRef),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore delete timeout")), 2000)),
+    ]);
+    return true;
+  } catch (err) {
+    console.warn("Firestore delete skipped or unavailable (persisting locally & to repository):", err);
+    return false;
+  }
+}
+
 // Default Site Content
 export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSiteContentJson as any).brandTagline)
   ? (savedSiteContentJson as SiteContent)
@@ -221,13 +252,9 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<vo
     }).catch(() => {});
   } catch {}
 
-  // Firestore attempt with graceful catch
-  try {
-    const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
-    await setDoc(docRef, merged, { merge: true });
-  } catch (err) {
-    console.warn("Firestore saveSiteContent notice (proceeding with local & repository persistence):", err);
-  }
+  // Firestore attempt with timeout protection (non-blocking)
+  const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
+  safeFirestoreSet(docRef, merged, { merge: true }).catch(() => {});
 }
 
 /* ============================================================
@@ -327,14 +354,6 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
   const id = category.id || `cat-${Date.now()}`;
   const sanitized = { ...category, id };
 
-  // 1. Write to Firestore with graceful catch
-  try {
-    const docRef = doc(db, "categories", id);
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch (err) {
-    console.warn("Firestore saveCategory notice (proceeding with local & repository persistence):", err);
-  }
-
   try {
     const deletedIds = getDeletedCategoryIds();
     if (deletedIds.has(id)) {
@@ -368,17 +387,14 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
   } catch (err) {
     console.warn("Category local storage save warning:", err);
   }
+
+  // Non-blocking Firestore update with timeout protection
+  const docRef = doc(db, "categories", id);
+  safeFirestoreSet(docRef, sanitized, { merge: true }).catch(() => {});
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  // 1. Remove from Firestore
-  try {
-    await deleteDoc(doc(db, "categories", id));
-  } catch (e) {
-    console.warn("Firestore deleteCategory error:", e);
-  }
-
-  // 2. Mark in persistent deleted set and local cache
+  // 1. Mark in persistent deleted set and local cache immediately
   try {
     const deletedIds = getDeletedCategoryIds();
     deletedIds.add(id);
@@ -388,7 +404,7 @@ export async function deleteCategory(id: string): Promise<void> {
     const filtered = current.filter((c) => c.id !== id);
     cacheCategoriesLocally(filtered);
 
-    // 3. Persist to git/server repository
+    // 2. Persist to git/server repository
     try {
       fetch("/api/save-repo-changes", {
         method: "POST",
@@ -400,11 +416,14 @@ export async function deleteCategory(id: string): Promise<void> {
       }).catch(() => {});
     } catch {}
 
-    // 4. Dispatch real-time event to all UI elements
+    // 3. Dispatch real-time event to all UI elements
     window.dispatchEvent(new CustomEvent("hos-category-deleted", { detail: { id } }));
   } catch (err) {
     console.warn("deleteCategory cache update error:", err);
   }
+
+  // 4. Non-blocking Firestore deletion with timeout protection
+  safeFirestoreDelete(doc(db, "categories", id)).catch(() => {});
 }
 
 /* ============================================================
@@ -606,14 +625,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     updatedAt: new Date().toISOString(),
   });
 
-  // 1. Write to Firestore (resilient against quota exhaustion or temporary network issues)
-  try {
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch (firestoreErr) {
-    console.warn("Firestore write notice (using persistent local and repository storage):", firestoreErr);
-  }
-
-  // 2. Update local cache and un-delete if previously marked
+  // 1. Update local cache and un-delete if previously marked immediately
   try {
     const deletedIds = getDeletedProductIds();
     if (deletedIds.has(id)) {
@@ -632,17 +644,19 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     }
     cacheProductsLocally(updated);
 
-    // 3. Persist to project source files & git repository so changes survive rebuilds and deployments
+    // 2. Persist to project source files & git repository so changes survive rebuilds, refreshes, and deployments
     try {
-      fetch("/api/save-repo-changes", {
+      await fetch("/api/save-repo-changes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           products: updated,
           commitMessage: `chore(catalog): saved product ${sanitized.name} with ${sanitized.colorVariants?.length || 1} color variants`,
         }),
-      }).catch(() => {});
-    } catch {}
+      });
+    } catch (apiErr) {
+      console.warn("API save-repo-changes notice:", apiErr);
+    }
 
     // Notify any local listeners
     window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
@@ -650,16 +664,13 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     console.warn("Local storage update warning:", err);
   }
 
+  // 3. Write to Firestore with timeout protection (non-blocking, won't hang if quota exceeded)
+  safeFirestoreSet(docRef, sanitized, { merge: true }).catch(() => {});
+
   return id;
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  try {
-    await deleteDoc(doc(db, "products", id));
-  } catch (e) {
-    console.warn("Firestore deleteDoc error:", e);
-  }
-
   try {
     const deletedIds = getDeletedProductIds();
     deletedIds.add(id);
@@ -670,20 +681,23 @@ export async function deleteProduct(id: string): Promise<void> {
     cacheProductsLocally(filtered);
 
     try {
-      fetch("/api/save-repo-changes", {
+      await fetch("/api/save-repo-changes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           products: filtered,
           commitMessage: `chore(catalog): permanently deleted product ${id}`,
         }),
-      }).catch(() => {});
+      });
     } catch {}
 
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
   } catch (err) {
     console.warn("deleteProduct cache update warning:", err);
   }
+
+  // Non-blocking Firestore deletion with timeout protection
+  safeFirestoreDelete(doc(db, "products", id)).catch(() => {});
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {

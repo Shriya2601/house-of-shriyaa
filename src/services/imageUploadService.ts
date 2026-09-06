@@ -240,7 +240,13 @@ export async function persistAssetToFirestore(
       productId: productId || undefined,
       createdAt: new Date().toISOString(),
     };
-    await setDoc(docRef, data);
+    // Clean undefined fields for Firestore compatibility
+    const sanitized = JSON.parse(JSON.stringify(data));
+    // Safe race with 1500ms timeout to avoid hanging if Firestore quota is exhausted
+    await Promise.race([
+      setDoc(docRef, sanitized),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore asset write timeout")), 1500)),
+    ]);
     return assetId;
   } catch (err) {
     console.warn("Notice: Firestore asset archive notice (proceeding with local & storage persistence):", err);

@@ -699,9 +699,9 @@ export default function Admin() {
       await saveProduct(productToSave);
       setIsProductModalOpen(false);
       setEditingProduct(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Product save failure:", err);
-      alert("Failed to save product. Please try again.");
+      alert(`Could not save product: ${err?.message || "Please check your network and try again."}`);
     } finally {
       setSavingProduct(false);
     }
@@ -961,9 +961,10 @@ export default function Admin() {
       await saveProduct(productToSave);
       setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved persistently to catalog! ✓`);
       setTimeout(() => setPaletteSaveNotice(null), 5000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to save color palette:", err);
-      alert("Failed to save color palette changes. Please try again.");
+      setPaletteSaveNotice(`Failed to save color palette: ${err?.message || "Check network connection"}`);
+      alert(`Failed to save color palette changes: ${err?.message || "Please check your network and try again."}`);
     } finally {
       setPaletteSaving(false);
     }

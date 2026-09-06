@@ -1639,34 +1639,6 @@ export function StoreHeader({
         </div>
       </div>
 
-      {/* Dynamic Header Navigation Links from CMS */}
-      {siteContent?.navLinks && siteContent.navLinks.length > 0 && (
-        <nav className="header-nav-bar hidden md:flex items-center justify-center gap-6 py-2 px-4 border-t border-[#e8dfd5]/60 text-xs font-medium text-[#5a544c] bg-[#faf8f5]/80 backdrop-blur-xs">
-          {siteContent.navLinks.map((nav) => (
-            <button
-              key={nav.id}
-              onClick={() => {
-                if (nav.href.startsWith("category:")) {
-                  const cat = nav.href.replace("category:", "");
-                  if (onSelectCategory) {
-                    onSelectCategory(cat);
-                  } else {
-                    scrollTo("catalog-section");
-                  }
-                } else if (nav.href.startsWith("#")) {
-                  scrollTo(nav.href.substring(1));
-                } else {
-                  scrollTo("catalog-section");
-                }
-              }}
-              className="hover:text-[#0d4f3c] transition-colors tracking-wide hover:underline cursor-pointer"
-            >
-              {nav.label}
-            </button>
-          ))}
-        </nav>
-      )}
-
       {searchOpen && (
         <div className="mobile-search-bar">
           <Search size={16} className="text-[#c5a059] shrink-0" />
@@ -1901,6 +1873,7 @@ function Catalog({
   const categoryPills = useMemo(() => {
     const defaultPills = [
       "All Collections",
+      "Wishlist",
       "Cotton Suits",
       "Daily Wear Suits",
       "Co-ord Sets",
@@ -1909,15 +1882,17 @@ function Catalog({
       "Seasonal Drop",
     ];
     if (!categories || categories.length === 0) return defaultPills;
-    const catNames = categories.map((c) => c.name);
-    return Array.from(new Set(["All Collections", ...catNames]));
+    const catNames = categories.map((c) => c.name).filter((n) => n !== "Wishlist");
+    return ["All Collections", "Wishlist", ...catNames];
   }, [categories]);
 
   const visibleProducts = useMemo(() => {
     const listToFilter = dynamicProducts && dynamicProducts.length > 0 ? dynamicProducts : products;
     let result = listToFilter.filter((product) => {
       let matchesFilter = true;
-      if (activeCategory === "All Collections" || activeCategory === "All Suits") {
+      if (activeCategory === "Wishlist") {
+        matchesFilter = wishlist.has(product.id);
+      } else if (activeCategory === "All Collections" || activeCategory === "All Suits") {
         matchesFilter = true;
       } else {
         const productTags = product.tags || [];
@@ -1968,7 +1943,11 @@ function Catalog({
               fieldPath="catalogSubtitle"
               label="Catalog Eyebrow"
               className="section-eyebrow"
-              text={siteContent?.catalogSubtitle || "All Handcrafted Silks & Suits"}
+              text={
+                activeCategory === "Wishlist"
+                  ? "Saved Heirloom Favorites"
+                  : siteContent?.catalogSubtitle || "All Handcrafted Silks & Suits"
+              }
             />
             <BuilderText
               as="h2"
@@ -1976,7 +1955,11 @@ function Catalog({
               fieldPath="catalogTitle"
               label="Catalog Title"
               type="heading"
-              text={siteContent?.catalogTitle || "Grand Boutique Catalog"}
+              text={
+                activeCategory === "Wishlist"
+                  ? `My Wishlist (${wishlist.size})`
+                  : siteContent?.catalogTitle || "Grand Boutique Catalog"
+              }
             />
           </div>
           <div className="catalog-search">
@@ -2035,7 +2018,19 @@ function Catalog({
 
         {visibleProducts.length === 0 && (
           <div className="empty-state">
-            <BuilderText as="span" text="No pieces found in this category or search. Try clearing filters." />
+            {activeCategory === "Wishlist" ? (
+              <div className="py-6 flex flex-col items-center gap-2">
+                <p className="text-[#5a544c] text-sm">Your wishlist is empty. Tap the heart on any suit piece to save it here.</p>
+                <button
+                  onClick={() => onCategoryChange("All Collections")}
+                  className="mt-2 px-4 py-1.5 text-xs uppercase tracking-widest font-semibold bg-[#0d4f3c] text-white hover:bg-[#093a2c] transition-colors rounded-sm cursor-pointer"
+                >
+                  Explore All Collections
+                </button>
+              </div>
+            ) : (
+              <BuilderText as="span" text="No pieces found in this category or search. Try clearing filters." />
+            )}
           </div>
         )}
       </div>

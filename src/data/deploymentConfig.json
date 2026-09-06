@@ -5,9 +5,9 @@
   "cloudflareProject": "house-of-shriya",
   "buildOutputDir": "dist",
   "buildCommand": "npm run build",
-  "lastDeployCommit": "ba61227",
-  "lastDeployTime": "2026-09-06T00:30:00.000Z",
+  "lastDeployCommit": "96d176e",
+  "lastDeployTime": "2026-09-06T16:23:51.322Z",
   "autoSyncToGit": true,
-  "lastDeployFullHash": "ba61227d318a8d7350a89db3c5e7d11e1c3c31ed",
-  "lastCommitMessage": "fix(deploy): finalize automated publishing workflow for Canva Edit mode to GitHub and Cloudflare Pages"
+  "lastDeployFullHash": "96d176eb2192adb18d87201b9351cdc6971dca14",
+  "lastCommitMessage": "test commit"
 }
