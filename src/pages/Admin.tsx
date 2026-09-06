@@ -149,6 +149,8 @@ export default function Admin() {
   const [productCategoryFilter, setProductCategoryFilter] = useState("all");
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSaveSuccess, setProductSaveSuccess] = useState<string | null>(null);
+  const [productFormError, setProductFormError] = useState<string | null>(null);
+  const [categoryNotice, setCategoryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Dedicated Color Palette Option & Studio States
   const [selectedPaletteProductId, setSelectedPaletteProductId] = useState<string>("");
@@ -649,37 +651,42 @@ export default function Admin() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setProductFormError(null);
+
     if (!editingProduct || !editingProduct.name?.trim()) {
-      alert("Please enter a product title.");
+      setProductFormError("Please enter a product title.");
       return;
     }
 
     const variants = editingProduct.colorVariants || [];
     if (variants.length === 0) {
-      alert("Please add at least one color edition for this product.");
+      setProductFormError("Please add at least one color edition for this product.");
       return;
     }
 
     // Check that every variant has a color name
     for (let i = 0; i < variants.length; i++) {
       if (!variants[i].colorName?.trim()) {
-        alert(`Color variant #${i + 1} needs a valid color name.`);
+        setProductFormError(`Color variant #${i + 1} needs a valid color name.`);
         setActiveVariantIndex(i);
         return;
       }
     }
 
     // Check that at least one variant has at least one image
-    const hasAnyImage = variants.some((v) => (v.images && v.images.length > 0) || v.image) || (editingProduct.images && editingProduct.images.length > 0) || editingProduct.image;
+    const hasAnyImage =
+      variants.some((v) => (v.images && v.images.length > 0) || v.image) ||
+      (editingProduct.images && editingProduct.images.length > 0) ||
+      editingProduct.image;
     if (!hasAnyImage) {
-      alert("Please upload at least one image from your device for this suit piece.");
+      setProductFormError("Please upload at least one image from your device for this suit piece.");
       return;
     }
 
     setSavingProduct(true);
     try {
       const primary = variants[0];
-      const primaryImages = primary.images?.length ? primary.images : (editingProduct.images || []);
+      const primaryImages = primary.images?.length ? primary.images : editingProduct.images || [];
       const primaryImage = primaryImages[0] || primary.image || editingProduct.image || "";
       const primaryHover = primaryImages[1] || primary.hoverImage || primaryImage;
 
@@ -694,7 +701,7 @@ export default function Admin() {
         price: primary.price || editingProduct.price || "₹2,999",
         originalPrice: primary.originalPrice || editingProduct.originalPrice || "₹4,499",
         savings: primary.savings || editingProduct.savings || "Save 30%",
-        description: primary.description !== undefined ? primary.description : (editingProduct.description || ""),
+        description: primary.description !== undefined ? primary.description : editingProduct.description || "",
         image: primaryImage,
         hoverImage: primaryHover,
         images: primaryImages,
@@ -703,33 +710,63 @@ export default function Admin() {
       } as Product;
 
       await saveProduct(productToSave);
+
+      // Instantly update products state so table and storefront reflect changes immediately
+      setProducts((prev) => {
+        const idx = prev.findIndex((p) => p.id === productToSave.id);
+        if (idx > -1) {
+          const updated = [...prev];
+          updated[idx] = productToSave;
+          return updated;
+        }
+        return [productToSave, ...prev];
+      });
+
       setIsProductModalOpen(false);
       setEditingProduct(null);
-      setProductSaveSuccess(`Product "${productToSave.name}" & all ${productToSave.colorVariants?.length || 1} color editions saved & published live to boutique! ✓`);
+      setProductFormError(null);
+      setProductSaveSuccess(
+        `Product "${productToSave.name}" & all ${productToSave.colorVariants?.length || 1} color editions saved & published live to boutique! ✓`
+      );
       setTimeout(() => setProductSaveSuccess(null), 6000);
     } catch (err: any) {
       console.error("Product save failure:", err);
-      alert(`Could not save product: ${err?.message || "Please check your network and try again."}`);
+      setProductFormError(err?.message || "Could not save product to database. Please check your network and try again.");
     } finally {
       setSavingProduct(false);
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this product from the live boutique?")) return;
+    const targetProduct = products.find((p) => p.id === id);
+    const prodName = targetProduct ? `"${targetProduct.name}"` : "this product";
+    if (!window.confirm(`Are you sure you want to permanently delete ${prodName} from the live boutique?`)) return;
+
+    const previousProducts = [...products];
     setProducts((prev) => prev.filter((p) => p.id !== id));
     try {
       await deleteProduct(id);
-    } catch (err) {
+      setProductSaveSuccess(`Product ${prodName} deleted permanently from live boutique. ✓`);
+      setTimeout(() => setProductSaveSuccess(null), 4000);
+    } catch (err: any) {
       console.error("Product deletion failure:", err);
+      // Revert optimistic delete on error
+      setProducts(previousProducts);
+      alert(`Could not delete product: ${err?.message || "Server error"}`);
     }
   };
 
   const handleToggleProductStock = async (product: Product) => {
+    const nextStock = !product.inStock;
+    const updatedProduct = { ...product, inStock: nextStock };
     try {
-      await saveProduct({ ...product, inStock: !product.inStock });
-    } catch (err) {
+      await saveProduct(updatedProduct);
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? updatedProduct : p)));
+      setProductSaveSuccess(`"${product.name}" marked as ${nextStock ? "In Stock" : "Out of Stock"} ✓`);
+      setTimeout(() => setProductSaveSuccess(null), 3000);
+    } catch (err: any) {
       console.error("Failed to toggle product stock:", err);
+      alert(`Could not update stock status: ${err?.message || "Server error"}`);
     }
   };
 
@@ -982,28 +1019,42 @@ export default function Admin() {
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return;
+    setCategoryNotice(null);
     try {
-      await saveCategory({
+      const newCat: CategoryItem = {
         id: `cat-${Date.now()}`,
         name: newCategoryName.trim(),
         slug: newCategoryName.trim(),
         description: newCategoryDesc.trim() || "Exclusive curated collection",
         sortOrder: categories.length + 1,
-      });
+      };
+      await saveCategory(newCat);
+      setCategories((prev) => [...prev, newCat]);
       setNewCategoryName("");
       setNewCategoryDesc("");
-    } catch (err) {
+      setCategoryNotice({ type: "success", message: `Category "${newCat.name}" added successfully! ✓` });
+      setTimeout(() => setCategoryNotice(null), 4000);
+    } catch (err: any) {
       console.error("Category add failure:", err);
+      setCategoryNotice({ type: "error", message: `Failed to add category: ${err?.message || "Server error"}` });
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (!window.confirm("Delete this category?")) return;
+    const targetCat = categories.find((c) => c.id === id);
+    const catName = targetCat ? `"${targetCat.name}"` : "this category";
+    if (!window.confirm(`Delete ${catName}?`)) return;
+    setCategoryNotice(null);
+    const prevCategories = [...categories];
     setCategories((prev) => prev.filter((c) => c.id !== id));
     try {
       await deleteCategory(id);
-    } catch (err) {
+      setCategoryNotice({ type: "success", message: `Category ${catName} deleted successfully! ✓` });
+      setTimeout(() => setCategoryNotice(null), 4000);
+    } catch (err: any) {
       console.error("Failed to delete category:", err);
+      setCategories(prevCategories);
+      setCategoryNotice({ type: "error", message: `Failed to delete category: ${err?.message || "Server error"}` });
     }
   };
 
@@ -2546,6 +2597,24 @@ export default function Admin() {
                     </div>
 
                     <form onSubmit={handleSaveProduct} className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+                      {/* Product Form Error Banner */}
+                      {productFormError && (
+                        <div className="p-3.5 bg-red-50 border border-red-200 text-red-800 rounded-xl flex items-center justify-between gap-2 text-xs shadow-xs animate-in fade-in duration-200">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle size={16} className="shrink-0 text-red-600" />
+                            <span className="font-medium">{productFormError}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setProductFormError(null)}
+                            className="text-red-500 hover:text-red-700 font-bold p-1 rounded-md hover:bg-red-100"
+                            title="Dismiss error"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+
                       {/* Master Piece Details */}
                       <div className="bg-[#faf8f5] p-4 rounded-xl border border-[#e5ded6] space-y-3">
                         <div className="flex items-center justify-between">
@@ -2845,7 +2914,19 @@ export default function Admin() {
                                 </p>
                               </div>
                               <ProductImageUploader
-                                images={activeVariant.images || []}
+                                key={`variant-uploader-${editingProduct.id || "new"}-${activeVariant.id || activeVariantIndex}`}
+                                images={
+                                  activeVariant.images && activeVariant.images.length > 0
+                                    ? activeVariant.images
+                                    : activeVariant.image
+                                    ? [
+                                        activeVariant.image,
+                                        ...(activeVariant.hoverImage && activeVariant.hoverImage !== activeVariant.image
+                                          ? [activeVariant.hoverImage]
+                                          : []),
+                                      ]
+                                    : []
+                                }
                                 onChange={(newImages) => {
                                   updateActiveVariant({
                                     images: newImages,
@@ -2862,25 +2943,35 @@ export default function Admin() {
                       </div>
 
                       {/* Modal Footer Actions */}
-                      <div className="pt-3 border-t border-[#e5ded6] flex items-center justify-between gap-2">
+                      <div className="pt-3 border-t border-[#e5ded6] flex items-center justify-between gap-2 flex-wrap">
                         <div className="text-[11px] text-[#6b6257]">
                           Total {editingProduct.colorVariants?.length || 1} color edition(s) configured
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
+                            disabled={savingProduct}
                             onClick={() => setIsProductModalOpen(false)}
-                            className="px-4 py-2 text-xs font-bold text-[#6b6257] hover:bg-[#faf8f5] rounded-xl"
+                            className="px-4 py-2 text-xs font-bold text-[#6b6257] hover:bg-[#faf8f5] rounded-xl disabled:opacity-50"
                           >
                             Cancel
                           </button>
                           <button
                             type="submit"
                             disabled={savingProduct}
-                            className="px-6 py-2 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528] transition-colors shadow-xs flex items-center gap-1.5"
+                            className="px-6 py-2.5 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528] transition-colors shadow-xs flex items-center gap-2 disabled:opacity-60"
                           >
-                            <Save size={14} />
-                            <span>{savingProduct ? "Publishing to Live Boutique..." : "Save & Publish"}</span>
+                            {savingProduct ? (
+                              <>
+                                <RefreshCw size={14} className="animate-spin" />
+                                <span>Publishing to Database...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save size={14} />
+                                <span>Save &amp; Publish</span>
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>

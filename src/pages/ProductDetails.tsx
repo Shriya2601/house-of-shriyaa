@@ -133,6 +133,11 @@ export default function ProductDetails() {
   }, [currentColorVariant, product]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  // Reset active image to cover photo when switching color variants
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [selectedColorIndex]);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
 

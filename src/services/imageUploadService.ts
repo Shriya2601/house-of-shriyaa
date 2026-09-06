@@ -267,34 +267,32 @@ export async function persistImageToStorage(
   // Always cache in IndexedDB for zero-latency offline recovery
   saveImageToIndexedDb(asset.name, asset.url).catch(() => {});
 
-  try {
-    const res = await fetch("/api/upload-image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image: asset.url,
-        fileName: asset.name,
-        productId,
-        colorVariantId,
-      }),
-    });
+  // Try uploading to persistent server storage API
+  const res = await fetch("/api/upload-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image: asset.url,
+      fileName: asset.name,
+      productId,
+      colorVariantId,
+    }),
+  });
 
-    if (res.ok) {
-      const json = await res.json();
-      if (json.url) {
-        // Cache under the new URL as well
-        saveImageToIndexedDb(json.url, asset.url).catch(() => {});
-        persistAssetToFirestore({ ...asset, url: json.url }, productId).catch(() => {});
-        return json.url;
-      }
-    }
-  } catch (err) {
-    console.warn("Backend storage upload notice, falling back to optimized inline format:", err);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Server image upload failed with status ${res.status}`);
   }
 
-  // Fallback: use optimized data URL and trigger Firestore asset backup
-  persistAssetToFirestore(asset, productId).catch(() => {});
-  return asset.url;
+  const json = await res.json();
+  if (!json.url) {
+    throw new Error("Server did not return a valid upload URL");
+  }
+
+  // Cache under the new URL as well for instant local responsiveness
+  saveImageToIndexedDb(json.url, asset.url).catch(() => {});
+  persistAssetToFirestore({ ...asset, url: json.url }, productId).catch(() => {});
+  return json.url;
 }
 
 /**
@@ -366,9 +364,9 @@ export async function processAndUploadDeviceImages(
         percent: completedPercent,
         fileName: file.name,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to process image:", file.name, err);
-      errors.push(`Failed to process "${file.name}".`);
+      errors.push(`Failed to upload "${file.name}": ${err?.message || "Storage error"}`);
     }
   }
 

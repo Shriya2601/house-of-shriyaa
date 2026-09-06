@@ -44,15 +44,24 @@ const distUploadsDir = path.join(rootDir, "dist", "uploads");
 // Helper to write data synchronously to all data destinations
 function writeDataFile(fileName: string, data: any): void {
   const content = JSON.stringify(data, null, 2);
+  let writtenCount = 0;
+  let lastError: any = null;
+
   try {
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(path.join(dataDir, fileName), content, "utf-8");
-  } catch (e) {
+    writtenCount++;
+  } catch (e: any) {
     console.warn(`Failed writing to ${dataDir}/${fileName}:`, e);
+    lastError = e;
   }
   try {
+    if (!fs.existsSync(publicDataDir)) fs.mkdirSync(publicDataDir, { recursive: true });
     fs.writeFileSync(path.join(publicDataDir, fileName), content, "utf-8");
-  } catch (e) {
+    writtenCount++;
+  } catch (e: any) {
     console.warn(`Failed writing to ${publicDataDir}/${fileName}:`, e);
+    lastError = e;
   }
   if (fs.existsSync(path.join(rootDir, "dist"))) {
     try {
@@ -60,7 +69,12 @@ function writeDataFile(fileName: string, data: any): void {
         fs.mkdirSync(distDataDir, { recursive: true });
       }
       fs.writeFileSync(path.join(distDataDir, fileName), content, "utf-8");
+      writtenCount++;
     } catch {}
+  }
+
+  if (writtenCount === 0 && lastError) {
+    throw new Error(`Failed to write ${fileName} to storage: ${lastError.message}`);
   }
 }
 
@@ -116,7 +130,12 @@ if (fs.existsSync(distUploadsDir)) {
 }
 
 // Serve data files with no-cache so latest updates are never stale
-app.use("/data", express.static(publicDataDir, { maxAge: 0 }));
+app.use("/data", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+}, express.static(publicDataDir));
 
 // ==========================================
 // 1. PRODUCTS API
@@ -339,13 +358,18 @@ app.post("/api/upload-image", (req, res) => {
       return;
     }
 
-    const cleanBaseName = fileName
-      ? path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9_-]/g, "_")
+    const timestamp = Date.now();
+    const randomSalt = Math.floor(Math.random() * 10000);
+    const rawBase = fileName
+      ? path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)
       : productId
-      ? `${productId}-${colorVariantId || "main"}-${Date.now()}`
-      : `hos-upload-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      ? `${productId}-${colorVariantId || "main"}`
+      : `hos-upload`;
 
-    const fileBaseName = `${cleanBaseName}.${ext}`;
+    const fileBaseName = `${rawBase}-${timestamp}-${randomSalt}.${ext}`;
+    if (!fs.existsSync(publicUploadsDir)) {
+      fs.mkdirSync(publicUploadsDir, { recursive: true });
+    }
     const targetPath = path.join(publicUploadsDir, fileBaseName);
     fs.writeFileSync(targetPath, buffer);
 
