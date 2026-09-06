@@ -843,7 +843,7 @@ export default function ProductDetails() {
       </main>
 
       {/* MOBILE STICKY BOTTOM ACTION BAR */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#e8dfd5] p-3 shadow-lg flex items-center gap-3">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#e8dfd5] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg flex items-center gap-3">
         <div className="flex flex-col min-w-0 max-w-[40%]">
           <span className="text-xs text-[#8c827a] truncate font-medium">{displayColor} · {product?.name}</span>
           <div className="flex items-baseline gap-1.5">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Sparkles,
   X,
@@ -28,6 +29,8 @@ interface ChatMessage {
 }
 
 export default function PookieChatbot() {
+  const location = useLocation();
+  const isProductPage = location.pathname.startsWith("/product");
   const { products, siteContent, addToCart, setIsCartOpen } = useStore();
   const [isOpen, setIsOpen] = useState(false);
   const [inputText, setInputText] = useState("");
@@ -161,7 +164,9 @@ export default function PookieChatbot() {
   return (
     <>
       {/* 1. FLOATING CHAT BUTTON (BOTTOM RIGHT) */}
-      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 print:hidden flex flex-col items-end">
+      <div className={`fixed right-3 sm:right-6 z-40 print:hidden flex flex-col items-end ${
+        isProductPage ? "bottom-20 sm:bottom-6" : "bottom-4 sm:bottom-6"
+      }`}>
         {/* Cute Speech Bubble Greeting (Collapsible) */}
         {showGreetingTooltip && !isOpen && (
           <div
@@ -232,7 +237,9 @@ export default function PookieChatbot() {
       {/* 2. CLEAN CHAT WINDOW */}
       {isOpen && (
         <div
-          className="fixed bottom-19 right-3 sm:bottom-23 sm:right-6 z-50 w-[calc(100vw-24px)] sm:w-[410px] max-w-[430px] h-[580px] max-h-[82vh] bg-[#0c1410]/98 border border-[#d4af37]/45 rounded-2xl sm:rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl flex flex-col overflow-hidden text-[#faf8f5] animate-in fade-in zoom-in-95 duration-200"
+          className={`fixed right-3 sm:right-6 z-50 w-[calc(100vw-24px)] sm:w-[410px] max-w-[430px] h-[580px] max-h-[78vh] sm:max-h-[82vh] bg-[#0c1410]/98 border border-[#d4af37]/45 rounded-2xl sm:rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl flex flex-col overflow-hidden text-[#faf8f5] animate-in fade-in zoom-in-95 duration-200 ${
+            isProductPage ? "bottom-20 sm:bottom-23" : "bottom-19 sm:bottom-23"
+          }`}
           role="dialog"
           aria-label="Pookie AI Chat"
         >

@@ -179,24 +179,29 @@
     justify-content: center;
     color: #1e1b18;
     font-family: "Cinzel", Georgia, serif;
-    font-size: clamp(0.66rem, 3.2vw, 1.05rem);
+    font-size: clamp(0.64rem, 3.2vw, 1.05rem);
     font-weight: 700;
-    letter-spacing: clamp(0.04em, 1.1vw, 0.14em);
+    letter-spacing: clamp(0.035em, 1.1vw, 0.14em);
     text-transform: uppercase;
     transition: color 200ms ease;
     white-space: nowrap;
     min-width: 0;
-    flex-shrink: 0;
+    max-width: 100%;
+    flex-shrink: 1;
     text-decoration: none;
+    overflow: hidden;
   }
   .brand-title {
-    display: inline;
+    display: inline-block;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     letter-spacing: inherit;
     font-family: inherit;
     font-size: inherit;
     font-weight: inherit;
     color: inherit;
+    max-width: 100%;
   }
   .brand-lockup:hover {
     color: #0d4f3c;
@@ -1289,7 +1294,7 @@
     top: 0.5rem;
     left: 0.5rem;
     display: flex;
-    max-width: calc(100% - 3.2rem);
+    max-width: calc(100% - 5.5rem);
     flex-wrap: wrap;
     gap: 0.25rem;
   }
@@ -1382,6 +1387,10 @@
     color: #8c827a;
     font-size: 0.55rem;
     font-weight: 500;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .product-content h3 {
     min-height: 2.25rem;
@@ -2134,9 +2143,10 @@
     height: 1.45rem;
   }
   .brand-lockup {
-    font-size: 0.64rem;
+    font-size: 0.62rem;
     letter-spacing: 0.035em;
     gap: 0.2rem;
+    max-width: 100%;
   }
   .pookie-pill {
     width: 1.95rem;
@@ -2158,8 +2168,57 @@
   .bag-button span {
     font-size: 0.62rem;
   }
+  .hero-grid {
+    padding: 1.25rem 0 2.2rem;
+    gap: 1.8rem;
+  }
+  .hero-copy h1 {
+    font-size: clamp(1.85rem, 7.5vw, 2.35rem);
+    line-height: 1.1;
+  }
+  .hero-copy p {
+    font-size: 0.68rem;
+    line-height: 1.55;
+  }
+  .hero-media-wrap {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+  }
+  .hero-caption {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    padding: 0.65rem 0.75rem;
+  }
+  .product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
   .product-content {
-    padding: 0.5rem 0.45rem 0.65rem;
+    padding: 0.45rem 0.4rem 0.6rem;
+  }
+  .product-content h3 {
+    font-size: clamp(0.82rem, 2.5vw, 0.98rem);
+    min-height: 2.1rem;
+    line-height: 1.2;
+  }
+  .product-content > p {
+    font-size: 0.54rem;
+    min-height: 1.5rem;
+    line-height: 1.4;
+  }
+  .price-row {
+    gap: 0.25rem;
+  }
+  .price-row strong {
+    font-size: clamp(0.95rem, 2.8vw, 1.15rem);
+  }
+  .price-row del {
+    font-size: 0.68rem;
+  }
+  .price-row span {
+    font-size: 0.48rem;
+    padding: 0.15rem 0.35rem;
   }
   .product-actions > button:first-child {
     font-size: 0.5rem;
@@ -2169,8 +2228,25 @@
     width: 1.95rem;
     height: 1.95rem;
   }
+  .collection-grid {
+    grid-template-columns: 1fr;
+    gap: 1.2rem;
+  }
+  .collection-image {
+    min-height: 20rem;
+  }
+  .footer-links {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+  .footer-links > div:last-child {
+    grid-column: 1 / -1;
+  }
 }
-@media (min-width: 381px) and (max-width: 480px) {
+@media (min-width: 381px) and (max-width: 479px) {
+  .site-container {
+    width: calc(100% - 1.25rem);
+  }
   .pookie-ask {
     display: none;
   }
@@ -2182,10 +2258,17 @@
     min-width: 2.6rem;
     padding: 0 0.45rem;
   }
+  .product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .product-content {
+    padding: 0.5rem 0.45rem 0.65rem;
+  }
 }
 @media (min-width: 480px) {
   .site-container {
-    width: min(100% - 2.5rem, 80rem);
+    width: min(100% - 2rem, 80rem);
   }
   .intro-header {
     padding: 1.5rem;
@@ -2202,7 +2285,7 @@
     text-align: right;
   }
   .hero-copy h1 {
-    font-size: clamp(2.5rem, 5.8vw, 3.4rem);
+    font-size: clamp(2.4rem, 5.5vw, 3.2rem);
   }
   .atelier-card {
     display: flex;
@@ -2217,7 +2300,7 @@
     min-height: 22rem;
   }
   .product-grid {
-    gap: 1.1rem;
+    gap: 1rem;
   }
   .footer-bottom {
     flex-direction: row;
@@ -2240,6 +2323,7 @@
   }
   .search-box {
     display: flex;
+    width: min(14rem, 24vw);
   }
   .mobile-search {
     display: none;
@@ -2304,6 +2388,9 @@
   }
 }
 @media (min-width: 768px) {
+  .site-container {
+    width: min(100% - 2.5rem, 80rem);
+  }
   .announcement-bar button {
     display: inline-flex;
   }
@@ -2320,18 +2407,20 @@
     justify-content: space-between;
   }
   .hero-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.88fr);
+    grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.95fr);
     align-items: center;
-    gap: 3rem;
+    gap: 2.5rem;
   }
   .hero-copy h1 {
-    font-size: clamp(3rem, 5vw, 4.2rem);
+    font-size: clamp(2.3rem, 3.8vw, 3.2rem);
+    line-height: 1.15;
   }
   .hero-media-wrap {
-    width: min(100%, 32rem);
+    width: min(100%, 30rem);
   }
   .collection-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.35rem;
   }
   .catalog-heading,
   .section-heading {
@@ -2344,7 +2433,7 @@
   }
   .product-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.25rem;
+    gap: 1.15rem;
   }
 }
 @media (min-width: 960px) {
@@ -2352,7 +2441,7 @@
     display: none;
   }
   .category-nav {
-    justify-content: center;
+    justify-content: safe center;
     padding: 0.7rem 1rem 0.85rem;
   }
   .category-nav button {
@@ -2371,9 +2460,10 @@
   }
   .hero-grid {
     grid-template-columns: minmax(0, 0.95fr) minmax(24rem, 1.05fr);
+    gap: 3rem;
   }
   .hero-copy h1 {
-    font-size: clamp(3.6rem, 5vw, 4.8rem);
+    font-size: clamp(3.4rem, 4.8vw, 4.6rem);
   }
   .collection-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2383,15 +2473,44 @@
   }
   .product-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.35rem;
+    gap: 1.3rem;
   }
   .intro-floating-card {
     display: block;
   }
 }
+@media (min-width: 1024px) {
+  .site-container {
+    width: min(100% - 3.5rem, 80rem);
+  }
+  .search-box {
+    width: 15rem;
+  }
+  .hero-grid {
+    grid-template-columns: minmax(0, 0.98fr) minmax(23rem, 1.02fr);
+    gap: 3.2rem;
+  }
+  .hero-copy h1 {
+    font-size: clamp(3.2rem, 4.2vw, 4.2rem);
+  }
+  .collection-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.4rem;
+  }
+  .collection-image {
+    min-height: 25rem;
+  }
+  .product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  .catalog-search {
+    width: 16rem;
+  }
+}
 @media (min-width: 1200px) {
   .site-container {
-    width: min(100% - 4rem, 80rem);
+    width: min(100% - 4.5rem, 84rem);
   }
   .track-pill {
     display: inline-flex;
@@ -2403,14 +2522,179 @@
   .account-action span {
     display: inline;
   }
+  .search-box {
+    width: 16rem;
+  }
   .hero-copy h1 {
-    font-size: 5rem;
+    font-size: 4.8rem;
+  }
+  .collection-image {
+    min-height: 27rem;
+  }
+  .product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.45rem;
   }
   .intro-header {
     padding-inline: 2rem;
   }
   .intro-center h1 {
     font-size: 3.75rem;
+  }
+}
+@media (min-width: 1440px) {
+  .site-container {
+    width: min(100% - 5rem, 88rem);
+  }
+  .search-box {
+    width: 18rem;
+  }
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(28rem, 1fr);
+    gap: 4.5rem;
+    padding: 3.5rem 0 4.8rem;
+  }
+  .hero-copy h1 {
+    font-size: 5.2rem;
+  }
+  .hero-media-wrap {
+    width: min(100%, 36rem);
+  }
+  .collection-grid {
+    gap: 1.85rem;
+  }
+  .collection-image {
+    min-height: 28rem;
+  }
+  .product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.65rem;
+  }
+  .footer-main {
+    grid-template-columns: 1.1fr 2fr;
+    gap: 3.5rem;
+  }
+}
+@media (min-width: 1920px) {
+  .site-container {
+    width: min(100% - 7rem, 114rem);
+  }
+  .header-main {
+    min-height: 4.8rem;
+    padding-inline: 2rem;
+  }
+  .brand-lockup {
+    font-size: 1.25rem;
+    letter-spacing: 0.16em;
+  }
+  .search-box {
+    width: 22rem;
+    padding: 0.65rem 0.95rem;
+  }
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(34rem, 1fr);
+    gap: 5.5rem;
+    padding: 4.5rem 0 6rem;
+  }
+  .hero-copy h1 {
+    font-size: clamp(4.5rem, 4vw, 5.8rem);
+  }
+  .hero-copy p {
+    font-size: 1.15rem;
+    max-width: 36rem;
+    line-height: 1.8;
+  }
+  .hero-media-wrap {
+    width: min(100%, 40rem);
+  }
+  .product-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 1.75rem;
+  }
+  .collection-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2.25rem;
+  }
+  .collection-image {
+    min-height: 32rem;
+  }
+  .feature-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .feature-item {
+    min-height: 7.5rem;
+    padding-inline: 1.25rem;
+  }
+  .feature-item strong {
+    font-size: 0.82rem;
+  }
+  .feature-item small {
+    font-size: 0.7rem;
+  }
+  .catalog-search {
+    width: 20rem;
+  }
+  .footer-main {
+    grid-template-columns: 1.2fr 2.4fr;
+    gap: 5rem;
+  }
+}
+@media (min-width: 2560px) {
+  .site-container {
+    width: min(100% - 9rem, 142rem);
+  }
+  .header-main {
+    min-height: 5.5rem;
+    padding-inline: 2.5rem;
+  }
+  .brand-lockup {
+    font-size: 1.45rem;
+    letter-spacing: 0.18em;
+  }
+  .search-box {
+    width: 26rem;
+    padding: 0.75rem 1.1rem;
+  }
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(42rem, 1fr);
+    gap: 7rem;
+    padding: 5.5rem 0 7.5rem;
+  }
+  .hero-copy h1 {
+    font-size: clamp(5.5rem, 3.8vw, 7rem);
+  }
+  .hero-copy p {
+    font-size: 1.35rem;
+    max-width: 44rem;
+    line-height: 1.85;
+  }
+  .hero-media-wrap {
+    width: min(100%, 48rem);
+  }
+  .product-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2.25rem;
+  }
+  .product-content {
+    padding: 1rem 0.85rem 1.25rem;
+  }
+  .product-content h3 {
+    font-size: 1.35rem;
+    min-height: 2.8rem;
+  }
+  .price-row strong {
+    font-size: 1.55rem;
+  }
+  .collection-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2.8rem;
+  }
+  .collection-image {
+    min-height: 38rem;
+  }
+  .footer-main {
+    grid-template-columns: 1.25fr 2.6fr;
+    gap: 6.5rem;
   }
 }
 @media (max-width: 700px) {
