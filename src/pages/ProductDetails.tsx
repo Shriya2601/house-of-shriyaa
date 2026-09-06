@@ -114,23 +114,33 @@ export default function ProductDetails() {
   // Gallery images strictly for the selected color variant!
   const productImages = useMemo(() => {
     if (!currentColorVariant) return [product?.image || FALLBACK_IMAGE];
-    const list: string[] = [];
 
+    // Check if variant has its own images array
     if (Array.isArray(currentColorVariant.images) && currentColorVariant.images.length > 0) {
-      currentColorVariant.images.forEach((img) => {
-        if (img && !list.includes(img)) list.push(img);
-      });
-    }
-    if (currentColorVariant.image && !list.includes(currentColorVariant.image)) {
-      list.unshift(currentColorVariant.image);
-    }
-    if (currentColorVariant.hoverImage && !list.includes(currentColorVariant.hoverImage)) {
-      list.push(currentColorVariant.hoverImage);
+      const valid = currentColorVariant.images.filter(Boolean);
+      if (valid.length > 0) return valid;
     }
 
-    const filtered = list.filter(Boolean);
-    return filtered.length > 0 ? filtered : [product?.image || FALLBACK_IMAGE];
-  }, [currentColorVariant, product]);
+    // Check single image/hoverImage for this variant
+    if (currentColorVariant.image) {
+      const list = [currentColorVariant.image];
+      if (currentColorVariant.hoverImage && currentColorVariant.hoverImage !== currentColorVariant.image) {
+        list.push(currentColorVariant.hoverImage);
+      }
+      return list;
+    }
+
+    // Only variant 0 (primary) falls back to product-level image
+    if (selectedColorIndex === 0) {
+      if (Array.isArray(product?.images) && product.images.length > 0) {
+        return product.images.filter(Boolean);
+      }
+      return [product?.image || FALLBACK_IMAGE];
+    }
+
+    // Secondary variants without photos yet show the default fallback, NOT variant 0's photos
+    return [FALLBACK_IMAGE];
+  }, [currentColorVariant, selectedColorIndex, product]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 

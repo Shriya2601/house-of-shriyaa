@@ -381,7 +381,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
                     <button
                       type="button"
                       onClick={() => setPreviewModalUrl(imgUrl)}
-                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-black"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 hover:bg-black"
                       title="Enlarge preview"
                     >
                       <Maximize2 size={11} />

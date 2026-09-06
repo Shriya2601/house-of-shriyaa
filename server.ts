@@ -123,6 +123,98 @@ function ensureGitRepo(): void {
   }
 }
 
+function pushToRemote(customToken?: string): { success: boolean; output: string; error?: string } {
+  try {
+    ensureGitRepo();
+
+    let token = (customToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
+    const tokenFilePath = path.join(rootDir, ".git", "github_token");
+    if (token) {
+      try {
+        fs.writeFileSync(tokenFilePath, token, "utf-8");
+      } catch {}
+    } else if (fs.existsSync(tokenFilePath)) {
+      try {
+        token = fs.readFileSync(tokenFilePath, "utf-8").trim();
+      } catch {}
+    }
+
+    let originUrl = DEFAULT_REPO_URL;
+    try {
+      originUrl = execSync("git remote get-url origin", { cwd: rootDir, stdio: "pipe" }).toString().trim();
+    } catch {
+      originUrl = DEFAULT_REPO_URL;
+    }
+
+    if (token) {
+      let authUrl = originUrl;
+      if (originUrl.startsWith("https://")) {
+        const cleanBase = originUrl.replace(/https:\/\/[^@]+@/, "https://");
+        authUrl = cleanBase.replace("https://", `https://x-access-token:${encodeURIComponent(token)}@`);
+      }
+
+      let output = "";
+      const execEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+      try {
+        output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+      } catch (pushErr: any) {
+        try {
+          const userAuthUrl = originUrl
+            .replace(/https:\/\/[^@]+@/, "https://")
+            .replace("https://", `https://${encodeURIComponent(DEFAULT_GIT_USER)}:${encodeURIComponent(token)}@`);
+          output = execSync(`git push -u "${userAuthUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+        } catch {
+          try {
+            execSync(`git fetch "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv });
+            try {
+              execSync(`git pull "${authUrl}" main --rebase -X theirs`, { cwd: rootDir, stdio: "pipe", env: execEnv });
+            } catch {
+              try {
+                execSync("git rebase --abort", { cwd: rootDir, stdio: "pipe" });
+              } catch {}
+            }
+            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+          } catch (syncErr: any) {
+            throw pushErr;
+          }
+        }
+      }
+
+      try {
+        fs.writeFileSync(tokenFilePath, token, "utf-8");
+      } catch {}
+
+      return { success: true, output };
+    } else {
+      const execEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+      const output = execSync("git push -u origin main", { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+      return { success: true, output };
+    }
+  } catch (err: any) {
+    const errorMsg = (err.stderr ? err.stderr.toString() : err.message || "").trim();
+    const stdout = (err.stdout ? err.stdout.toString() : "").trim();
+
+    let friendlyError = errorMsg;
+    if (
+      errorMsg.includes("could not read Username") ||
+      errorMsg.includes("Authentication failed") ||
+      errorMsg.includes("Invalid username or token") ||
+      errorMsg.includes("403") ||
+      errorMsg.includes("terminal prompts disabled") ||
+      errorMsg.includes("No such device or address")
+    ) {
+      friendlyError =
+        "GitHub authentication required: Push to repository requires credentials. Please enter your GitHub Personal Access Token (PAT with 'repo' scope) in Deploy & Git to push directly to GitHub, or use AI Studio's 'Share to GitHub' menu.";
+    }
+
+    return {
+      success: false,
+      output: stdout,
+      error: friendlyError || "Git push failed",
+    };
+  }
+}
+
 // Serve uploaded images with aggressive caching headers
 app.use("/uploads", express.static(publicUploadsDir, { maxAge: "7d" }));
 if (fs.existsSync(distUploadsDir)) {
@@ -502,23 +594,119 @@ app.get("/api/deployment-status", (req, res) => {
     let branch = "main";
     let commitHash = "";
     let commitLog = "";
+    let remotes = "";
+    let status = "";
     try {
       branch = execSync("git branch --show-current", { cwd: rootDir, stdio: "pipe" }).toString().trim() || "main";
       commitHash = execSync("git rev-parse HEAD", { cwd: rootDir, stdio: "pipe" }).toString().trim().substring(0, 7);
       commitLog = execSync("git log -1 --pretty=format:'%h - %s (%cr)'", { cwd: rootDir, stdio: "pipe" }).toString().trim();
+      remotes = execSync("git remote -v", { cwd: rootDir, stdio: "pipe" }).toString().trim();
+      status = execSync("git status --short", { cwd: rootDir, stdio: "pipe" }).toString().trim();
     } catch {}
+
+    const deployConfigPath = path.join(rootDir, "src", "data", "deploymentConfig.json");
+    let config: any = {};
+    if (fs.existsSync(deployConfigPath)) {
+      try {
+        config = JSON.parse(fs.readFileSync(deployConfigPath, "utf-8"));
+      } catch {}
+    }
+
+    const tokenFilePath = path.join(rootDir, ".git", "github_token");
+    let savedToken = "";
+    if (fs.existsSync(tokenFilePath)) {
+      try {
+        savedToken = fs.readFileSync(tokenFilePath, "utf-8").trim();
+      } catch {}
+    }
+    const activeToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || savedToken || "").trim();
 
     res.json({
       success: true,
       branch,
-      commitHash: commitHash || "d38958a",
+      commitHash: commitHash || config.lastDeployCommit || "d38958a",
       commitLog: commitLog || "feat: House of Shriya catalog updates",
-      remotes: `origin ${DEFAULT_REPO_URL} (push)`,
-      status: "Clean (synced)",
+      remotes: remotes || `origin ${DEFAULT_REPO_URL} (push)`,
+      status: status || "Clean (synced)",
+      config,
+      hasGithubToken: !!activeToken,
+      tokenPreview: activeToken ? `${activeToken.slice(0, 4)}••••${activeToken.slice(-4)}` : null,
       cloudflarePages: {
         project: "house-of-shriya",
         cloudflarePagesUrl: "https://houseofshriya.pages.dev",
       },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/update-git-remote", (req, res) => {
+  try {
+    ensureGitRepo();
+    const { remoteUrl } = req.body;
+    if (!remoteUrl || typeof remoteUrl !== "string") {
+      res.status(400).json({ success: false, error: "remoteUrl is required" });
+      return;
+    }
+
+    try {
+      execSync("git remote remove origin", { cwd: rootDir, stdio: "pipe" });
+    } catch {}
+
+    execSync(`git remote add origin ${remoteUrl.trim()}`, { cwd: rootDir, stdio: "pipe" });
+
+    const deployConfigPath = path.join(rootDir, "src", "data", "deploymentConfig.json");
+    let currentConfig: any = {};
+    if (fs.existsSync(deployConfigPath)) {
+      try {
+        currentConfig = JSON.parse(fs.readFileSync(deployConfigPath, "utf-8"));
+      } catch {}
+    }
+    currentConfig.repository = remoteUrl.trim();
+    fs.writeFileSync(deployConfigPath, JSON.stringify(currentConfig, null, 2));
+
+    res.json({
+      success: true,
+      message: `Remote origin updated to ${remoteUrl.trim()}`,
+      remotes: execSync("git remote -v", { cwd: rootDir, stdio: "pipe" }).toString().trim(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/git-push", (req, res) => {
+  try {
+    ensureGitRepo();
+    const token = req.body?.token;
+    const result = pushToRemote(token);
+    res.json({
+      success: result.success,
+      output: result.output,
+      error: result.error,
+      repository: DEFAULT_REPO_URL,
+      branch: "main",
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/save-github-token", (req, res) => {
+  try {
+    ensureGitRepo();
+    const token = (req.body?.token || "").trim();
+    const tokenFilePath = path.join(rootDir, ".git", "github_token");
+    if (token) {
+      fs.writeFileSync(tokenFilePath, token, "utf-8");
+    } else if (fs.existsSync(tokenFilePath)) {
+      try { fs.unlinkSync(tokenFilePath); } catch {}
+    }
+    res.json({
+      success: true,
+      hasToken: !!token,
+      message: token ? "GitHub personal access token saved securely on server" : "GitHub token cleared",
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

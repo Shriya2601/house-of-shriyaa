@@ -442,18 +442,48 @@ export const MediaManager: React.FC = () => {
 
                   {/* Asset info */}
                   <div className="p-2.5 flex flex-col justify-between flex-1 text-xs">
-                    <div className="truncate font-medium text-white" title={asset.name}>
-                      {asset.name}
+                    <div>
+                      <div className="truncate font-medium text-white" title={asset.name}>
+                        {asset.name}
+                      </div>
+                      <div className="text-[10px] text-[#7a8c83] mt-1 flex items-center justify-between">
+                        <span>{new Date(asset.createdAt).toLocaleDateString("en-IN")}</span>
+                        {matchedProd ? (
+                          <span className="truncate max-w-[80px] text-[#d4af37]" title={matchedProd.name}>
+                            {matchedProd.name}
+                          </span>
+                        ) : (
+                          <span>General</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-[#7a8c83] mt-1 flex items-center justify-between">
-                      <span>{new Date(asset.createdAt).toLocaleDateString("en-IN")}</span>
-                      {matchedProd ? (
-                        <span className="truncate max-w-[80px] text-[#d4af37]" title={matchedProd.name}>
-                          {matchedProd.name}
-                        </span>
-                      ) : (
-                        <span>General</span>
-                      )}
+
+                    {/* Mobile touch action buttons */}
+                    <div className="mt-2 pt-1.5 border-t border-[#22332c] flex sm:hidden items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewAsset(asset)}
+                        className="p-1.5 rounded-md bg-[#1a2923] text-[#cfc8bc] hover:text-white"
+                        title="View full size"
+                      >
+                        <Maximize2 size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyUrl(asset.dataUrl, asset.id)}
+                        className="p-1.5 rounded-md bg-[#1a2923] text-[#cfc8bc] hover:text-white"
+                        title="Copy image URL"
+                      >
+                        {copiedId === asset.id ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmAsset(asset)}
+                        className="p-1.5 rounded-md bg-[#2a1717] text-red-300 hover:text-red-100"
+                        title="Remove image"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </div>
                 </div>

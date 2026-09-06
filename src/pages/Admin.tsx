@@ -709,7 +709,7 @@ export default function Admin() {
         colorVariants: variants,
       } as Product;
 
-      await saveProduct(productToSave);
+      const saveRes = await saveProduct(productToSave);
 
       // Instantly update products state so table and storefront reflect changes immediately
       setProducts((prev) => {
@@ -725,8 +725,9 @@ export default function Admin() {
       setIsProductModalOpen(false);
       setEditingProduct(null);
       setProductFormError(null);
+      const noticeSuffix = saveRes?.firestoreNotice ? ` (${saveRes.firestoreNotice})` : "";
       setProductSaveSuccess(
-        `Product "${productToSave.name}" & all ${productToSave.colorVariants?.length || 1} color editions saved & published live to boutique! ✓`
+        `Product "${productToSave.name}" & all ${productToSave.colorVariants?.length || 1} color editions saved & published live to boutique! ✓${noticeSuffix}`
       );
       setTimeout(() => setProductSaveSuccess(null), 6000);
     } catch (err: any) {
@@ -1003,9 +1004,10 @@ export default function Admin() {
         colorVariants: sanitizedVariants,
       };
 
-      await saveProduct(productToSave);
-      setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved & published live to boutique! ✓`);
-      setTimeout(() => setPaletteSaveNotice(null), 5000);
+      const saveRes = await saveProduct(productToSave);
+      const noticeSuffix = saveRes?.firestoreNotice ? ` (${saveRes.firestoreNotice})` : "";
+      setPaletteSaveNotice(`All ${sanitizedVariants.length} color edition(s) & photos saved & published live to boutique! ✓${noticeSuffix}`);
+      setTimeout(() => setPaletteSaveNotice(null), 6000);
     } catch (err: any) {
       console.error("Failed to save color palette:", err);
       setPaletteSaveNotice(`Failed to save color palette: ${err?.message || "Check network connection"}`);
@@ -1413,10 +1415,11 @@ export default function Admin() {
           <Link
             to="/"
             target="_blank"
-            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1a2622] hover:bg-[#253630] text-[#faf8f5] px-3 py-1.5 rounded-lg border border-[#31473f] transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1a2622] hover:bg-[#253630] text-[#faf8f5] px-2.5 sm:px-3 py-1.5 rounded-lg border border-[#31473f] transition-colors"
+            title="Preview Live Boutique in new tab"
           >
             <Eye size={14} className="text-[#d4af37]" />
-            <span>Preview Live Site</span>
+            <span className="hidden xs:inline sm:inline">Preview Live Site</span>
             <ExternalLink size={12} className="text-[#9c9588]" />
           </Link>
 
@@ -1476,6 +1479,7 @@ export default function Admin() {
           { id: "colors", label: "Colors & Photos", icon: Palette },
           { id: "categories", label: `Categories (${categories.length})`, icon: Layers },
           { id: "media", label: "Media", icon: ImageIcon },
+          { id: "users", label: "Users", icon: Users },
           { id: "banners", label: "Banners", icon: Sparkles },
           { id: "content", label: "CMS Story", icon: FileText },
           { id: "settings", label: "Settings", icon: Key },
@@ -2028,104 +2032,162 @@ export default function Admin() {
                   )}
                 </div>
               ) : (
-                <div className="bg-white rounded-2xl border border-[#e5ded6] shadow-xs overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#f7f4ef] border-b border-[#e5ded6] text-[#6b6257] uppercase tracking-wider text-[10px]">
-                        <tr>
-                          <th className="py-3 px-4">Order Ref</th>
-                          <th className="py-3 px-4">Customer</th>
-                          <th className="py-3 px-4">Items</th>
-                          <th className="py-3 px-4">Destination</th>
-                          <th className="py-3 px-4">Total</th>
-                          <th className="py-3 px-4">Payment</th>
-                          <th className="py-3 px-4">Fulfillment</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#e8dfd8]">
-                        {displayedOrders.map((order) => (
-                          <tr
-                            key={order.id}
-                            className="hover:bg-[#faf8f5] transition-colors cursor-pointer"
-                            onClick={() => openOrderDetails(order)}
+                <div className="space-y-4">
+                  {/* Mobile Order Cards View (md:hidden) */}
+                  <div className="grid grid-cols-1 gap-3 md:hidden">
+                    {displayedOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        onClick={() => openOrderDetails(order)}
+                        className="bg-white p-4 rounded-xl border border-[#e5ded6] shadow-2xs space-y-2.5 active:bg-[#faf8f5] transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="font-mono font-bold text-xs text-[#0d4f3c]">
+                            {order.orderNumber}
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              order.orderStatus === "pending"
+                                ? "bg-amber-100 text-amber-800"
+                                : order.orderStatus === "confirmed"
+                                ? "bg-indigo-100 text-indigo-800"
+                                : order.orderStatus === "shipped"
+                                ? "bg-blue-100 text-blue-800"
+                                : order.orderStatus === "delivered"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : order.orderStatus === "refunded"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
                           >
-                            <td className="py-3.5 px-4 font-mono font-bold text-[#0d4f3c]">
-                              {order.orderNumber}
-                              <div className="text-[10px] font-sans font-normal text-[#8c8275]">
-                                {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                                  day: "numeric",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </div>
-                            </td>
+                            {order.orderStatus}
+                          </span>
+                        </div>
 
-                            <td className="py-3.5 px-4">
-                              <strong className="block text-[#1e1b18]">{order.customer.fullName}</strong>
-                              <span className="text-[11px] text-[#6b6257]">{order.customer.phone}</span>
-                            </td>
-
-                            <td className="py-3.5 px-4">
-                              <span className="font-semibold text-[#1e1b18]">{order.items.length} Piece(s)</span>
-                              <div className="text-[11px] text-[#6b6257] truncate max-w-[150px]">
-                                {order.items.map((i) => i.productName).join(", ")}
-                              </div>
-                            </td>
-
-                            <td className="py-3.5 px-4 text-[#5a544c]">
-                              <div>{order.shippingAddress.city}, {order.shippingAddress.state}</div>
-                              <span className="text-[10px] text-[#8c8275]">{order.shippingAddress.pincode}</span>
-                            </td>
-
-                            <td className="py-3.5 px-4 font-serif font-bold text-sm text-[#1e1b18]">
+                        <div className="flex items-start justify-between text-xs">
+                          <div>
+                            <strong className="block text-[#1e1b18] font-semibold">{order.customer.fullName}</strong>
+                            <div className="text-[11px] text-[#6b6257]">{order.customer.phone}</div>
+                            <div className="text-[10px] text-[#8c8275]">{order.shippingAddress.city}, {order.shippingAddress.state}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-serif font-bold text-sm text-[#1e1b18]">
                               ₹{order.total.toLocaleString("en-IN")}
-                            </td>
+                            </div>
+                            <span className="text-[10px] text-[#6b6257] block">
+                              {order.paymentMethod === "Cash on Delivery (COD)" ? "COD" : "Prepaid"}
+                            </span>
+                          </div>
+                        </div>
 
-                            <td className="py-3.5 px-4">
-                              <span className="text-[11px] font-medium block text-[#1e1b18]">
-                                {order.paymentMethod === "Cash on Delivery (COD)" ? "COD" : "Prepaid"}
-                              </span>
-                              <span className={`text-[10px] font-semibold ${
-                                order.paymentStatus === "Paid" ? "text-emerald-700" : "text-amber-700"
-                              }`}>
-                                {order.paymentStatus}
-                              </span>
-                            </td>
+                        <div className="pt-2 border-t border-[#f2ece4] flex items-center justify-between text-[11px] text-[#6b6257]">
+                          <span>{order.items.length} item(s)</span>
+                          <span className="text-[#0d4f3c] font-bold">Manage Order →</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                            <td className="py-3.5 px-4">
-                              <span
-                                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                  order.orderStatus === "pending"
-                                    ? "bg-amber-100 text-amber-800"
-                                    : order.orderStatus === "confirmed"
-                                    ? "bg-indigo-100 text-indigo-800"
-                                    : order.orderStatus === "shipped"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : order.orderStatus === "delivered"
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : order.orderStatus === "refunded"
-                                    ? "bg-purple-100 text-purple-800"
-                                    : "bg-red-100 text-red-800"
-                                }`}
-                              >
-                                {order.orderStatus}
-                              </span>
-                            </td>
-
-                            <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => openOrderDetails(order)}
-                                className="px-2.5 py-1 text-xs font-bold text-[#0d4f3c] hover:bg-[#0d4f3c]/10 rounded-lg transition-colors mr-1"
-                              >
-                                Details →
-                              </button>
-                            </td>
+                  {/* Desktop Orders Table (hidden md:block) */}
+                  <div className="hidden md:block bg-white rounded-2xl border border-[#e5ded6] shadow-xs overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#f7f4ef] border-b border-[#e5ded6] text-[#6b6257] uppercase tracking-wider text-[10px]">
+                          <tr>
+                            <th className="py-3 px-4">Order Ref</th>
+                            <th className="py-3 px-4">Customer</th>
+                            <th className="py-3 px-4">Items</th>
+                            <th className="py-3 px-4">Destination</th>
+                            <th className="py-3 px-4">Total</th>
+                            <th className="py-3 px-4">Payment</th>
+                            <th className="py-3 px-4">Fulfillment</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-[#e8dfd8]">
+                          {displayedOrders.map((order) => (
+                            <tr
+                              key={order.id}
+                              className="hover:bg-[#faf8f5] transition-colors cursor-pointer"
+                              onClick={() => openOrderDetails(order)}
+                            >
+                              <td className="py-3.5 px-4 font-mono font-bold text-[#0d4f3c]">
+                                {order.orderNumber}
+                                <div className="text-[10px] font-sans font-normal text-[#8c8275]">
+                                  {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                                    day: "numeric",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <strong className="block text-[#1e1b18]">{order.customer.fullName}</strong>
+                                <span className="text-[11px] text-[#6b6257]">{order.customer.phone}</span>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span className="font-semibold text-[#1e1b18]">{order.items.length} Piece(s)</span>
+                                <div className="text-[11px] text-[#6b6257] truncate max-w-[150px]">
+                                  {order.items.map((i) => i.productName).join(", ")}
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-[#5a544c]">
+                                <div>{order.shippingAddress.city}, {order.shippingAddress.state}</div>
+                                <span className="text-[10px] text-[#8c8275]">{order.shippingAddress.pincode}</span>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-serif font-bold text-sm text-[#1e1b18]">
+                                ₹{order.total.toLocaleString("en-IN")}
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span className="text-[11px] font-medium block text-[#1e1b18]">
+                                  {order.paymentMethod === "Cash on Delivery (COD)" ? "COD" : "Prepaid"}
+                                </span>
+                                <span className={`text-[10px] font-semibold ${
+                                  order.paymentStatus === "Paid" ? "text-emerald-700" : "text-amber-700"
+                                }`}>
+                                  {order.paymentStatus}
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                    order.orderStatus === "pending"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : order.orderStatus === "confirmed"
+                                      ? "bg-indigo-100 text-indigo-800"
+                                      : order.orderStatus === "shipped"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : order.orderStatus === "delivered"
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : order.orderStatus === "refunded"
+                                      ? "bg-purple-100 text-purple-800"
+                                      : "bg-red-100 text-red-800"
+                                  }`}
+                                >
+                                  {order.orderStatus}
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => openOrderDetails(order)}
+                                  className="px-2.5 py-1 text-xs font-bold text-[#0d4f3c] hover:bg-[#0d4f3c]/10 rounded-lg transition-colors mr-1"
+                                >
+                                  Details →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2572,13 +2634,13 @@ export default function Admin() {
 
               {/* Product Modal (Add / Edit) */}
               {isProductModalOpen && editingProduct && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 xs:p-3 sm:p-4 overflow-y-auto">
                   <div
                     className="fixed inset-0 bg-black/60 backdrop-blur-xs"
                     onClick={() => setIsProductModalOpen(false)}
                   />
 
-                  <div className="relative z-10 w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-[#e5ded6] overflow-hidden my-auto max-h-[94vh] flex flex-col">
+                  <div className="relative z-10 w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-[#e5ded6] overflow-hidden my-auto max-h-[96vh] sm:max-h-[90vh] flex flex-col">
                     <div className="p-4 sm:p-5 border-b border-[#e5ded6] flex items-center justify-between bg-[#f7f4ef]">
                       <div>
                         <h3 className="font-serif font-bold text-base text-[#1e1b18]">
@@ -2943,7 +3005,7 @@ export default function Admin() {
                       </div>
 
                       {/* Modal Footer Actions */}
-                      <div className="pt-3 border-t border-[#e5ded6] flex items-center justify-between gap-2 flex-wrap">
+                      <div className="sticky bottom-0 bg-white pt-3 pb-1 border-t border-[#e5ded6] flex items-center justify-between gap-2 flex-wrap z-20">
                         <div className="text-[11px] text-[#6b6257]">
                           Total {editingProduct.colorVariants?.length || 1} color edition(s) configured
                         </div>

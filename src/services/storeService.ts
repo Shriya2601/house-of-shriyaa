@@ -42,21 +42,42 @@ import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
 import savedCategoriesJson from "../data/categories.json";
 
+export interface FirestoreWriteResult {
+  success: boolean;
+  error?: any;
+  notice?: string;
+}
+
 /**
- * Safe Firestore write helper that sanitizes input and enforces a strict 2000ms timeout
+ * Safe Firestore write helper that sanitizes input and enforces a strict 3000ms timeout
  * so that exhausted quotas, offline states, or network stalls never hang the application UI.
  */
-export async function safeFirestoreSet(docRef: any, data: any, options: { merge?: boolean } = { merge: true }): Promise<boolean> {
+export async function safeFirestoreSet(
+  docRef: any,
+  data: any,
+  options: { merge?: boolean } = { merge: true }
+): Promise<FirestoreWriteResult> {
   try {
     const sanitized = JSON.parse(JSON.stringify(data));
     await Promise.race([
       setDoc(docRef, sanitized, options),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore write timeout")), 2000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore write timeout")), 3000)),
     ]);
-    return true;
-  } catch (err) {
-    console.warn("Firestore sync skipped or unavailable (persisting locally & to repository):", err);
-    return false;
+    return { success: true };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    const isQuota =
+      msg.includes("Quota limit exceeded") ||
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      err?.code === "resource-exhausted";
+    console.warn("Firestore sync status:", err);
+    return {
+      success: false,
+      error: err,
+      notice: isQuota
+        ? "Cloud quota limit reached (saved to local & server storage)"
+        : "Cloud write timeout (saved to local & server storage)",
+    };
   }
 }
 
@@ -555,8 +576,11 @@ export function ensureProductVariants(data: any): Product {
         vImgs = imagesList;
       }
 
-      const vPrimary = vImgs[0] || v.image || (idx === 0 ? fallbackImage : "");
-      const vHover = vImgs[1] || v.hoverImage || vPrimary;
+      // STRICT VARIANT ISOLATION:
+      // Variant 0 (primary) uses fallback images if needed.
+      // Secondary variants (idx > 0) MUST ONLY use their own photos!
+      const vPrimary = vImgs[0] || (idx === 0 ? fallbackImage : "");
+      const vHover = vImgs[1] || (idx === 0 ? fallbackHover : vPrimary);
 
       return {
         id: v.id || `var-${data.id || "prod"}-${idx}-${Date.now()}`,
@@ -728,11 +752,19 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       (snapshot) => {
         const deletedIds = getDeletedProductIds();
         if (!snapshot.empty) {
-          const list = snapshot.docs
+          const fsList = snapshot.docs
             .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
             .filter((p) => !deletedIds.has(p.id));
-          cacheProductsLocally(list);
-          callback(list);
+
+          // Safe catalog merge: overlay Firestore docs onto cached products
+          // so that if Firestore has only partial items or quota errors, existing products are NEVER lost!
+          const currentMap = new Map<string, Product>();
+          getCachedProducts().forEach((p) => currentMap.set(p.id, p));
+          fsList.forEach((p) => currentMap.set(p.id, p));
+
+          const merged = Array.from(currentMap.values()).filter((p) => !deletedIds.has(p.id));
+          cacheProductsLocally(merged);
+          callback(merged);
         }
       },
       (err) => {
@@ -751,7 +783,14 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   };
 }
 
-export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<string> {
+export interface SaveProductResult {
+  id: string;
+  serverSuccess: boolean;
+  firestoreSuccess: boolean;
+  firestoreNotice?: string;
+}
+
+export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<SaveProductResult> {
   const id = product.id || `hos-${Date.now()}`;
   const docRef = doc(db, "products", id);
 
@@ -763,59 +802,72 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   });
 
   // 1. Update local cache and un-delete if previously marked immediately
-  try {
-    const deletedIds = getDeletedProductIds();
-    if (deletedIds.has(id)) {
-      deletedIds.delete(id);
-      saveDeletedProductIds(deletedIds);
-    }
-
-    const current = getCachedProducts();
-    const existingIdx = current.findIndex((p) => p.id === id);
-    let updated: Product[];
-    if (existingIdx > -1) {
-      updated = [...current];
-      updated[existingIdx] = sanitized;
-    } else {
-      updated = [sanitized, ...current];
-    }
-    cacheProductsLocally(updated);
-
-    // 2. Persist directly to Server Database API
-    try {
-      await fetch("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sanitized),
-      });
-    } catch (apiErr) {
-      console.warn("API save-product notice:", apiErr);
-    }
-
-    // 3. Persist to project source files & git repository so changes survive rebuilds, refreshes, and deployments
-    try {
-      await fetch("/api/save-repo-changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          products: updated,
-          commitMessage: `chore(catalog): saved product ${sanitized.name} with ${sanitized.colorVariants?.length || 1} color variants`,
-        }),
-      });
-    } catch (apiErr) {
-      console.warn("API save-repo-changes notice:", apiErr);
-    }
-
-    // Notify any local listeners
-    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
-  } catch (err) {
-    console.warn("Local storage update warning:", err);
+  const deletedIds = getDeletedProductIds();
+  if (deletedIds.has(id)) {
+    deletedIds.delete(id);
+    saveDeletedProductIds(deletedIds);
   }
 
-  // 4. Write to Firestore with timeout protection (non-blocking, won't hang if quota exceeded)
-  safeFirestoreSet(docRef, sanitized, { merge: true }).catch(() => {});
+  const current = getCachedProducts();
+  const existingIdx = current.findIndex((p) => p.id === id);
+  let updated: Product[];
+  if (existingIdx > -1) {
+    updated = [...current];
+    updated[existingIdx] = sanitized;
+  } else {
+    updated = [sanitized, ...current];
+  }
+  cacheProductsLocally(updated);
 
-  return id;
+  // 2. Persist directly to Server Database API with accurate status check
+  let serverSuccess = false;
+  try {
+    const apiRes = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sanitized),
+    });
+    if (apiRes.ok) {
+      serverSuccess = true;
+    } else {
+      const errJson = await apiRes.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server database responded with status ${apiRes.status}`);
+    }
+  } catch (apiErr: any) {
+    console.warn("API save-product error:", apiErr);
+    // If it's a real server error (and not just network offline), surface it
+    if (apiErr?.message && !apiErr.message.includes("Failed to fetch")) {
+      throw apiErr;
+    }
+  }
+
+  // 3. Persist to project source files & git repository so changes survive rebuilds, refreshes, and deployments
+  try {
+    await fetch("/api/save-repo-changes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        products: updated,
+        commitMessage: `chore(catalog): saved product ${sanitized.name} with ${sanitized.colorVariants?.length || 1} color variants`,
+      }),
+    });
+  } catch (apiErr) {
+    console.warn("API save-repo-changes notice:", apiErr);
+  }
+
+  // Notify any local listeners
+  window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+  window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
+
+  // 4. Write to Firestore with status detection
+  const fsResult = await safeFirestoreSet(docRef, sanitized, { merge: true });
+
+  return {
+    id,
+    serverSuccess,
+    firestoreSuccess: fsResult.success,
+    firestoreNotice: fsResult.notice,
+  };
 }
 
 export async function deleteProduct(id: string): Promise<void> {

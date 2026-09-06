@@ -2070,19 +2070,23 @@ export function ProductCard({
   const productImages = useMemo(() => {
     if (currentVariant) {
       if (Array.isArray(currentVariant.images) && currentVariant.images.length > 0) {
-        return currentVariant.images.filter(Boolean);
+        const valid = currentVariant.images.filter(Boolean);
+        if (valid.length > 0) return valid;
       }
       if (currentVariant.image) {
         return [currentVariant.image, currentVariant.hoverImage].filter(Boolean);
+      }
+      if (selectedVariantIndex > 0) {
+        return ["https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80"];
       }
     }
     if (Array.isArray(product.images) && product.images.length > 0) {
       return product.images.filter(Boolean);
     }
     return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
-  }, [currentVariant, product.images, product.image, product.hoverImage]);
+  }, [currentVariant, selectedVariantIndex, product.images, product.image, product.hoverImage]);
 
-  const activeImage = productImages[activeImageIndex] || currentVariant?.image || product.image;
+  const activeImage = productImages[activeImageIndex] || (selectedVariantIndex === 0 ? product.image : productImages[0]);
 
   const handleOpenDetails = () => {
     const colorParam = currentVariant?.colorName ? `?color=${encodeURIComponent(currentVariant.colorName)}` : "";
