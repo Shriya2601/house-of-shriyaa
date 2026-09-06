@@ -1,0 +1,104 @@
+{
+  "announcementText": "· Free Express Delivery on ₹1,999+ · ",
+  "announcementCta": "",
+  "announcementVisible": true,
+  "brandTagline": "Heirloom Indian couture, thoughtfully woven and made to measure in Surat.",
+  "brandDescription": "Where pretty meets effortless elegance",
+  "contactPhone": "+91 95016 98356",
+  "contactEmail": "care@houseofshriya.com",
+  "whatsappNumber": "+919501698356",
+  "atelierCity": "Surat, Gujarat, India",
+  "footerNote": "© House of Shriya. Made for your forever wardrobe. SURAT · WORLDWIDE SHIPPING",
+  "heroSlides": [
+    {
+      "mood": "Emerald & Saffron Weaves",
+      "ctaText": "Explore Festive Edit",
+      "description": "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
+      "season": "AUTUMN/FESTIVE 2026",
+      "collection": "Velvet Marigold Edit",
+      "number": "01",
+      "title": "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
+      "ctaTarget": "catalog-section",
+      "eyebrow": "DAILY / Festive Couture",
+      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+      "caption": "Gul-e-Noor Emerald Alia Cut Suit Set"
+    },
+    {
+      "description": "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
+      "caption": "    Pastels • Delicate Embroidery • Effortless Grace",
+      "mood": "Antique Zari & Handlooms",
+      "collection": "The Festive Edit",
+      "eyebrow": "Timeless Indian elegance",
+      "title": "Grace, weave in Every Detail",
+      "ctaTarget": "catalog-section",
+      "ctaText": "Discover Unstitched",
+      "season": "ROYAL HERITAGE 2026",
+      "number": "02",
+      "image": "https://kommodo.ai/i/eA9kgNNZCuEDbWDBS8JI"
+    },
+    {
+      "description": "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND\nCONTRAST PIPING WITH LACE ON DAMAN.",
+      "mood": "Pastel Silks & Easy Linens",
+      "eyebrow": "Daily Chic",
+      "season": "DAILY CHIC 2026",
+      "caption": "Printed Organza Dupatta Set in Sage & Pastel Rose",
+      "ctaTarget": "catalog-section",
+      "number": "03",
+      "collection": "Wrap yourself in the soft elegance of muted pistachio tones and hand-painted watercolor florals, finished with",
+      "title": "Grace in Every Print",
+      "ctaText": "Shop Daily Chic",
+      "image": "https://kommodo.ai/i/4UmFSGtcoZdZF37bKc3R"
+    }
+  ],
+  "features": [
+    {
+      "title": "Heritage Craftsmanship",
+      "id": "f1",
+      "text": "Artisanal hand-woven heirlooms",
+      "iconName": "Crown"
+    },
+    {
+      "iconName": "Sparkles",
+      "text": "Authentic Banarasi & Chanderi",
+      "title": "100% Pure Handlooms",
+      "id": "f2"
+    },
+    {
+      "iconName": "Check",
+      "text": "Zero-hassle secure checkout",
+      "id": "f3",
+      "title": "Instant UPI & Cards"
+    },
+    {
+      "text": "Fast insured courier delivery",
+      "title": "Worldwide Express",
+      "id": "f4",
+      "iconName": "PackageCheck"
+    }
+  ],
+  "catalogTitle": "Curated Boutique Catalog",
+  "catalogSubtitle": "Handcrafted pure fabrics, regal Alia silhouettes, and luxury unstitched sets",
+  "navLinks": [
+    {
+      "href": "catalog-section",
+      "id": "nav-1",
+      "label": "Catalog"
+    },
+    {
+      "href": "/our-story",
+      "id": "nav-3",
+      "label": "Our Story"
+    },
+    {
+      "href": "/craftsmanship",
+      "label": "Craftsmanship",
+      "id": "nav-4"
+    },
+    {
+      "label": "Journal",
+      "href": "/journal",
+      "id": "nav-5"
+    }
+  ],
+  "updatedAt": "2026-09-06T11:33:12.814Z"
+}

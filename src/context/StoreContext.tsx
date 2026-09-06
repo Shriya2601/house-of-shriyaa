@@ -39,8 +39,8 @@ interface StoreContextType {
   // Cart / Shopping Bag
   cart: CartItem[];
   addToCart: (product: Product, size?: string, quantity?: number) => void;
-  removeFromCart: (productId: string, size: string) => void;
-  updateQuantity: (productId: string, size: string, quantity: number) => void;
+  removeFromCart: (productId: string, size: string, color?: string) => void;
+  updateQuantity: (productId: string, size: string, quantity: number, color?: string) => void;
   clearCart: () => void;
   totalCartCount: number;
   cartSubtotal: number;
@@ -284,7 +284,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addToCart = (product: Product, size = "Unstitched Fabric", quantity = 1) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex(
-        (item) => item.product.id === product.id && item.size === size
+        (item) =>
+          item.product.id === product.id &&
+          item.size === size &&
+          (item.product.color || "") === (product.color || "")
       );
       if (existingIndex > -1) {
         const next = [...prev];
@@ -299,18 +302,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setIsCartOpen(true);
   };
 
-  const removeFromCart = (productId: string, size: string) => {
-    setCart((prev) => prev.filter((item) => !(item.product.id === productId && item.size === size)));
+  const removeFromCart = (productId: string, size: string, color?: string) => {
+    setCart((prev) =>
+      prev.filter(
+        (item) =>
+          !(
+            item.product.id === productId &&
+            item.size === size &&
+            (color === undefined || (item.product.color || "") === (color || ""))
+          )
+      )
+    );
   };
 
-  const updateQuantity = (productId: string, size: string, quantity: number) => {
+  const updateQuantity = (productId: string, size: string, quantity: number, color?: string) => {
     if (quantity <= 0) {
-      removeFromCart(productId, size);
+      removeFromCart(productId, size, color);
       return;
     }
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId && item.size === size
+        item.product.id === productId &&
+        item.size === size &&
+        (color === undefined || (item.product.color || "") === (color || ""))
           ? { ...item, quantity }
           : item
       )

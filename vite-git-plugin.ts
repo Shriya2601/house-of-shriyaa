@@ -71,7 +71,8 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       let authUrl = originUrl;
       if (originUrl.startsWith("https://")) {
         const cleanBase = originUrl.replace(/https:\/\/[^@]+@/, "https://");
-        authUrl = cleanBase.replace("https://", `https://${encodeURIComponent(DEFAULT_GIT_USER)}:${encodeURIComponent(token)}@`);
+        // GitHub Personal Access Tokens authenticate with x-access-token or username
+        authUrl = cleanBase.replace("https://", `https://x-access-token:${encodeURIComponent(token)}@`);
       }
       
       let output = "";
@@ -79,20 +80,25 @@ function pushToRemote(rootDir: string, customToken?: string): { success: boolean
       try {
         output = execSync(`git push -u "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
       } catch (pushErr: any) {
-        const pushStderr = (pushErr.stderr ? pushErr.stderr.toString() : pushErr.message || "").trim();
-        // If rejected due to remote history or divergent branch, synchronize then push
+        // Try with DEFAULT_GIT_USER if x-access-token failed
         try {
-          execSync(`git fetch "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv });
+          const userAuthUrl = originUrl.replace(/https:\/\/[^@]+@/, "https://").replace("https://", `https://${encodeURIComponent(DEFAULT_GIT_USER)}:${encodeURIComponent(token)}@`);
+          output = execSync(`git push -u "${userAuthUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+        } catch {
+          // If rejected due to remote history or divergent branch, synchronize then push
           try {
-            execSync(`git pull "${authUrl}" main --rebase -X theirs`, { cwd: rootDir, stdio: "pipe", env: execEnv });
-          } catch {
+            execSync(`git fetch "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv });
             try {
-              execSync("git rebase --abort", { cwd: rootDir, stdio: "pipe" });
-            } catch {}
+              execSync(`git pull "${authUrl}" main --rebase -X theirs`, { cwd: rootDir, stdio: "pipe", env: execEnv });
+            } catch {
+              try {
+                execSync("git rebase --abort", { cwd: rootDir, stdio: "pipe" });
+              } catch {}
+            }
+            output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
+          } catch (syncErr: any) {
+            throw pushErr;
           }
-          output = execSync(`git push -u --force "${authUrl}" main`, { cwd: rootDir, stdio: "pipe", env: execEnv }).toString();
-        } catch (syncErr: any) {
-          throw pushErr;
         }
       }
 
@@ -245,40 +251,42 @@ export function gitSyncPlugin(): Plugin {
             } = data;
 
             const dataDir = path.join(rootDir, "src", "data");
+            const publicDataDir = path.join(rootDir, "public", "data");
+            const distDataDir = path.join(rootDir, "dist", "data");
+
             if (!fs.existsSync(dataDir)) {
               fs.mkdirSync(dataDir, { recursive: true });
             }
+            if (!fs.existsSync(publicDataDir)) {
+              fs.mkdirSync(publicDataDir, { recursive: true });
+            }
 
-            // Write files to repository
+            const writeDual = (filename: string, contentStr: string) => {
+              fs.writeFileSync(path.join(dataDir, filename), contentStr);
+              fs.writeFileSync(path.join(publicDataDir, filename), contentStr);
+              if (fs.existsSync(rootDir + "/dist")) {
+                if (!fs.existsSync(distDataDir)) {
+                  try { fs.mkdirSync(distDataDir, { recursive: true }); } catch {}
+                }
+                try { fs.writeFileSync(path.join(distDataDir, filename), contentStr); } catch {}
+              }
+            };
+
+            // Write files to repository and public/data for static serving
             if (siteContent) {
-              fs.writeFileSync(
-                path.join(dataDir, "siteContent.json"),
-                JSON.stringify(siteContent, null, 2)
-              );
+              writeDual("siteContent.json", JSON.stringify(siteContent, null, 2));
             }
             if (brandStyles) {
-              fs.writeFileSync(
-                path.join(dataDir, "brandStyles.json"),
-                JSON.stringify(brandStyles, null, 2)
-              );
+              writeDual("brandStyles.json", JSON.stringify(brandStyles, null, 2));
             }
             if (customOverrides) {
-              fs.writeFileSync(
-                path.join(dataDir, "customOverrides.json"),
-                JSON.stringify(customOverrides, null, 2)
-              );
+              writeDual("customOverrides.json", JSON.stringify(customOverrides, null, 2));
             }
             if (products && Array.isArray(products)) {
-              fs.writeFileSync(
-                path.join(dataDir, "products.json"),
-                JSON.stringify(products, null, 2)
-              );
+              writeDual("products.json", JSON.stringify(products, null, 2));
             }
             if (categories && Array.isArray(categories)) {
-              fs.writeFileSync(
-                path.join(dataDir, "categories.json"),
-                JSON.stringify(categories, null, 2)
-              );
+              writeDual("categories.json", JSON.stringify(categories, null, 2));
             }
 
             // Update deployment config before staging

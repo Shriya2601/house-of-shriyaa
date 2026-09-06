@@ -2094,13 +2094,39 @@ export function ProductCard({
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
     const defaultSize = product.sizes?.[0] || "Unstitched Suit";
-    addToCart(product as Product, defaultSize);
+    const variantProduct: Product = currentVariant
+      ? {
+          ...(product as Product),
+          color: currentVariant.colorName || product.color,
+          colorHex: currentVariant.colorHex || product.colorHex,
+          price: currentVariant.price || product.price,
+          originalPrice: currentVariant.originalPrice || product.originalPrice,
+          savings: currentVariant.savings || product.savings,
+          image: currentVariant.images?.[0] || currentVariant.image || product.image,
+          hoverImage: currentVariant.images?.[1] || currentVariant.hoverImage || product.hoverImage,
+          images: currentVariant.images || product.images,
+        }
+      : (product as Product);
+    addToCart(variantProduct, defaultSize);
   };
 
   const handleBuyNow = (e: React.MouseEvent) => {
     e.stopPropagation();
     const defaultSize = product.sizes?.[0] || "Unstitched Suit";
-    startInstantCheckout(product as Product, defaultSize);
+    const variantProduct: Product = currentVariant
+      ? {
+          ...(product as Product),
+          color: currentVariant.colorName || product.color,
+          colorHex: currentVariant.colorHex || product.colorHex,
+          price: currentVariant.price || product.price,
+          originalPrice: currentVariant.originalPrice || product.originalPrice,
+          savings: currentVariant.savings || product.savings,
+          image: currentVariant.images?.[0] || currentVariant.image || product.image,
+          hoverImage: currentVariant.images?.[1] || currentVariant.hoverImage || product.hoverImage,
+          images: currentVariant.images || product.images,
+        }
+      : (product as Product);
+    startInstantCheckout(variantProduct, defaultSize);
   };
 
   const whatsappMsg = encodeURIComponent(

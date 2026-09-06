@@ -1,0 +1,51 @@
+[
+  {
+    "id": "cat-1",
+    "name": "All Collections",
+    "slug": "All Collections",
+    "description": "Complete handcrafted luxury catalog",
+    "sortOrder": 1
+  },
+  {
+    "id": "cat-2",
+    "name": "Cotton Suits",
+    "slug": "Cotton Suits",
+    "description": "Pure Mulmul & Hand-block everyday sets",
+    "sortOrder": 2
+  },
+  {
+    "id": "cat-3",
+    "name": "Satin Wear",
+    "slug": "Satin Wear",
+    "description": "Lustrous evening & celebration silks",
+    "sortOrder": 3
+  },
+  {
+    "id": "cat-4",
+    "name": "Party Wear",
+    "slug": "Party Wear",
+    "description": "Statement embroidery, Alia cuts & Shararas",
+    "sortOrder": 4
+  },
+  {
+    "id": "cat-5",
+    "name": "Festive Wear",
+    "slug": "Festive Wear",
+    "description": "Opulent Katan, Brocades & Tilla weaves",
+    "sortOrder": 5
+  },
+  {
+    "id": "cat-6",
+    "name": "Daily & College Wear",
+    "slug": "Daily & College Wear",
+    "description": "Airy sets with artisan comfort",
+    "sortOrder": 6
+  },
+  {
+    "id": "cat-7",
+    "name": "Seasonal Drop",
+    "slug": "Seasonal Drop",
+    "description": "Limited micro velvet and heirloom drops",
+    "sortOrder": 7
+  }
+]

@@ -123,6 +123,7 @@ export const defaultCategories: CategoryItem[] = (savedCategoriesJson && Array.i
 ];
 
 const SITE_CONTENT_DOC = "global_settings";
+const SITE_CONTENT_CACHE_KEY = "hos_site_content_cache_v2";
 
 /* ============================================================
    SITE CONTENT & CMS
@@ -130,10 +131,22 @@ const SITE_CONTENT_DOC = "global_settings";
 
 export async function getSiteContent(): Promise<SiteContent> {
   try {
+    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) return { ...defaultSiteContent, ...parsed };
+    }
+  } catch {}
+
+  try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return { ...defaultSiteContent, ...(snap.data() as SiteContent) };
+      const data = { ...defaultSiteContent, ...(snap.data() as SiteContent) };
+      try {
+        localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(data));
+      } catch {}
+      return data;
     }
   } catch (err) {
     console.warn("Firestore getSiteContent offline/fallback:", err);
@@ -142,33 +155,79 @@ export async function getSiteContent(): Promise<SiteContent> {
 }
 
 export function subscribeSiteContent(callback: (content: SiteContent) => void): () => void {
+  try {
+    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) callback({ ...defaultSiteContent, ...parsed });
+    } else {
+      callback(defaultSiteContent);
+    }
+  } catch {
+    callback(defaultSiteContent);
+  }
+
+  // Background fetch from static data to guarantee latest live deploy updates
+  if (typeof window !== "undefined") {
+    fetch(`/data/siteContent.json?v=${Date.now()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          const merged = { ...defaultSiteContent, ...data };
+          try {
+            localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+          } catch {}
+          callback(merged);
+        }
+      })
+      .catch(() => {});
+  }
+
   const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
   return onSnapshot(
     docRef,
     (snap) => {
       if (snap.exists()) {
-        callback({ ...defaultSiteContent, ...(snap.data() as SiteContent) });
+        const merged = { ...defaultSiteContent, ...(snap.data() as SiteContent) };
+        try {
+          localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+        } catch {}
+        callback(merged);
       } else {
         callback(defaultSiteContent);
       }
     },
     (err) => {
       console.warn("subscribeSiteContent listener error:", err);
-      callback(defaultSiteContent);
     }
   );
 }
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<void> {
-  const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
-  await setDoc(
-    docRef,
-    {
-      ...content,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  const merged = { ...defaultSiteContent, ...content, updatedAt: new Date().toISOString() };
+  try {
+    localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+  } catch {}
+
+  // Sync to repository
+  try {
+    fetch("/api/save-repo-changes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        siteContent: merged,
+        commitMessage: `chore(cms): updated site content and announcement`,
+      }),
+    }).catch(() => {});
+  } catch {}
+
+  // Firestore attempt with graceful catch
+  try {
+    const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
+    await setDoc(docRef, merged, { merge: true });
+  } catch (err) {
+    console.warn("Firestore saveSiteContent notice (proceeding with local & repository persistence):", err);
+  }
 }
 
 /* ============================================================
@@ -221,6 +280,23 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
     callback(cached);
   }
 
+  // Background fetch from static data
+  if (typeof window !== "undefined") {
+    fetch(`/data/categories.json?v=${Date.now()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((remoteCategories) => {
+        if (Array.isArray(remoteCategories) && remoteCategories.length > 0) {
+          const deletedIds = getDeletedCategoryIds();
+          const filtered = remoteCategories.filter((c: CategoryItem) => !deletedIds.has(c.id));
+          if (filtered.length > 0) {
+            cacheCategoriesLocally(filtered);
+            callback(filtered);
+          }
+        }
+      })
+      .catch(() => {});
+  }
+
   const colRef = collection(db, "categories");
   const q = query(colRef, orderBy("sortOrder", "asc"));
   return onSnapshot(
@@ -250,8 +326,14 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
 export async function saveCategory(category: CategoryItem): Promise<void> {
   const id = category.id || `cat-${Date.now()}`;
   const sanitized = { ...category, id };
-  const docRef = doc(db, "categories", id);
-  await setDoc(docRef, sanitized, { merge: true });
+
+  // 1. Write to Firestore with graceful catch
+  try {
+    const docRef = doc(db, "categories", id);
+    await setDoc(docRef, sanitized, { merge: true });
+  } catch (err) {
+    console.warn("Firestore saveCategory notice (proceeding with local & repository persistence):", err);
+  }
 
   try {
     const deletedIds = getDeletedCategoryIds();
@@ -475,6 +557,23 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     callback(cached);
   }
 
+  // Background fetch latest /data/products.json from server or static deploy
+  if (typeof window !== "undefined") {
+    fetch(`/data/products.json?v=${Date.now()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((remoteProducts) => {
+        if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+          const deletedIds = getDeletedProductIds();
+          const normalized = remoteProducts.map(ensureProductVariants).filter((p) => !deletedIds.has(p.id));
+          if (normalized.length > 0) {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
+        }
+      })
+      .catch(() => {});
+  }
+
   const colRef = collection(db, "products");
   return onSnapshot(
     colRef,
@@ -486,12 +585,6 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           .filter((p) => !deletedIds.has(p.id));
         cacheProductsLocally(list);
         callback(list);
-      } else {
-        const fallback = defaultProducts
-          .map(ensureProductVariants)
-          .filter((p) => !deletedIds.has(p.id));
-        cacheProductsLocally(fallback);
-        callback(fallback);
       }
     },
     (err) => {

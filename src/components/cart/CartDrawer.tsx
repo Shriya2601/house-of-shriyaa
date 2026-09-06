@@ -97,7 +97,7 @@ export default function CartDrawer() {
             </div>
           ) : (
             cart.map((item) => (
-              <div key={`${item.product.id}-${item.size}`} className="py-4 flex gap-3.5 items-start">
+              <div key={`${item.product.id}-${item.size}-${item.product.color || ""}`} className="py-4 flex gap-3.5 items-start">
                 <div
                   className="relative group cursor-zoom-in shrink-0"
                   onClick={() => setViewerProduct(item.product as Product)}
@@ -120,9 +120,17 @@ export default function CartDrawer() {
                     <span className="text-[11px] font-medium text-[#0d4f3c] bg-[#ede5db] px-2 py-0.5 rounded">
                       Unstitched Suit
                     </span>
-                    <span className="text-[11px] text-[#6b6257]">
-                      {item.product.color}
-                    </span>
+                    {item.product.color && (
+                      <span className="text-[11px] text-[#6b6257] inline-flex items-center gap-1">
+                        {item.product.colorHex && (
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-black/15 shrink-0 inline-block"
+                            style={{ backgroundColor: item.product.colorHex }}
+                          />
+                        )}
+                        <span>{item.product.color}</span>
+                      </span>
+                    )}
                   </div>
                   <div className="font-bold text-sm text-[#0d4f3c] mt-2">
                     {item.product.price}
@@ -132,7 +140,7 @@ export default function CartDrawer() {
                   <div className="flex items-center justify-between mt-2.5">
                     <div className="flex items-center border border-[#d6ccc2] rounded-full bg-white px-1 py-0.5">
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.size, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.product.id, item.size, item.quantity - 1, item.product.color)}
                         className="w-6 h-6 flex items-center justify-center text-[#5a544c] hover:text-black"
                         aria-label="Decrease quantity"
                       >
@@ -142,7 +150,7 @@ export default function CartDrawer() {
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.size, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.product.id, item.size, item.quantity + 1, item.product.color)}
                         className="w-6 h-6 flex items-center justify-center text-[#5a544c] hover:text-black"
                         aria-label="Increase quantity"
                       >
@@ -151,7 +159,7 @@ export default function CartDrawer() {
                     </div>
 
                     <button
-                      onClick={() => removeFromCart(item.product.id, item.size)}
+                      onClick={() => removeFromCart(item.product.id, item.size, item.product.color)}
                       className="text-[#9e3b3b] hover:text-red-700 p-1 transition-colors"
                       title="Remove item"
                       aria-label="Remove item"
