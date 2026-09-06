@@ -45,7 +45,7 @@ export const defaultSiteContent: SiteContent = (savedSiteContentJson && (savedSi
   announcementCta: "Explore Velvet Drop",
   announcementVisible: true,
   brandTagline: "Heirloom Indian couture, thoughtfully woven and made to measure in Surat.",
-  brandDescription: "Every piece at House of Shriya carries the cadence of authentic Banarasi looms, handspun Chanderi silks, and meticulous needlework perfected across generations.",
+  brandDescription: "Where pretty meets effortless elegance",
   contactPhone: "+91 95016 98356",
   contactEmail: "houseofshriya.in@gmail.com",
   whatsappNumber: "+919501698356",

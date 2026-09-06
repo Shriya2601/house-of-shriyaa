@@ -2297,7 +2297,7 @@ export function ProductCard({
 
 export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }) {
   const { siteContent } = useStore();
-  const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
+  const whatsappHelpPookieUrl = "https://wa.me/919501698356?text=" + encodeURIComponent("Hi House of Shriya! POOKIE NEED A HELP ✨");
 
   return (
     <footer className="site-footer">
@@ -2306,15 +2306,24 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
           <div className="footer-brand">
             <LogoMark />
             <BuilderText as="h2" text="House of Shriya" />
-            <BuilderText as="p" text={siteContent?.brandDescription || "Heirloom Indian couture, thoughtfully woven and made to measure in Surat."} />
+            <BuilderText as="p" text={siteContent?.brandDescription || "Where pretty meets effortless elegance"} />
             <a
               data-editable="true"
-              href={whatsappUrl}
+              href={whatsappHelpPookieUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-xs text-[#faf8f5] bg-white/10 hover:bg-white/20 px-3.5 py-2 rounded-full transition-colors w-fit"
+              className="inline-flex items-center gap-2 text-xs text-[#f9a8d4] bg-[#f9a8d4]/10 hover:bg-[#f9a8d4]/20 border border-[#f9a8d4]/45 hover:border-[#f9a8d4] px-4 py-2 rounded-full transition-all duration-300 w-fit shadow-xs group"
+              style={{
+                fontFamily: '"Playfair Display", "Cormorant Garamond", Georgia, serif',
+                letterSpacing: "0.08em",
+                fontWeight: 600,
+              }}
+              title="Chat on WhatsApp (+919501698356)"
+              aria-label="POOKIE NEED A HELP - Open WhatsApp chat"
             >
-              <MessageCircle size={15} /> <BuilderText as="span" text="Chat with Atelier Concierge" />
+              <MessageCircle size={14} className="text-[#f9a8d4] group-hover:scale-110 transition-transform" />
+              <BuilderText as="span" text="POOKIE NEED A HELP" />
+              <Sparkles size={13} className="text-[#f9a8d4] group-hover:rotate-12 transition-transform opacity-90" />
             </a>
           </div>
           <div className="footer-links">
