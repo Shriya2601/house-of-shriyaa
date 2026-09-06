@@ -226,17 +226,23 @@ export function ensureProductVariants(data: any): Product {
 
   if (Array.isArray(data.colorVariants) && data.colorVariants.length > 0) {
     variants = data.colorVariants.map((v: any, idx: number) => {
-      const vImgs: string[] = Array.isArray(v.images) && v.images.length > 0
-        ? v.images.filter(Boolean)
-        : (v.image ? [v.image] : imagesList);
+      // Preserve this variant's specific images cleanly
+      let vImgs: string[] = [];
+      if (Array.isArray(v.images)) {
+        vImgs = v.images.filter(Boolean);
+      } else if (v.image) {
+        vImgs = [v.image, ...(v.hoverImage && v.hoverImage !== v.image ? [v.hoverImage] : [])].filter(Boolean);
+      } else if (idx === 0) {
+        vImgs = imagesList;
+      }
 
-      const vPrimary = vImgs[0] || v.image || fallbackImage;
+      const vPrimary = vImgs[0] || v.image || (idx === 0 ? fallbackImage : "");
       const vHover = vImgs[1] || v.hoverImage || vPrimary;
 
       return {
         id: v.id || `var-${data.id || "prod"}-${idx}-${Date.now()}`,
-        colorName: v.colorName || data.color || `Color Variant ${idx + 1}`,
-        colorHex: v.colorHex || (idx === 0 ? (data.colorHex || "#0d4f3c") : "#d4af37"),
+        colorName: v.colorName || (idx === 0 ? (data.color || "Standard Edition") : `Color Variant ${idx + 1}`),
+        colorHex: v.colorHex || (idx === 0 ? (data.colorHex || "#0d4f3c") : "#c5a059"),
         price: v.price?.startsWith("₹") ? v.price : (v.price ? `₹${v.price}` : data.price || "₹2,999"),
         originalPrice: v.originalPrice?.startsWith("₹") ? v.originalPrice : (v.originalPrice ? `₹${v.originalPrice}` : data.originalPrice || "₹4,499"),
         savings: v.savings || data.savings || "Save 30%",
@@ -376,6 +382,18 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     }
     cacheProductsLocally(updated);
 
+    // 3. Persist to project source files & git repository so changes survive rebuilds and deployments
+    try {
+      fetch("/api/save-repo-changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          products: updated,
+          commitMessage: `chore(catalog): saved product ${sanitized.name} with ${sanitized.colorVariants?.length || 1} color variants`,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     // Notify any local listeners
     window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
   } catch (err) {
@@ -391,6 +409,18 @@ export async function deleteProduct(id: string): Promise<void> {
     const current = getCachedProducts();
     const filtered = current.filter((p) => p.id !== id);
     cacheProductsLocally(filtered);
+
+    try {
+      fetch("/api/save-repo-changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          products: filtered,
+          commitMessage: `chore(catalog): deleted product ${id}`,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
   } catch {}
 }

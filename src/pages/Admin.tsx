@@ -39,9 +39,13 @@ import {
   Menu,
   Key,
   Upload,
+  Copy,
+  Palette,
+  ArrowRight,
 } from "lucide-react";
 import {
   Product,
+  ColorVariant,
   Order,
   OrderStatus,
   CategoryItem,
@@ -58,6 +62,7 @@ import {
   subscribeProducts,
   saveProduct,
   deleteProduct,
+  ensureProductVariants,
   subscribeCategories,
   saveCategory,
   deleteCategory,
@@ -131,6 +136,7 @@ export default function Admin() {
 
   // Product Editing / Adding Modal
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(0);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("all");
@@ -417,22 +423,36 @@ export default function Admin() {
     setNotesInput(order.notes || "");
   };
 
-  // Product Saving
+  // Product Saving with Independent Color Variant Management
   const handleOpenProductModal = (product?: Product) => {
+    setActiveVariantIndex(0);
     if (product) {
-      const initialImages = Array.isArray(product.images) && product.images.length > 0
-        ? product.images.filter(Boolean)
-        : [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
-      setEditingProduct({
-        ...product,
-        images: initialImages.length > 0 ? initialImages : [product.image || ""].filter(Boolean),
-      });
+      const normalized = ensureProductVariants(product);
+      setEditingProduct(normalized);
     } else {
+      const newId = `hos-${Date.now()}`;
+      const defaultVariant: ColorVariant = {
+        id: `var-${newId}-0`,
+        colorName: "Royal Emerald",
+        colorHex: "#0d4f3c",
+        price: "₹2,999",
+        originalPrice: "₹4,499",
+        savings: "Save 33%",
+        description: "Handcrafted pure fabric with intricate artisanal border detailing.",
+        fabricType: "Pure Chanderi Silk",
+        images: [],
+        image: "",
+        hoverImage: "",
+        inStock: true,
+      };
+
       setEditingProduct({
+        id: newId,
         name: "",
         category: categories[0]?.name || "Cotton Suits",
         fabricType: "Pure Chanderi Silk",
         color: "Royal Emerald",
+        colorHex: "#0d4f3c",
         price: "₹2,999",
         originalPrice: "₹4,499",
         savings: "Save 33%",
@@ -443,36 +463,221 @@ export default function Admin() {
         images: [],
         inStock: true,
         sizes: ["Unstitched Suit"],
+        colorVariants: [defaultVariant],
       });
     }
     setIsProductModalOpen(true);
   };
 
+  const activeVariant: ColorVariant | undefined = useMemo(() => {
+    if (!editingProduct?.colorVariants || editingProduct.colorVariants.length === 0) return undefined;
+    const safeIdx = Math.min(activeVariantIndex, editingProduct.colorVariants.length - 1);
+    return editingProduct.colorVariants[safeIdx] || editingProduct.colorVariants[0];
+  }, [editingProduct?.colorVariants, activeVariantIndex]);
+
+  const updateActiveVariant = (updates: Partial<ColorVariant>) => {
+    if (!editingProduct || !editingProduct.colorVariants) return;
+    const currentVariants = [...editingProduct.colorVariants];
+    const idx = Math.min(activeVariantIndex, currentVariants.length - 1);
+    if (idx < 0) return;
+
+    const existing = currentVariants[idx];
+    const updated: ColorVariant = {
+      ...existing,
+      ...updates,
+    };
+    currentVariants[idx] = updated;
+
+    // If this is variant 0 (the primary edition), also sync with top-level fields for backwards-compatibility
+    const topLevelSync: Partial<Product> = idx === 0 ? {
+      color: updated.colorName,
+      colorHex: updated.colorHex,
+      price: updated.price,
+      originalPrice: updated.originalPrice,
+      savings: updated.savings,
+      fabricType: updated.fabricType,
+      description: updated.description,
+      inStock: updated.inStock,
+      images: updated.images,
+      image: updated.images?.[0] || updated.image || "",
+      hoverImage: updated.images?.[1] || updated.hoverImage || updated.images?.[0] || "",
+    } : {};
+
+    setEditingProduct({
+      ...editingProduct,
+      ...topLevelSync,
+      colorVariants: currentVariants,
+    });
+  };
+
+  const handleAddVariant = () => {
+    if (!editingProduct) return;
+    const current = editingProduct.colorVariants || [];
+    const newIdx = current.length;
+    const newVariant: ColorVariant = {
+      id: `var-${editingProduct.id || "prod"}-${newIdx}-${Date.now()}`,
+      colorName: `New Color Edition ${newIdx + 1}`,
+      colorHex: "#c5a059",
+      price: editingProduct.price || "₹2,999",
+      originalPrice: editingProduct.originalPrice || "₹4,499",
+      savings: editingProduct.savings || "Save 30%",
+      description: editingProduct.description || "",
+      fabricType: editingProduct.fabricType || "Pure Handloom",
+      images: [],
+      image: "",
+      hoverImage: "",
+      inStock: true,
+    };
+    const updatedVariants = [...current, newVariant];
+    setEditingProduct({
+      ...editingProduct,
+      colorVariants: updatedVariants,
+    });
+    setActiveVariantIndex(newIdx);
+  };
+
+  const handleDuplicateVariant = (idx: number) => {
+    if (!editingProduct || !editingProduct.colorVariants) return;
+    const target = editingProduct.colorVariants[idx];
+    if (!target) return;
+
+    const newIdx = editingProduct.colorVariants.length;
+    const cloned: ColorVariant = {
+      ...target,
+      id: `var-${editingProduct.id || "prod"}-${newIdx}-${Date.now()}`,
+      colorName: `${target.colorName} (Copy)`,
+      images: [...(target.images || [])],
+    };
+
+    setEditingProduct({
+      ...editingProduct,
+      colorVariants: [...editingProduct.colorVariants, cloned],
+    });
+    setActiveVariantIndex(newIdx);
+  };
+
+  const handleRemoveVariant = (idx: number) => {
+    if (!editingProduct || !editingProduct.colorVariants || editingProduct.colorVariants.length <= 1) {
+      alert("A product must have at least one color edition.");
+      return;
+    }
+    const variantToRemove = editingProduct.colorVariants[idx];
+    if (!window.confirm(`Are you sure you want to remove the "${variantToRemove.colorName}" color edition?`)) {
+      return;
+    }
+
+    const filtered = editingProduct.colorVariants.filter((_, i) => i !== idx);
+    const newActiveIdx = Math.max(0, Math.min(activeVariantIndex, filtered.length - 1));
+
+    // If we removed the primary variant (0), sync the new primary to top-level
+    const primary = filtered[0];
+    setEditingProduct({
+      ...editingProduct,
+      color: primary.colorName,
+      colorHex: primary.colorHex,
+      price: primary.price,
+      originalPrice: primary.originalPrice,
+      savings: primary.savings,
+      fabricType: primary.fabricType,
+      description: primary.description,
+      inStock: primary.inStock,
+      images: primary.images,
+      image: primary.images?.[0] || primary.image || "",
+      hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || "",
+      colorVariants: filtered,
+    });
+    setActiveVariantIndex(newActiveIdx);
+  };
+
+  const handleMoveVariant = (idx: number, direction: "left" | "right") => {
+    if (!editingProduct?.colorVariants) return;
+    const targetIdx = direction === "left" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= editingProduct.colorVariants.length) return;
+
+    const list = [...editingProduct.colorVariants];
+    const [moved] = list.splice(idx, 1);
+    list.splice(targetIdx, 0, moved);
+
+    const primary = list[0];
+    setEditingProduct({
+      ...editingProduct,
+      color: primary.colorName,
+      colorHex: primary.colorHex,
+      price: primary.price,
+      originalPrice: primary.originalPrice,
+      savings: primary.savings,
+      fabricType: primary.fabricType,
+      description: primary.description,
+      inStock: primary.inStock,
+      images: primary.images,
+      image: primary.images?.[0] || primary.image || "",
+      hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || "",
+      colorVariants: list,
+    });
+    setActiveVariantIndex(targetIdx);
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProduct || !editingProduct.name) return;
+    if (!editingProduct || !editingProduct.name?.trim()) {
+      alert("Please enter a product title.");
+      return;
+    }
 
-    const currentImgs = Array.isArray(editingProduct.images) && editingProduct.images.length > 0
-      ? editingProduct.images.filter(Boolean)
-      : (editingProduct.image ? [editingProduct.image] : []);
+    const variants = editingProduct.colorVariants || [];
+    if (variants.length === 0) {
+      alert("Please add at least one color edition for this product.");
+      return;
+    }
 
-    if (currentImgs.length === 0) {
+    // Check that every variant has a color name
+    for (let i = 0; i < variants.length; i++) {
+      if (!variants[i].colorName?.trim()) {
+        alert(`Color variant #${i + 1} needs a valid color name.`);
+        setActiveVariantIndex(i);
+        return;
+      }
+    }
+
+    // Check that at least one variant has at least one image
+    const hasAnyImage = variants.some((v) => (v.images && v.images.length > 0) || v.image) || (editingProduct.images && editingProduct.images.length > 0) || editingProduct.image;
+    if (!hasAnyImage) {
       alert("Please upload at least one image from your device for this suit piece.");
       return;
     }
 
     setSavingProduct(true);
     try {
-      await saveProduct({
+      const primary = variants[0];
+      const primaryImages = primary.images?.length ? primary.images : (editingProduct.images || []);
+      const primaryImage = primaryImages[0] || primary.image || editingProduct.image || "";
+      const primaryHover = primaryImages[1] || primary.hoverImage || primaryImage;
+
+      const productToSave: Product = {
         ...editingProduct,
-        images: currentImgs.slice(0, 10),
-        image: currentImgs[0],
-        hoverImage: currentImgs[1] || currentImgs[0],
-      });
+        id: editingProduct.id || `hos-${Date.now()}`,
+        name: editingProduct.name.trim(),
+        category: editingProduct.category || categories[0]?.name || "Cotton Suits",
+        fabricType: primary.fabricType || editingProduct.fabricType || "Pure Handloom",
+        color: primary.colorName || editingProduct.color || "Standard Edition",
+        colorHex: primary.colorHex || editingProduct.colorHex || "#0d4f3c",
+        price: primary.price || editingProduct.price || "₹2,999",
+        originalPrice: primary.originalPrice || editingProduct.originalPrice || "₹4,499",
+        savings: primary.savings || editingProduct.savings || "Save 30%",
+        description: primary.description !== undefined ? primary.description : (editingProduct.description || ""),
+        image: primaryImage,
+        hoverImage: primaryHover,
+        images: primaryImages,
+        inStock: primary.inStock !== false && editingProduct.inStock !== false,
+        colorVariants: variants,
+      } as Product;
+
+      await saveProduct(productToSave);
       setIsProductModalOpen(false);
       setEditingProduct(null);
     } catch (err) {
       console.error("Product save failure:", err);
+      alert("Failed to save product. Please try again.");
     } finally {
       setSavingProduct(false);
     }
@@ -1818,6 +2023,11 @@ export default function Admin() {
                           <span className="bg-[#0d4f3c] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                             {product.category}
                           </span>
+                          {product.colorVariants && product.colorVariants.length > 1 && (
+                            <span className="bg-amber-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                              {product.colorVariants.length} Colors
+                            </span>
+                          )}
                           {product.inStock === false && (
                             <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                               Out of Stock
@@ -1833,8 +2043,23 @@ export default function Admin() {
 
                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                         <div>
-                          <div className="text-[11px] font-medium text-[#6b6257] mb-1">
-                            {product.color} · {product.fabricType}
+                          <div className="flex items-center justify-between text-[11px] font-medium text-[#6b6257] mb-1">
+                            <span>{product.fabricType || product.color}</span>
+                            {product.colorVariants && product.colorVariants.length > 0 && (
+                              <div className="flex items-center gap-1">
+                                {product.colorVariants.slice(0, 5).map((cv, cIdx) => (
+                                  <span
+                                    key={cv.id || cIdx}
+                                    className="w-2.5 h-2.5 rounded-full border border-black/20"
+                                    style={{ backgroundColor: cv.colorHex || "#0d4f3c" }}
+                                    title={cv.colorName}
+                                  />
+                                ))}
+                                {product.colorVariants.length > 5 && (
+                                  <span className="text-[9px] text-[#8c8275]">+{product.colorVariants.length - 5}</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <h3 className="font-serif font-bold text-sm text-[#1e1b18] line-clamp-1">
                             {product.name}
@@ -1898,162 +2123,361 @@ export default function Admin() {
                     onClick={() => setIsProductModalOpen(false)}
                   />
 
-                  <div className="relative z-10 w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#e5ded6] overflow-hidden my-auto max-h-[92vh] flex flex-col">
+                  <div className="relative z-10 w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-[#e5ded6] overflow-hidden my-auto max-h-[94vh] flex flex-col">
                     <div className="p-4 sm:p-5 border-b border-[#e5ded6] flex items-center justify-between bg-[#f7f4ef]">
-                      <h3 className="font-serif font-bold text-base text-[#1e1b18]">
-                        {editingProduct.id ? "Edit Suit Piece" : "Add New Handcrafted Suit Piece"}
-                      </h3>
+                      <div>
+                        <h3 className="font-serif font-bold text-base text-[#1e1b18]">
+                          {editingProduct.id ? "Edit Suit Piece & Color Editions" : "Add New Handcrafted Suit Piece"}
+                        </h3>
+                        <p className="text-[11px] text-[#6b6257]">
+                          Manage independent color options, dedicated photos, pricing, and details per color.
+                        </p>
+                      </div>
                       <button
                         onClick={() => setIsProductModalOpen(false)}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-[#6b6257] hover:text-black"
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-[#6b6257] hover:text-black hover:bg-black/5"
                       >
                         <X size={18} />
                       </button>
                     </div>
 
-                    <form onSubmit={handleSaveProduct} className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-                      <div>
-                        <label className="block font-bold text-[#1e1b18] mb-1">Product Title *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Rooh-e-Gulab Velvet Sharara Suit Set"
-                          value={editingProduct.name || ""}
-                          onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                          className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:border-[#0d4f3c] focus:outline-hidden"
-                        />
+                    <form onSubmit={handleSaveProduct} className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+                      {/* Master Piece Details */}
+                      <div className="bg-[#faf8f5] p-4 rounded-xl border border-[#e5ded6] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#1e1b18] uppercase tracking-wider text-[11px]">
+                            Suit Piece Essentials
+                          </span>
+                          <span className="text-[#8c8275] text-[11px]">
+                            Applies across all color editions
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <label className="block font-bold text-[#1e1b18] mb-1">Product Title *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Rooh-e-Gulab Velvet Sharara Suit Set"
+                              value={editingProduct.name || ""}
+                              onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                              className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:border-[#0d4f3c] focus:outline-hidden"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold text-[#1e1b18] mb-1">Category</label>
+                            <select
+                              value={editingProduct.category || categories[0]?.name}
+                              onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                              className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                            >
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.name}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Category</label>
-                          <select
-                            value={editingProduct.category || categories[0]?.name}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                      {/* Color Variants Management Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div>
+                            <h4 className="font-bold text-[#1e1b18] text-sm flex items-center gap-2">
+                              <Palette size={16} className="text-[#0d4f3c]" />
+                              Color Variants &amp; Independent Editions
+                            </h4>
+                            <p className="text-[11px] text-[#6b6257]">
+                              Each color option has its own independent images, price, fabric, and description.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddVariant}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0d4f3c] text-white rounded-lg font-bold text-xs hover:bg-[#083528] transition-colors shadow-xs"
                           >
-                            {categories.map((c) => (
-                              <option key={c.id} value={c.name}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
+                            <Plus size={14} /> Add Color Variant
+                          </button>
                         </div>
 
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Fabric Type</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Pure Banarasi Katan Handloom Silk"
-                            value={editingProduct.fabricType || ""}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, fabricType: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                          />
+                        {/* Variant Selection Tabs */}
+                        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1">
+                          {editingProduct.colorVariants?.map((v, idx) => {
+                            const isActive = idx === activeVariantIndex;
+                            const countImgs = v.images?.length || (v.image ? 1 : 0);
+                            return (
+                              <div
+                                key={v.id || idx}
+                                className={`relative group shrink-0 flex items-center rounded-xl border transition-all ${
+                                  isActive
+                                    ? "bg-[#0d4f3c] text-white border-[#0d4f3c] shadow-sm"
+                                    : "bg-white text-[#1e1b18] border-[#d6ccc2] hover:border-[#0d4f3c]/50"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveVariantIndex(idx)}
+                                  className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-left"
+                                >
+                                  <span
+                                    className="w-3.5 h-3.5 rounded-full border border-white/50 shrink-0 shadow-2xs"
+                                    style={{ backgroundColor: v.colorHex || "#0d4f3c" }}
+                                  />
+                                  <span>{v.colorName || `Variant ${idx + 1}`}</span>
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                      isActive ? "bg-white/20 text-white" : "bg-[#faf8f5] text-[#6b6257]"
+                                    }`}
+                                  >
+                                    📷 {countImgs}
+                                  </span>
+                                </button>
+                                {editingProduct.colorVariants && editingProduct.colorVariants.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveVariant(idx);
+                                    }}
+                                    className={`pr-2.5 pl-0.5 text-xs hover:text-red-300 ${
+                                      isActive ? "text-white/70" : "text-[#8c8275] hover:text-red-600"
+                                    }`}
+                                    title="Delete this color variant"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
 
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Color</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Royal Emerald"
-                            value={editingProduct.color || ""}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, color: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                          />
-                        </div>
+                        {/* Active Variant Detailed Editor Card */}
+                        {activeVariant && (
+                          <div className="bg-[#faf8f5] border-2 border-[#0d4f3c]/20 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs">
+                            <div className="flex items-center justify-between border-b border-[#e5ded6] pb-3 flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-4 h-4 rounded-full border border-black/20 shadow-xs"
+                                  style={{ backgroundColor: activeVariant.colorHex || "#0d4f3c" }}
+                                />
+                                <span className="font-bold text-sm text-[#1e1b18]">
+                                  Editing Variant #{activeVariantIndex + 1}: {activeVariant.colorName || "Color Option"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDuplicateVariant(activeVariantIndex)}
+                                  className="flex items-center gap-1 text-[11px] font-bold text-[#0d4f3c] bg-white border border-[#0d4f3c]/30 px-2.5 py-1 rounded-lg hover:bg-[#0d4f3c]/5"
+                                  title="Duplicate this variant as a starting point"
+                                >
+                                  <Copy size={12} /> Duplicate
+                                </button>
+                                {activeVariantIndex > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveVariant(activeVariantIndex, "left")}
+                                    className="p-1 text-[#6b6257] bg-white border border-[#d6ccc2] rounded-lg hover:bg-white/80"
+                                    title="Move Left (Make Primary)"
+                                  >
+                                    <ArrowLeft size={13} />
+                                  </button>
+                                )}
+                                {editingProduct.colorVariants &&
+                                  activeVariantIndex < editingProduct.colorVariants.length - 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveVariant(activeVariantIndex, "right")}
+                                      className="p-1 text-[#6b6257] bg-white border border-[#d6ccc2] rounded-lg hover:bg-white/80"
+                                      title="Move Right"
+                                    >
+                                      <ArrowRight size={13} />
+                                    </button>
+                                  )}
+                              </div>
+                            </div>
 
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Price (₹)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. ₹3,899"
-                            value={editingProduct.price || ""}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, price: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                          />
-                        </div>
+                            {/* Color Name & Swatch Hex */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">
+                                  Color Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Royal Emerald, Dusty Rose, Midnight Navy"
+                                  value={activeVariant.colorName || ""}
+                                  onChange={(e) => updateActiveVariant({ colorName: e.target.value })}
+                                  className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:border-[#0d4f3c] focus:outline-hidden"
+                                />
+                              </div>
 
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Original Price (₹)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. ₹5,499"
-                            value={editingProduct.originalPrice || ""}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, originalPrice: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                          />
-                        </div>
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">
+                                  Color Hex &amp; Swatch
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={activeVariant.colorHex || "#0d4f3c"}
+                                    onChange={(e) => updateActiveVariant({ colorHex: e.target.value })}
+                                    className="w-9 h-9 p-0.5 border border-[#d6ccc2] rounded-xl cursor-pointer bg-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="#0d4f3c"
+                                    value={activeVariant.colorHex || ""}
+                                    onChange={(e) => updateActiveVariant({ colorHex: e.target.value })}
+                                    className="w-28 text-xs p-2 bg-white border border-[#d6ccc2] rounded-xl font-mono focus:outline-hidden"
+                                  />
+                                  <div className="flex items-center gap-1 overflow-x-auto">
+                                    {["#0d4f3c", "#9b2c2c", "#c5a059", "#1e3a8a", "#2d5a27", "#8b008b", "#1a1612", "#faf0e6"].map((hex) => (
+                                      <button
+                                        key={hex}
+                                        type="button"
+                                        onClick={() => updateActiveVariant({ colorHex: hex })}
+                                        className="w-5 h-5 rounded-full border border-black/10 shrink-0 hover:scale-110 transition-transform"
+                                        style={{ backgroundColor: hex }}
+                                        title={hex}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
 
-                        <div>
-                          <label className="block font-bold text-[#1e1b18] mb-1">Discount Tag</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Save 29%"
-                            value={editingProduct.savings || ""}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, savings: e.target.value })}
-                            className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                          />
-                        </div>
+                            {/* Pricing & Fabric */}
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">Price (₹)</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. ₹3,899"
+                                  value={activeVariant.price || ""}
+                                  onChange={(e) => updateActiveVariant({ price: e.target.value })}
+                                  className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">Original Price (₹)</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. ₹5,499"
+                                  value={activeVariant.originalPrice || ""}
+                                  onChange={(e) => updateActiveVariant({ originalPrice: e.target.value })}
+                                  className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">Discount Tag</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Save 29%"
+                                  value={activeVariant.savings || ""}
+                                  onChange={(e) => updateActiveVariant({ savings: e.target.value })}
+                                  className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block font-bold text-[#1e1b18] mb-1">Fabric Type</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Pure Chanderi Silk"
+                                  value={activeVariant.fabricType || ""}
+                                  onChange={(e) => updateActiveVariant({ fabricType: e.target.value })}
+                                  className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Description for this variant */}
+                            <div>
+                              <label className="block font-bold text-[#1e1b18] mb-1">
+                                Description &amp; Specific Details for {activeVariant.colorName || "this color"}
+                              </label>
+                              <textarea
+                                rows={2}
+                                placeholder="Details about this specific colorway, weave, matching dupatta or contrast styling..."
+                                value={activeVariant.description || ""}
+                                onChange={(e) => updateActiveVariant({ description: e.target.value })}
+                                className="w-full text-xs p-2.5 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden"
+                              />
+                            </div>
+
+                            {/* Stock toggle for this variant */}
+                            <div className="flex items-center justify-between pt-1">
+                              <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-[#1e1b18]">
+                                <input
+                                  type="checkbox"
+                                  checked={activeVariant.inStock !== false}
+                                  onChange={(e) => updateActiveVariant({ inStock: e.target.checked })}
+                                  className="rounded text-[#0d4f3c]"
+                                />
+                                <span>This color edition ({activeVariant.colorName}) is currently In Stock</span>
+                              </label>
+                            </div>
+
+                            {/* Independent Photos for this Color Variant */}
+                            <div className="pt-2 border-t border-[#e5ded6]">
+                              <div className="mb-2">
+                                <div className="font-bold text-xs text-[#1e1b18] flex items-center justify-between">
+                                  <span>
+                                    📷 Photos for {activeVariant.colorName || "This Color"} (
+                                    {activeVariant.images?.length || 0}/10)
+                                  </span>
+                                  <span className="text-[11px] text-[#0d4f3c] font-normal">
+                                    Shown only when customer selects this color
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-[#6b6257] mt-0.5">
+                                  Upload photos directly from your device. First photo will be the main cover for this color edition.
+                                </p>
+                              </div>
+                              <ProductImageUploader
+                                images={activeVariant.images || []}
+                                onChange={(newImages) => {
+                                  updateActiveVariant({
+                                    images: newImages,
+                                    image: newImages[0] || "",
+                                    hoverImage: newImages[1] || newImages[0] || "",
+                                  });
+                                }}
+                                productId={`${editingProduct.id || "prod"}-${activeVariant.id || activeVariantIndex}`}
+                                productTitle={`${editingProduct.name || "Suit Piece"} - ${activeVariant.colorName}`}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      <div>
-                        <label className="block font-bold text-[#1e1b18] mb-1">Description</label>
-                        <textarea
-                          rows={2}
-                          placeholder="Artisan handloom details, zari booti, lining details..."
-                          value={editingProduct.description || ""}
-                          onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
-                          className="w-full text-xs p-2.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-xl focus:outline-hidden"
-                        />
-                      </div>
-
-                      {/* Device Image Upload System (Up to 10 Images, Multiple Selection, Preview, Replace, Remove) */}
-                      <ProductImageUploader
-                        images={
-                          Array.isArray(editingProduct.images) && editingProduct.images.length > 0
-                            ? editingProduct.images
-                            : [editingProduct.image, ...(editingProduct.hoverImage && editingProduct.hoverImage !== editingProduct.image ? [editingProduct.hoverImage] : [])].filter(Boolean)
-                        }
-                        onChange={(newImages) => {
-                          setEditingProduct({
-                            ...editingProduct,
-                            images: newImages,
-                            image: newImages[0] || "",
-                            hoverImage: newImages[1] || newImages[0] || "",
-                          });
-                        }}
-                        productId={editingProduct.id}
-                        productTitle={editingProduct.name || "Suit Piece"}
-                      />
-
-                      {/* Stock Toggle */}
-                      <div className="flex items-center gap-3 pt-2">
-                        <label className="flex items-center gap-2 cursor-pointer font-bold text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingProduct.inStock !== false}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, inStock: e.target.checked })}
-                            className="rounded"
-                          />
-                          <span>Product is currently In Stock</span>
-                        </label>
-                      </div>
-
-                      <div className="pt-3 border-t border-[#e5ded6] flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsProductModalOpen(false)}
-                          className="px-4 py-2 text-xs font-bold text-[#6b6257] hover:bg-[#faf8f5] rounded-xl"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={savingProduct}
-                          className="px-6 py-2 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528]"
-                        >
-                          {savingProduct ? "Saving to Catalog..." : "Save Product"}
-                        </button>
+                      {/* Modal Footer Actions */}
+                      <div className="pt-3 border-t border-[#e5ded6] flex items-center justify-between gap-2">
+                        <div className="text-[11px] text-[#6b6257]">
+                          Total {editingProduct.colorVariants?.length || 1} color edition(s) configured
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsProductModalOpen(false)}
+                            className="px-4 py-2 text-xs font-bold text-[#6b6257] hover:bg-[#faf8f5] rounded-xl"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingProduct}
+                            className="px-6 py-2 text-xs font-bold bg-[#0d4f3c] text-white rounded-xl hover:bg-[#083528] transition-colors shadow-xs"
+                          >
+                            {savingProduct ? "Saving to Catalog & Cloud..." : "Save Product & All Variants"}
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </div>
