@@ -91,27 +91,49 @@ export const MediaManager: React.FC = () => {
     return `${Math.round(totalSizeBytes / 1024)} KB`;
   }, [totalSizeBytes]);
 
-  // Handle single file upload
-  const handleFileUpload = async (file: File) => {
+  // Handle single or multiple file upload
+  const handleFilesUpload = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
     setUploadError(null);
     setUploadSuccess(null);
     setIsUploading(true);
 
-    try {
-      const result = await uploadSingleImageFromDevice(
-        file,
-        { productId: tagProductId || undefined },
-        (progress) => setUploadProgress(progress)
-      );
+    const fileList = Array.from(files);
+    let lastSuccess: { fileName: string; url: string; sizeKb: number } | null = null;
+    const errors: string[] = [];
 
-      if (result.success && result.asset) {
-        setUploadSuccess({
-          fileName: result.asset.name,
-          url: result.asset.dataUrl,
-          sizeKb: Math.round(result.asset.size / 1024),
+    try {
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        setUploadProgress({
+          current: i + 1,
+          total: fileList.length,
+          percent: Math.round(((i + 1) / fileList.length) * 100),
+          fileName: file.name,
         });
-      } else {
-        setUploadError(result.error || "Failed to upload image.");
+
+        const result = await uploadSingleImageFromDevice(
+          file,
+          { productId: tagProductId || undefined },
+          (progress) => setUploadProgress(progress)
+        );
+
+        if (result.success && result.asset) {
+          lastSuccess = {
+            fileName: result.asset.name,
+            url: result.asset.dataUrl,
+            sizeKb: Math.round(result.asset.size / 1024),
+          };
+        } else if (result.error) {
+          errors.push(result.error);
+        }
+      }
+
+      if (lastSuccess) {
+        setUploadSuccess(lastSuccess);
+      }
+      if (errors.length > 0) {
+        setUploadError(errors.join(" | "));
       }
     } catch (err: any) {
       setUploadError(err.message || "An unexpected error occurred during image processing.");
@@ -140,7 +162,7 @@ export const MediaManager: React.FC = () => {
     e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileUpload(e.dataTransfer.files[0]);
+      handleFilesUpload(e.dataTransfer.files);
     }
   };
 
@@ -298,11 +320,12 @@ export const MediaManager: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept={ALLOWED_EXTENSIONS.join(",")}
+            multiple
+            accept="image/*,.jpg,.jpeg,.png,.webp,.avif,.gif"
             className="hidden"
             onChange={(e) => {
               if (e.target.files && e.target.files.length > 0) {
-                handleFileUpload(e.target.files[0]);
+                handleFilesUpload(e.target.files);
               }
             }}
           />

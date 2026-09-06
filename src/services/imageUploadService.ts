@@ -5,8 +5,16 @@ import { UploadedAsset } from "../types";
 // Maximum allowable file size before compression (10MB)
 export const MAX_IMAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 export const MAX_PRODUCT_IMAGES = 10;
-export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
-export const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+export const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/jpg",
+  "image/avif",
+  "image/gif",
+  "image/svg+xml",
+];
+export const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg"];
 
 export interface ImageProcessingResult {
   url: string;
@@ -32,15 +40,16 @@ export interface BatchUploadResult {
  * Validate image file format and size
  */
 export function validateImageFile(file: File): { valid: boolean; error?: string } {
-  // Check MIME type
-  const isMimeValid = ALLOWED_IMAGE_TYPES.includes(file.type.toLowerCase());
+  // Check MIME type or extension
+  const mimeLower = (file.type || "").toLowerCase();
+  const isMimeValid = ALLOWED_IMAGE_TYPES.includes(mimeLower) || mimeLower.startsWith("image/");
   const fileNameLower = file.name.toLowerCase();
   const isExtValid = ALLOWED_EXTENSIONS.some((ext) => fileNameLower.endsWith(ext));
 
   if (!isMimeValid && !isExtValid) {
     return {
       valid: false,
-      error: `"${file.name}" is not a supported format. Please upload JPG, PNG, or WEBP images.`,
+      error: `"${file.name}" is not a recognized image format. Please upload JPG, PNG, WEBP, or AVIF images.`,
     };
   }
 
@@ -415,42 +424,87 @@ export async function replaceImageFromDevice(
 }
 
 /**
- * Subscribe to the persistent uploaded assets collection in Firestore
+ * Subscribe to the persistent uploaded assets collection in Firestore and Server storage.
+ * Automatically synchronizes assets stored in /public/uploads with Firestore documents.
  */
 export function subscribeUploadedAssets(
   callback: (assets: UploadedAsset[]) => void,
-  maxItems = 30
+  maxItems = 60
 ): () => void {
+  let isMounted = true;
+  let fsAssets: UploadedAsset[] = [];
+  let serverAssets: UploadedAsset[] = [];
+
+  const notify = () => {
+    if (!isMounted) return;
+    const map = new Map<string, UploadedAsset>();
+    // First server assets
+    serverAssets.forEach((a) => {
+      const key = a.url || a.id;
+      map.set(key, a);
+    });
+    // Overlay Firestore assets
+    fsAssets.forEach((a) => {
+      const key = a.dataUrl || a.url || a.id;
+      map.set(key, a);
+    });
+    const combined = Array.from(map.values())
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+      .slice(0, maxItems);
+    callback(combined);
+  };
+
+  const fetchServerAssets = () => {
+    fetch(`/api/uploaded-images?v=${Date.now()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.assets && Array.isArray(data.assets)) {
+          serverAssets = data.assets.map((item: any) => ({
+            id: item.id || `upload_${item.name}`,
+            name: item.name,
+            dataUrl: item.url,
+            url: item.url,
+            size: item.size,
+            type: item.name.endsWith(".png") ? "image/png" : "image/webp",
+            createdAt: item.createdAt,
+          }));
+          notify();
+        }
+      })
+      .catch(() => {});
+  };
+
+  fetchServerAssets();
+
   const colRef = collection(db, "uploaded_assets");
   const q = query(colRef, orderBy("createdAt", "desc"), limit(maxItems));
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UploadedAsset));
-      callback(list);
-    },
-    (err) => {
-      console.warn("subscribeUploadedAssets notice:", err);
-      callback([]);
-    }
-  );
+  let unsubFs = () => {};
+  try {
+    unsubFs = onSnapshot(
+      q,
+      (snapshot) => {
+        fsAssets = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UploadedAsset));
+        notify();
+      },
+      (err) => {
+        console.warn("subscribeUploadedAssets Firestore notice (using server files):", err);
+        notify();
+      }
+    );
+  } catch {}
+
+  return () => {
+    isMounted = false;
+    unsubFs();
+  };
 }
 
 /**
  * Delete an uploaded asset from Firestore and backend storage
  */
 export async function deleteUploadedAsset(assetId: string, imagePath?: string): Promise<void> {
-  if (imagePath) {
-    try {
-      await fetch("/api/delete-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: imagePath }),
-      });
-    } catch {}
-  }
-  deleteDoc(doc(db, "uploaded_assets", assetId)).catch(() => {});
+  await deleteMediaAsset(assetId, imagePath);
 }
 
 /**
@@ -531,24 +585,37 @@ export async function uploadSingleImageFromDevice(
 }
 
 /**
- * Removes an image asset from Firestore and triggers server storage cleanup
+ * Removes an image asset from backend server storage, Firestore, and IndexedDB
  */
 export async function deleteMediaAsset(
-  assetId: string,
+  assetId?: string,
   url?: string,
   fileName?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Delete from Firestore
-    await deleteDoc(doc(db, "uploaded_assets", assetId));
+    // 1. Cleanup physical file if stored on backend server
+    const targetUrl = url || (assetId && assetId.startsWith("/uploads/") ? assetId : undefined);
+    const targetFile = fileName || (targetUrl ? targetUrl.split("/").pop()?.split("?")[0] : undefined);
 
-    // 2. Cleanup physical file if stored on backend server
-    if (url && (url.startsWith("/uploads/") || url.includes("uploads/"))) {
-      fetch("/api/delete-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName, url }),
-      }).catch(() => {});
+    if (targetUrl || targetFile) {
+      try {
+        await fetch("/api/delete-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: targetFile, url: targetUrl }),
+        });
+      } catch (e) {
+        console.warn("Server delete-image notice:", e);
+      }
+    }
+
+    // 2. Delete from Firestore if it is a real Firestore document ID
+    if (assetId && !assetId.startsWith("upload_") && !assetId.startsWith("/uploads/")) {
+      try {
+        await deleteDoc(doc(db, "uploaded_assets", assetId));
+      } catch (fsErr) {
+        console.warn("Firestore delete asset notice:", fsErr);
+      }
     }
 
     return { success: true };

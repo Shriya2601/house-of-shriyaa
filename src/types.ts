@@ -270,6 +270,7 @@ export interface UploadedAsset {
   id: string;
   name: string;
   dataUrl: string;
+  url?: string;
   size: number;
   type: string;
   productId?: string;

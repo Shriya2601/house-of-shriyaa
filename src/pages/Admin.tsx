@@ -685,8 +685,27 @@ export default function Admin() {
 
     setSavingProduct(true);
     try {
-      const primary = variants[0];
-      const primaryImages = primary.images?.length ? primary.images : editingProduct.images || [];
+      // Find first variant with images if primary variant has none
+      const variantWithImages = variants.find((v) => (v.images && v.images.length > 0) || v.image);
+      const fallbackImages = variantWithImages?.images?.length
+        ? variantWithImages.images
+        : editingProduct.images || [];
+
+      // Normalize all variants so each has complete image arrays
+      const normalizedVariants = variants.map((v) => {
+        const vImages = v.images && v.images.length > 0 ? v.images : (v.image ? [v.image] : fallbackImages);
+        const vImg = vImages[0] || v.image || "";
+        const vHover = vImages[1] || v.hoverImage || vImg;
+        return {
+          ...v,
+          images: vImages,
+          image: vImg,
+          hoverImage: vHover,
+        };
+      });
+
+      const primary = normalizedVariants[0];
+      const primaryImages = primary.images?.length ? primary.images : fallbackImages;
       const primaryImage = primaryImages[0] || primary.image || editingProduct.image || "";
       const primaryHover = primaryImages[1] || primary.hoverImage || primaryImage;
 
@@ -706,7 +725,7 @@ export default function Admin() {
         hoverImage: primaryHover,
         images: primaryImages,
         inStock: primary.inStock !== false && editingProduct.inStock !== false,
-        colorVariants: variants,
+        colorVariants: normalizedVariants,
       } as Product;
 
       const saveRes = await saveProduct(productToSave);
@@ -746,7 +765,24 @@ export default function Admin() {
     const previousProducts = [...products];
     setProducts((prev) => prev.filter((p) => p.id !== id));
     try {
-      await deleteProduct(id);
+      const associatedUploads: string[] = [];
+      if (targetProduct) {
+        const collectUpload = (url?: string) => {
+          if (url && typeof url === "string" && (url.startsWith("/uploads/") || url.includes("/uploads/"))) {
+            associatedUploads.push(url);
+          }
+        };
+        (targetProduct.images || []).forEach(collectUpload);
+        collectUpload(targetProduct.image);
+        collectUpload(targetProduct.hoverImage);
+        (targetProduct.colorVariants || []).forEach((v) => {
+          (v.images || []).forEach(collectUpload);
+          collectUpload(v.image);
+          collectUpload(v.hoverImage);
+        });
+      }
+
+      await deleteProduct(id, associatedUploads);
       setProductSaveSuccess(`Product ${prodName} deleted permanently from live boutique. ✓`);
       setTimeout(() => setProductSaveSuccess(null), 4000);
     } catch (err: any) {
@@ -974,6 +1010,9 @@ export default function Admin() {
         };
       });
 
+      const fallbackImages =
+        sanitizedVariants.find((v) => v.images && v.images.length > 0)?.images || targetProduct.images || [];
+
       const primary = sanitizedVariants[0] || {
         colorName: targetProduct.color,
         colorHex: targetProduct.colorHex,
@@ -988,6 +1027,10 @@ export default function Admin() {
         hoverImage: targetProduct.hoverImage,
       };
 
+      const primaryImages = primary.images?.length ? primary.images : fallbackImages;
+      const primaryImage = primaryImages[0] || primary.image || targetProduct.image || "";
+      const primaryHover = primaryImages[1] || primary.hoverImage || primaryImage;
+
       const productToSave: Product = {
         ...targetProduct,
         fabricType: primary.fabricType || targetProduct.fabricType || "Pure Handloom",
@@ -997,9 +1040,9 @@ export default function Admin() {
         originalPrice: primary.originalPrice || targetProduct.originalPrice || "₹4,499",
         savings: primary.savings || targetProduct.savings || "Save 30%",
         description: primary.description !== undefined ? primary.description : targetProduct.description || "",
-        image: primary.images?.[0] || primary.image || targetProduct.image || "",
-        hoverImage: primary.images?.[1] || primary.hoverImage || primary.images?.[0] || targetProduct.hoverImage || "",
-        images: primary.images?.length ? primary.images : targetProduct.images || [],
+        image: primaryImage,
+        hoverImage: primaryHover,
+        images: primaryImages,
         inStock: primary.inStock !== false && targetProduct.inStock !== false,
         colorVariants: sanitizedVariants,
       };

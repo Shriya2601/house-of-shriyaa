@@ -188,7 +188,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
         ref={fileInputRef}
         onChange={(e) => handleFiles(e.target.files)}
         multiple
-        accept={ALLOWED_IMAGE_TYPES.join(",")}
+        accept="image/*,.jpg,.jpeg,.png,.webp,.avif,.gif"
         className="hidden"
         aria-label="Upload device images"
       />
@@ -197,7 +197,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
         type="file"
         ref={replaceInputRef}
         onChange={handleReplaceFile}
-        accept={ALLOWED_IMAGE_TYPES.join(",")}
+        accept="image/*,.jpg,.jpeg,.png,.webp,.avif,.gif"
         className="hidden"
         aria-label="Replace single image from device"
       />

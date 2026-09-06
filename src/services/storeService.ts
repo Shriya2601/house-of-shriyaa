@@ -870,7 +870,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   };
 }
 
-export async function deleteProduct(id: string): Promise<void> {
+export async function deleteProduct(id: string, imageUrls?: string[]): Promise<void> {
   try {
     const deletedIds = getDeletedProductIds();
     deletedIds.add(id);
@@ -889,7 +889,21 @@ export async function deleteProduct(id: string): Promise<void> {
       console.warn("API delete product notice:", apiErr);
     }
 
-    // 2. Persist to git repository
+    // 2. Clean up any uploaded image files associated with this product
+    if (Array.isArray(imageUrls) && imageUrls.length > 0) {
+      const uniqueUploads = Array.from(new Set(imageUrls.filter((u) => typeof u === "string" && u.includes("/uploads/"))));
+      for (const imgUrl of uniqueUploads) {
+        try {
+          await fetch("/api/delete-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: imgUrl }),
+          });
+        } catch {}
+      }
+    }
+
+    // 3. Persist to git repository
     try {
       await fetch("/api/save-repo-changes", {
         method: "POST",
@@ -902,6 +916,7 @@ export async function deleteProduct(id: string): Promise<void> {
     } catch {}
 
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: filtered }));
   } catch (err) {
     console.warn("deleteProduct cache update warning:", err);
   }

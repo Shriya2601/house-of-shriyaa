@@ -428,37 +428,63 @@ app.post("/api/upload-image", (req, res) => {
       return;
     }
 
+    // If image is already a persistent server URL or external hosted URL, return as-is
+    if (typeof image === "string" && (image.startsWith("/uploads/") || image.startsWith("http://") || image.startsWith("https://"))) {
+      res.json({
+        success: true,
+        url: image,
+        fileName: path.basename(image.split("?")[0]),
+        size: 0,
+      });
+      return;
+    }
+
     let ext = "webp";
     let base64Data = "";
 
-    if (image.startsWith("data:")) {
-      const match = image.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
-      if (match) {
-        ext = match[1] === "jpeg" ? "jpg" : match[1];
-        base64Data = match[2];
+    if (typeof image === "string" && image.startsWith("data:")) {
+      const commaIndex = image.indexOf(",");
+      if (commaIndex !== -1) {
+        const header = image.substring(0, commaIndex).toLowerCase();
+        base64Data = image.substring(commaIndex + 1).replace(/\s/g, "");
+        if (header.includes("image/jpeg") || header.includes("image/jpg")) ext = "jpg";
+        else if (header.includes("image/png")) ext = "png";
+        else if (header.includes("image/webp")) ext = "webp";
+        else if (header.includes("image/avif")) ext = "avif";
+        else if (header.includes("image/gif")) ext = "gif";
+        else if (header.includes("image/svg")) ext = "svg";
       } else {
-        const parts = image.split(",");
-        base64Data = parts[1] || image;
+        base64Data = image.replace(/\s/g, "");
       }
-    } else {
-      base64Data = image;
+    } else if (typeof image === "string") {
+      base64Data = image.replace(/\s/g, "");
+    }
+
+    if (fileName) {
+      const originalExt = path.extname(fileName).replace(".", "").toLowerCase();
+      if (["jpg", "jpeg", "png", "webp", "avif", "gif"].includes(originalExt)) {
+        ext = originalExt === "jpeg" ? "jpg" : originalExt;
+      }
     }
 
     const buffer = Buffer.from(base64Data, "base64");
     if (buffer.length === 0) {
-      res.status(400).json({ error: "Invalid base64 payload" });
+      res.status(400).json({ error: "Invalid image payload or corrupted file data" });
       return;
     }
 
     const timestamp = Date.now();
-    const randomSalt = Math.floor(Math.random() * 10000);
-    const rawBase = fileName
-      ? path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)
-      : productId
-      ? `${productId}-${colorVariantId || "main"}`
-      : `hos-upload`;
+    const randomSalt = Math.floor(1000 + Math.random() * 9000);
+    const cleanProd = productId ? String(productId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30) : "";
+    const cleanVariant = colorVariantId ? String(colorVariantId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20) : "";
+    const cleanFile = fileName
+      ? path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30)
+      : "";
 
-    const fileBaseName = `${rawBase}-${timestamp}-${randomSalt}.${ext}`;
+    const nameParts = [cleanProd, cleanVariant, cleanFile].filter(Boolean);
+    const prefix = nameParts.length > 0 ? nameParts.join("_") : "hos_img";
+    const fileBaseName = `${prefix}_${timestamp}_${randomSalt}.${ext}`;
+
     if (!fs.existsSync(publicUploadsDir)) {
       fs.mkdirSync(publicUploadsDir, { recursive: true });
     }
@@ -487,30 +513,183 @@ app.post("/api/upload-image", (req, res) => {
   }
 });
 
-app.post("/api/delete-image", (req, res) => {
+// Batch image uploads for high-reliability multiple photo additions
+app.post("/api/upload-images-batch", (req, res) => {
   try {
-    const { fileName, url: imgUrl } = req.body;
-    const targetName = fileName || (imgUrl ? path.basename(imgUrl) : null);
-    if (!targetName) {
-      res.status(400).json({ error: "Missing image filename" });
+    const { images: batchImages, productId, colorVariantId } = req.body;
+    if (!Array.isArray(batchImages) || batchImages.length === 0) {
+      res.status(400).json({ error: "No images provided in batch" });
       return;
     }
 
-    const cleanFileName = path.basename(targetName);
+    const results: Array<{ url: string; fileName: string; size: number }> = [];
+    if (!fs.existsSync(publicUploadsDir)) {
+      fs.mkdirSync(publicUploadsDir, { recursive: true });
+    }
+
+    for (let i = 0; i < batchImages.length; i++) {
+      const item = batchImages[i];
+      const rawImage = typeof item === "string" ? item : item.image || item.url || item.dataUrl;
+      const originalName = typeof item === "object" ? item.name || item.fileName : undefined;
+
+      if (!rawImage) continue;
+
+      if (typeof rawImage === "string" && (rawImage.startsWith("/uploads/") || rawImage.startsWith("http://") || rawImage.startsWith("https://"))) {
+        results.push({
+          url: rawImage,
+          fileName: path.basename(rawImage.split("?")[0]),
+          size: 0,
+        });
+        continue;
+      }
+
+      let ext = "webp";
+      let base64Data = "";
+      if (typeof rawImage === "string" && rawImage.startsWith("data:")) {
+        const commaIndex = rawImage.indexOf(",");
+        if (commaIndex !== -1) {
+          const header = rawImage.substring(0, commaIndex).toLowerCase();
+          base64Data = rawImage.substring(commaIndex + 1).replace(/\s/g, "");
+          if (header.includes("image/jpeg") || header.includes("image/jpg")) ext = "jpg";
+          else if (header.includes("image/png")) ext = "png";
+          else if (header.includes("image/webp")) ext = "webp";
+          else if (header.includes("image/avif")) ext = "avif";
+        } else {
+          base64Data = rawImage.replace(/\s/g, "");
+        }
+      } else if (typeof rawImage === "string") {
+        base64Data = rawImage.replace(/\s/g, "");
+      }
+
+      const buffer = Buffer.from(base64Data, "base64");
+      if (buffer.length === 0) continue;
+
+      const timestamp = Date.now();
+      const randomSalt = Math.floor(1000 + Math.random() * 9000);
+      const cleanProd = productId ? String(productId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20) : "prod";
+      const cleanVar = colorVariantId ? String(colorVariantId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 15) : "var";
+      const cleanOriginal = originalName
+        ? path.basename(originalName, path.extname(originalName)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)
+        : "";
+
+      const fileBaseName = `${cleanProd}_${cleanVar}_${cleanOriginal || "img"}_${timestamp}_${i}_${randomSalt}.${ext}`;
+
+      const targetPath = path.join(publicUploadsDir, fileBaseName);
+      fs.writeFileSync(targetPath, buffer);
+
+      try {
+        if (!fs.existsSync(distUploadsDir)) {
+          fs.mkdirSync(distUploadsDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(distUploadsDir, fileBaseName), buffer);
+      } catch {}
+
+      results.push({
+        url: `/uploads/${fileBaseName}`,
+        fileName: fileBaseName,
+        size: buffer.length,
+      });
+    }
+
+    res.json({ success: true, count: results.length, urls: results.map((r) => r.url), details: results });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed batch image upload" });
+  }
+});
+
+// List all uploaded images stored physically on server
+app.get("/api/uploaded-images", (req, res) => {
+  try {
+    const list: Array<{ id: string; name: string; url: string; size: number; createdAt: string }> = [];
+    if (fs.existsSync(publicUploadsDir)) {
+      const files = fs.readdirSync(publicUploadsDir);
+      for (const f of files) {
+        if (f === ".gitkeep" || f.startsWith(".")) continue;
+        const filePath = path.join(publicUploadsDir, f);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.isFile()) {
+            list.push({
+              id: `upload_${f}`,
+              name: f,
+              url: `/uploads/${f}`,
+              size: stat.size,
+              createdAt: stat.birthtime?.toISOString() || stat.mtime?.toISOString() || new Date().toISOString(),
+            });
+          }
+        } catch {}
+      }
+    }
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    res.json({ success: true, count: list.length, assets: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to list uploaded images" });
+  }
+});
+
+app.post("/api/delete-image", (req, res) => {
+  try {
+    const { fileName, url: imgUrl, path: imgPath } = req.body;
+    const targetName = fileName || imgUrl || imgPath;
+    if (!targetName) {
+      res.status(400).json({ error: "Missing image identifier" });
+      return;
+    }
+
+    const cleanFileName = path.basename(String(targetName).split("?")[0]);
+    if (!cleanFileName || cleanFileName === "." || cleanFileName === "..") {
+      res.status(400).json({ error: "Invalid image filename" });
+      return;
+    }
+
     const targetPath = path.join(publicUploadsDir, cleanFileName);
+    let deleted = false;
     if (fs.existsSync(targetPath)) {
       try {
         fs.unlinkSync(targetPath);
+        deleted = true;
       } catch {}
     }
     const distPath = path.join(distUploadsDir, cleanFileName);
     if (fs.existsSync(distPath)) {
       try {
         fs.unlinkSync(distPath);
+        deleted = true;
       } catch {}
     }
 
-    res.json({ success: true, message: "Image removed from server storage" });
+    res.json({ success: true, deleted, message: "Image removed from server storage" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to remove image" });
+  }
+});
+
+app.delete("/api/delete-image/:fileName", (req, res) => {
+  try {
+    const fileName = req.params.fileName;
+    const cleanFileName = path.basename(fileName);
+    if (!cleanFileName || cleanFileName === "." || cleanFileName === "..") {
+      res.status(400).json({ error: "Invalid filename" });
+      return;
+    }
+
+    const targetPath = path.join(publicUploadsDir, cleanFileName);
+    let deleted = false;
+    if (fs.existsSync(targetPath)) {
+      try {
+        fs.unlinkSync(targetPath);
+        deleted = true;
+      } catch {}
+    }
+    const distPath = path.join(distUploadsDir, cleanFileName);
+    if (fs.existsSync(distPath)) {
+      try {
+        fs.unlinkSync(distPath);
+        deleted = true;
+      } catch {}
+    }
+
+    res.json({ success: true, deleted, message: "Image removed from server storage" });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to remove image" });
   }

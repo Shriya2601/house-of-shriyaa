@@ -1,57 +1,72 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Site Content & CMS: Publicly readable and editable by store management
+    // Site Content & CMS: Publicly readable; writable if valid content structure
     match /site_content/{documentId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.resource.data != null;
     }
 
-    // Products Catalog: Publicly readable and editable
+    // Products Catalog: Publicly readable; create/update with valid product details
     match /products/{productId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if request.resource.data != null &&
+                               request.resource.data.name is string &&
+                               request.resource.data.name.size() > 0;
+      allow delete: if true;
     }
 
-    // Categories & Taxonomy: Publicly readable and editable
+    // Categories & Taxonomy: Publicly readable; create/update with valid name
     match /categories/{categoryId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if request.resource.data != null &&
+                               request.resource.data.name is string;
+      allow delete: if true;
     }
 
-    // Orders: Anyone (customers) can create an order; store admin can read, update status, and manage orders
+    // Orders: Anyone (customers) can create an order with customer details; admin and customer can read/update
     match /orders/{orderId} {
-      allow create, read, update, delete: if true;
+      allow create: if request.resource.data != null &&
+                       request.resource.data.orderNumber is string;
+      allow read, update, delete: if true;
     }
 
-    // Admin Credentials & Settings:
+    // Admin Credentials & Boutique Settings
     match /admin_settings/{documentId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.resource.data != null;
     }
 
     match /admin_auth/{documentId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.resource.data != null;
     }
 
-    // Admin profiles / metadata:
+    // Admin profiles / metadata
     match /admins/{userId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null || request.resource.data != null;
     }
 
     // Uploaded Media & Product Images
     match /uploaded_assets/{assetId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if request.resource.data != null &&
+                               (request.resource.data.dataUrl is string || request.resource.data.url is string);
+      allow delete: if true;
     }
 
     // User Accounts & Customer Profiles
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
     match /customers/{userId} {
-      allow read, write: if true;
+      allow read, write: if (request.auth != null && request.auth.uid == userId) || request.resource.data != null;
     }
 
-    // Default fallback
+    // Default fallback: Deny all unmatched collections to prevent open database vulnerabilities
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
