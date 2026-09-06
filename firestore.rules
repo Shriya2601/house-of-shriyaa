@@ -40,6 +40,15 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // User Accounts & Customer Profiles
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /customers/{userId} {
+      allow read, write: if true;
+    }
+
     // Default fallback
     match /{document=**} {
       allow read, write: if true;

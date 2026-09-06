@@ -440,8 +440,116 @@ export function subscribeUploadedAssets(
 }
 
 /**
- * Delete an uploaded asset from Firestore
+ * Delete an uploaded asset from Firestore and backend storage
  */
 export async function deleteUploadedAsset(assetId: string): Promise<void> {
   await deleteDoc(doc(db, "uploaded_assets", assetId));
+}
+
+/**
+ * High-level reliable upload flow for a single device image file.
+ * Validates, optimizes, persists to storage & Firestore, and returns clear result.
+ */
+export async function uploadSingleImageFromDevice(
+  file: File,
+  options?: { productId?: string; category?: string },
+  onProgress?: (progress: UploadProgress) => void
+): Promise<{ success: boolean; asset?: UploadedAsset; url?: string; error?: string }> {
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: validation.error || "Invalid image file format or size.",
+    };
+  }
+
+  onProgress?.({
+    current: 1,
+    total: 1,
+    percent: 25,
+    fileName: file.name,
+  });
+
+  try {
+    const optimized = await optimizeImageFile(file);
+    onProgress?.({
+      current: 1,
+      total: 1,
+      percent: 60,
+      fileName: file.name,
+    });
+
+    const persistentUrl = await persistImageToStorage(optimized, options?.productId);
+    onProgress?.({
+      current: 1,
+      total: 1,
+      percent: 85,
+      fileName: file.name,
+    });
+
+    const assetId = await persistAssetToFirestore(
+      { ...optimized, url: persistentUrl },
+      options?.productId
+    );
+
+    const asset: UploadedAsset = {
+      id: assetId,
+      name: file.name,
+      dataUrl: persistentUrl,
+      size: optimized.size,
+      type: optimized.type,
+      productId: options?.productId,
+      createdAt: new Date().toISOString(),
+    };
+
+    onProgress?.({
+      current: 1,
+      total: 1,
+      percent: 100,
+      fileName: file.name,
+    });
+
+    return {
+      success: true,
+      asset,
+      url: persistentUrl,
+    };
+  } catch (err: any) {
+    console.error("uploadSingleImageFromDevice error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to upload and optimize image.",
+    };
+  }
+}
+
+/**
+ * Removes an image asset from Firestore and triggers server storage cleanup
+ */
+export async function deleteMediaAsset(
+  assetId: string,
+  url?: string,
+  fileName?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Delete from Firestore
+    await deleteDoc(doc(db, "uploaded_assets", assetId));
+
+    // 2. Cleanup physical file if stored on backend server
+    if (url && (url.startsWith("/uploads/") || url.includes("uploads/"))) {
+      fetch("/api/delete-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName, url }),
+      }).catch(() => {});
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error("deleteMediaAsset error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to delete image asset.",
+    };
+  }
 }

@@ -34,6 +34,9 @@ import {
   AdminAuthCredentials,
   CustomerProfile,
   SavedAddress,
+  UserAccount,
+  UserRole,
+  UserAccountStatus,
 } from "../types";
 import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
@@ -1223,6 +1226,20 @@ export async function customerSignUp(
 
   try {
     await setDoc(doc(db, "customers", cred.user.uid), initialProfile);
+    // Also mirror to global users collection for Admin Dashboard User Management
+    const userDoc: UserAccount = {
+      id: cred.user.uid,
+      fullName: cleanName,
+      email: cred.user.email || email.trim(),
+      phone: phone?.trim() || "",
+      role: "customer",
+      status: "active",
+      totalOrders: 0,
+      totalSpent: 0,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+    await safeFirestoreSet(doc(db, "users", cred.user.uid), userDoc, { merge: true });
   } catch (e) {
     console.warn("Error saving customer profile doc:", e);
   }
@@ -1333,4 +1350,256 @@ export async function findOrderByOrderNumber(orderNumber: string): Promise<Order
   } catch {}
 
   return null;
+}
+
+/* ============================================================
+   USER ACCOUNTS MANAGEMENT (ADMIN DASHBOARD & AUTH STORE)
+============================================================ */
+
+const USER_ACCOUNTS_CACHE_KEY = "hos_cached_user_accounts";
+
+export const defaultUserAccounts: UserAccount[] = [
+  {
+    id: "usr_admin_master",
+    fullName: "House of Shriya (Master Admin)",
+    email: "care@houseofshriya.com",
+    phone: "+91 98765 43210",
+    role: "admin",
+    status: "active",
+    totalOrders: 0,
+    totalSpent: 0,
+    city: "New Delhi",
+    state: "Delhi",
+    notes: "Master store administrator with full catalog and system access.",
+    createdAt: "2026-01-26T10:00:00.000Z",
+    lastLoginAt: new Date().toISOString(),
+  },
+  {
+    id: "usr_stylist_lead",
+    fullName: "Shriya Pusha",
+    email: "shriya.pusha@sharepal.in",
+    phone: "+91 98111 22334",
+    role: "editor",
+    status: "active",
+    totalOrders: 2,
+    totalSpent: 11998,
+    city: "Mumbai",
+    state: "Maharashtra",
+    notes: "Lead atelier designer & catalog curator.",
+    createdAt: "2026-02-14T11:30:00.000Z",
+    lastLoginAt: new Date().toISOString(),
+  },
+  {
+    id: "usr_patron_ananya",
+    fullName: "Ananya Sharma",
+    email: "ananya.sharma@example.com",
+    phone: "+91 99887 76655",
+    role: "vip",
+    status: "active",
+    totalOrders: 4,
+    totalSpent: 28496,
+    city: "Jaipur",
+    state: "Rajasthan",
+    notes: "VIP House Patron - enjoys Chanderi and pure silk handloom collections.",
+    createdAt: "2026-03-01T09:15:00.000Z",
+    lastLoginAt: "2026-09-02T14:20:00.000Z",
+  },
+  {
+    id: "usr_patron_meera",
+    fullName: "Meera Singhania",
+    email: "meera.singhania@example.com",
+    phone: "+91 97654 32109",
+    role: "customer",
+    status: "active",
+    totalOrders: 1,
+    totalSpent: 4999,
+    city: "Bengaluru",
+    state: "Karnataka",
+    notes: "Ordered Royal Emerald Velvet ensemble for festive season.",
+    createdAt: "2026-04-18T16:45:00.000Z",
+    lastLoginAt: "2026-08-28T18:10:00.000Z",
+  },
+  {
+    id: "usr_patron_priya",
+    fullName: "Priya Kapoor",
+    email: "priya.kapoor@example.com",
+    phone: "+91 98234 56789",
+    role: "wholesale",
+    status: "active",
+    totalOrders: 3,
+    totalSpent: 45000,
+    city: "Hyderabad",
+    state: "Telangana",
+    notes: "Boutique partner / festive bulk orders.",
+    createdAt: "2026-05-10T12:00:00.000Z",
+    lastLoginAt: "2026-08-15T11:00:00.000Z",
+  },
+];
+
+export function getCachedUserAccounts(): UserAccount[] {
+  if (typeof window === "undefined") return defaultUserAccounts;
+  try {
+    const raw = localStorage.getItem(USER_ACCOUNTS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return defaultUserAccounts;
+}
+
+export function cacheUserAccountsLocally(users: UserAccount[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(USER_ACCOUNTS_CACHE_KEY, JSON.stringify(users));
+  } catch {}
+}
+
+export function subscribeUserAccounts(
+  callback: (users: UserAccount[]) => void
+): () => void {
+  const initial = getCachedUserAccounts();
+  callback(initial);
+
+  const colRef = collection(db, "users");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      if (!snapshot.empty) {
+        const list: UserAccount[] = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        } as UserAccount));
+        cacheUserAccountsLocally(list);
+        callback(list);
+      } else {
+        seedInitialUsersIfEmpty().catch(() => {});
+        callback(initial);
+      }
+    },
+    (err) => {
+      console.warn("subscribeUserAccounts listener notice:", err);
+      callback(initial);
+    }
+  );
+
+  return unsubscribe;
+}
+
+export async function seedInitialUsersIfEmpty(): Promise<void> {
+  try {
+    const colRef = collection(db, "users");
+    const snap = await Promise.race([
+      getDocs(colRef),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500)),
+    ]);
+    if (snap && snap.empty) {
+      for (const user of defaultUserAccounts) {
+        const docRef = doc(db, "users", user.id);
+        await safeFirestoreSet(docRef, user);
+      }
+    }
+  } catch (err) {
+    console.warn("seedInitialUsersIfEmpty notice:", err);
+  }
+}
+
+export async function saveUserAccount(
+  userData: Partial<UserAccount> & { email: string; fullName: string }
+): Promise<string> {
+  const userId = userData.id || `usr_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+  const cleanEmail = userData.email.trim().toLowerCase();
+  
+  const currentUsers = getCachedUserAccounts();
+  const existingIndex = currentUsers.findIndex((u) => u.id === userId || u.email.toLowerCase() === cleanEmail);
+  const existingUser = existingIndex >= 0 ? currentUsers[existingIndex] : null;
+
+  const fullUser: UserAccount = {
+    id: userId,
+    fullName: userData.fullName.trim(),
+    email: cleanEmail,
+    phone: userData.phone?.trim() || existingUser?.phone || "",
+    role: userData.role || existingUser?.role || "customer",
+    status: userData.status || existingUser?.status || "active",
+    totalOrders: typeof userData.totalOrders === "number" ? userData.totalOrders : (existingUser?.totalOrders || 0),
+    totalSpent: typeof userData.totalSpent === "number" ? userData.totalSpent : (existingUser?.totalSpent || 0),
+    city: userData.city?.trim() || existingUser?.city || "",
+    state: userData.state?.trim() || existingUser?.state || "",
+    notes: userData.notes || existingUser?.notes || "",
+    savedAddresses: userData.savedAddresses || existingUser?.savedAddresses || [],
+    createdAt: existingUser?.createdAt || userData.createdAt || new Date().toISOString(),
+    lastLoginAt: existingUser?.lastLoginAt || new Date().toISOString(),
+  };
+
+  const updatedList = existingIndex >= 0
+    ? currentUsers.map((u, i) => (i === existingIndex ? fullUser : u))
+    : [fullUser, ...currentUsers];
+  cacheUserAccountsLocally(updatedList);
+
+  try {
+    const docRef = doc(db, "users", userId);
+    await safeFirestoreSet(docRef, fullUser);
+    
+    if (fullUser.role === "customer" || fullUser.role === "vip") {
+      const custRef = doc(db, "customers", userId);
+      const custData: CustomerProfile = {
+        uid: userId,
+        email: fullUser.email,
+        fullName: fullUser.fullName,
+        phone: fullUser.phone,
+        savedAddresses: fullUser.savedAddresses,
+        tier: fullUser.role === "vip" ? "VIP Royal Patron" : "House Patron",
+        createdAt: fullUser.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      safeFirestoreSet(custRef, custData).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Notice: Firestore user write notice (proceeding with local cache):", err);
+  }
+
+  return userId;
+}
+
+export async function updateUserStatus(
+  userId: string,
+  status: UserAccountStatus
+): Promise<void> {
+  const currentUsers = getCachedUserAccounts();
+  const updated = currentUsers.map((u) => (u.id === userId ? { ...u, status } : u));
+  cacheUserAccountsLocally(updated);
+
+  try {
+    const docRef = doc(db, "users", userId);
+    await safeFirestoreSet(docRef, { status }, { merge: true });
+  } catch (err) {
+    console.warn("updateUserStatus notice:", err);
+  }
+}
+
+export async function deleteUserAccount(userId: string): Promise<void> {
+  const currentUsers = getCachedUserAccounts();
+  const updated = currentUsers.filter((u) => u.id !== userId);
+  cacheUserAccountsLocally(updated);
+
+  try {
+    const docRef = doc(db, "users", userId);
+    await safeFirestoreDelete(docRef);
+    const custRef = doc(db, "customers", userId);
+    safeFirestoreDelete(custRef).catch(() => {});
+  } catch (err) {
+    console.warn("deleteUserAccount notice:", err);
+  }
+}
+
+export async function sendUserPasswordReset(email: string): Promise<void> {
+  const cleanEmail = email.trim();
+  if (!cleanEmail) throw new Error("Email address is required.");
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail);
+  } catch (err: any) {
+    console.warn("sendUserPasswordReset notice:", err);
+  }
 }

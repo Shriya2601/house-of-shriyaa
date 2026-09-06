@@ -44,6 +44,8 @@ import {
   ArrowRight,
   Star,
   Camera,
+  Users,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   Product,
@@ -84,6 +86,8 @@ import {
 } from "../services/storeService";
 import { User } from "firebase/auth";
 import { ProductImageUploader } from "../components/admin/ProductImageUploader";
+import { UserAccountsManager } from "../components/admin/UserAccountsManager";
+import { MediaManager } from "../components/admin/MediaManager";
 import { optimizeImageFile, persistAssetToFirestore } from "../services/imageUploadService";
 
 export default function Admin() {
@@ -95,7 +99,7 @@ export default function Admin() {
 
   // Navigation tabs in Admin
   const [activeTab, setActiveTab] = useState<
-    "overview" | "orders" | "products" | "colors" | "categories" | "banners" | "content" | "settings"
+    "overview" | "orders" | "products" | "colors" | "categories" | "media" | "users" | "banners" | "content" | "settings"
   >("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -1383,6 +1387,8 @@ export default function Admin() {
             { id: "products", label: `Products Catalog (${products.length})`, icon: ShoppingBag },
             { id: "colors", label: "Color Palettes & Photos", icon: Palette },
             { id: "categories", label: `Categories (${categories.length})`, icon: Layers },
+            { id: "media", label: "Media & Images Library", icon: ImageIcon },
+            { id: "users", label: "User Accounts & Patrons", icon: Users },
             { id: "banners", label: "Hero & Announcement", icon: Sparkles },
             { id: "content", label: "Atelier & Story CMS", icon: FileText },
             { id: "settings", label: "Store & Credentials", icon: Key },
@@ -1489,6 +1495,40 @@ export default function Admin() {
                 <span>Categories &amp; Drops</span>
               </div>
               <span className="text-[11px] text-[#8fa398]">{categories.length}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("media")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "media"
+                  ? "bg-[#0d4f3c] text-white shadow-sm border border-[#d4af37]/40"
+                  : "hover:bg-[#15221e] hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ImageIcon size={16} className={activeTab === "media" ? "text-[#d4af37]" : "text-[#7a8c83]"} />
+                <span>Media &amp; Images</span>
+              </div>
+              <span className="bg-[#1e332a] text-[#d4af37] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                CDN
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("users")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === "users"
+                  ? "bg-[#0d4f3c] text-white shadow-sm border border-[#d4af37]/40"
+                  : "hover:bg-[#15221e] hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Users size={16} className={activeTab === "users" ? "text-[#d4af37]" : "text-[#7a8c83]"} />
+                <span>User Accounts &amp; Patrons</span>
+              </div>
+              <span className="bg-[#1e332a] text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                CRM
+              </span>
             </button>
 
             <button
@@ -1640,7 +1680,7 @@ export default function Admin() {
                 <h3 className="font-serif font-bold text-base text-[#1e1b18]">
                   Quick Management Actions
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                   <button
                     onClick={() => setActiveTab("orders")}
                     className="p-4 rounded-xl border border-[#e5ded6] hover:border-[#0d4f3c] bg-[#faf8f5] hover:bg-white text-left transition-all group"
@@ -1649,7 +1689,7 @@ export default function Admin() {
                       <Package size={18} />
                     </div>
                     <strong className="block text-sm text-[#1e1b18]">Manage Orders</strong>
-                    <span className="text-xs text-[#6b6257]">View and fulfill incoming customer orders.</span>
+                    <span className="text-xs text-[#6b6257]">Fulfill live customer orders.</span>
                   </button>
 
                   <button
@@ -1662,8 +1702,30 @@ export default function Admin() {
                     <div className="w-8 h-8 rounded-lg bg-[#d4af37] text-[#080e0c] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
                       <Plus size={18} />
                     </div>
-                    <strong className="block text-sm text-[#1e1b18]">Add New Suit Piece</strong>
-                    <span className="text-xs text-[#6b6257]">Publish a new design directly to the boutique.</span>
+                    <strong className="block text-sm text-[#1e1b18]">Add New Suit</strong>
+                    <span className="text-xs text-[#6b6257]">Publish a new design.</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("media")}
+                    className="p-4 rounded-xl border border-[#e5ded6] hover:border-[#0d4f3c] bg-[#faf8f5] hover:bg-white text-left transition-all group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#122b22] text-[#d4af37] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                      <ImageIcon size={18} />
+                    </div>
+                    <strong className="block text-sm text-[#1e1b18]">Media Library</strong>
+                    <span className="text-xs text-[#6b6257]">Upload and manage images.</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("users")}
+                    className="p-4 rounded-xl border border-[#e5ded6] hover:border-[#0d4f3c] bg-[#faf8f5] hover:bg-white text-left transition-all group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#1a2f26] text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                      <Users size={18} />
+                    </div>
+                    <strong className="block text-sm text-[#1e1b18]">User Accounts</strong>
+                    <span className="text-xs text-[#6b6257]">Manage patrons &amp; tiers.</span>
                   </button>
 
                   <button
@@ -1673,8 +1735,8 @@ export default function Admin() {
                     <div className="w-8 h-8 rounded-lg bg-[#22332c] text-[#d4af37] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
                       <Sparkles size={18} />
                     </div>
-                    <strong className="block text-sm text-[#1e1b18]">Edit Hero &amp; Banners</strong>
-                    <span className="text-xs text-[#6b6257]">Change announcement ribbons and carousel slides.</span>
+                    <strong className="block text-sm text-[#1e1b18]">Hero &amp; Banners</strong>
+                    <span className="text-xs text-[#6b6257]">Edit promotional slides.</span>
                   </button>
                 </div>
               </div>
@@ -3510,6 +3572,48 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* ============================================================
+              TAB: MEDIA & IMAGES REPOSITORY
+          ============================================================ */}
+          {activeTab === "media" && (
+            <div className="space-y-6">
+              <div>
+                <span className="text-xs uppercase font-bold tracking-wider text-[#0d4f3c]">
+                  HIGH-RESOLUTION ASSETS
+                </span>
+                <h2 className="font-serif font-bold text-2xl text-[#1e1b18]">
+                  Media &amp; Images Management
+                </h2>
+                <p className="text-xs text-[#6b6257]">
+                  Upload, preview, optimize, and remove suit photography and banners with real-time cloud persistence.
+                </p>
+              </div>
+
+              <MediaManager />
+            </div>
+          )}
+
+          {/* ============================================================
+              TAB: USER ACCOUNTS & PATRONS
+          ============================================================ */}
+          {activeTab === "users" && (
+            <div className="space-y-6">
+              <div>
+                <span className="text-xs uppercase font-bold tracking-wider text-[#0d4f3c]">
+                  PATRON CRM &amp; ACCOUNTS
+                </span>
+                <h2 className="font-serif font-bold text-2xl text-[#1e1b18]">
+                  User Accounts &amp; Customer Management
+                </h2>
+                <p className="text-xs text-[#6b6257]">
+                  Manage registered store patrons, customer tiers, account statuses, and credentials securely.
+                </p>
+              </div>
+
+              <UserAccountsManager />
             </div>
           )}
 

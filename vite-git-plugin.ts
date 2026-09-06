@@ -265,6 +265,42 @@ export function gitSyncPlugin(): Plugin {
           }
         }
 
+        // 0.1 IMAGE DELETION HANDLER
+        if (req.method === "POST" && url === "/api/delete-image") {
+          try {
+            const data = await parseJsonBody(req);
+            const { fileName, url: imgUrl } = data;
+            const targetName = fileName || (imgUrl ? path.basename(imgUrl) : null);
+            if (!targetName) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Missing image filename" }));
+              return;
+            }
+
+            const cleanFileName = path.basename(targetName);
+            const targetPath = path.join(rootDir, "public", "uploads", cleanFileName);
+            if (fs.existsSync(targetPath)) {
+              try { fs.unlinkSync(targetPath); } catch {}
+            }
+            const distPath = path.join(rootDir, "dist", "uploads", cleanFileName);
+            if (fs.existsSync(distPath)) {
+              try { fs.unlinkSync(distPath); } catch {}
+            }
+
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ success: true, message: "Image removed from server storage" }));
+            return;
+          } catch (err: any) {
+            console.error("Image delete API error:", err);
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: err.message || "Failed to remove image" }));
+            return;
+          }
+        }
+
         // 1. SAVE REPO CHANGES & COMMIT TO GIT
         if (req.method === "POST" && url === "/api/save-repo-changes") {
           try {

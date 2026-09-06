@@ -198,6 +198,26 @@ export interface CustomerProfile {
   updatedAt?: string;
 }
 
+export type UserRole = "customer" | "vip" | "wholesale" | "admin" | "editor";
+export type UserAccountStatus = "active" | "suspended" | "pending";
+
+export interface UserAccount {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  status: UserAccountStatus;
+  totalOrders?: number;
+  totalSpent?: number;
+  createdAt: string;
+  lastLoginAt?: string;
+  notes?: string;
+  savedAddresses?: SavedAddress[];
+  city?: string;
+  state?: string;
+}
+
 
 export type AccessoryCategory = "earrings" | "necklaces" | "bangles" | "handbags" | "footwear";
 
