@@ -106,7 +106,7 @@ export default function Admin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Auth form states
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [authMode, setAuthMode] = useState<"signin" | "setup" | "reset" | "confirm_reset">("signin");
   const [authUsername, setAuthUsername] = useState("House of Shriya");
   const [authPassword, setAuthPassword] = useState("");
@@ -353,6 +353,10 @@ export default function Admin() {
         setResetTokenParam("");
         setNewResetPassword("");
         setConfirmResetPassword("");
+        try {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setSearchParams({});
+        } catch {}
       } else {
         setAuthError(res.error || "Failed to update password. Code may be expired or already used.");
       }
@@ -1253,9 +1257,24 @@ export default function Admin() {
             </div>
 
             {authError && (
-              <div className="mb-4 bg-red-950/60 border border-red-800 text-red-300 text-xs px-3.5 py-2.5 rounded-lg flex items-start gap-2">
-                <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
-                <span>{authError}</span>
+              <div className="mb-4 bg-red-950/60 border border-red-800 text-red-300 text-xs px-3.5 py-2.5 rounded-lg flex flex-col gap-1.5">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
+                  <span>{authError}</span>
+                </div>
+                {authMode === "confirm_reset" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("reset");
+                      setAuthError("");
+                      setAuthSuccess("");
+                    }}
+                    className="self-start text-[11px] font-semibold text-[#d4af37] underline hover:text-[#e6c34f] pl-6 transition-colors"
+                  >
+                    Request a new reset email →
+                  </button>
+                )}
               </div>
             )}
 

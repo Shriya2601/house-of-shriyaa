@@ -64,13 +64,15 @@ let runtimeAdminPassword = (() => {
 export const ADMIN_SECRET = (process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || "Houseofshriy@26_master_key_2026").trim();
 export const CUSTOMER_SECRET = (process.env.ADMIN_SECRET_KEY || "hos_patron_auth_key_2026_secured").trim();
 
-// Secure Single-Use Admin Password Reset Tokens Store (Memory & Single-Use Guaranteed)
+// Secure Single-Use Admin Password Reset Tokens Store (Persistent on Disk & In-Memory Sync)
 export interface AdminResetTokenRecord {
   email: string;
   token: string;
   code: string;
   expiresAt: number;
   used: boolean;
+  createdAt: number;
+  usedAt?: number;
 }
 export const adminPasswordResetTokens = new Map<string, AdminResetTokenRecord>();
 
@@ -223,6 +225,76 @@ function readDataFile<T>(fileName: string, fallback: T): T {
     }
   }
   return fallback;
+}
+
+// ----------------------------------------------------
+// PERSISTENT RESET TOKEN STORAGE & SYNC (SURVIVES RESTARTS)
+// ----------------------------------------------------
+const adminResetTokensFileName = "admin-reset-tokens.json";
+
+function loadAdminResetTokens(): Map<string, AdminResetTokenRecord> {
+  const map = new Map<string, AdminResetTokenRecord>();
+  try {
+    const records = readDataFile<AdminResetTokenRecord[]>(adminResetTokensFileName, []);
+    if (Array.isArray(records)) {
+      records.forEach((rec) => {
+        if (rec && rec.token && rec.code) {
+          map.set(rec.token, rec);
+          map.set(rec.code.toUpperCase(), rec);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Notice: Failed reading admin-reset-tokens.json:", err);
+  }
+  return map;
+}
+
+export function saveAdminResetTokens(): void {
+  try {
+    const unique = Array.from(new Set(adminPasswordResetTokens.values()));
+    // Prune tokens expired for more than 48 hours to keep persistence file clean
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const toPersist = unique.filter((r) => (r.createdAt || 0) > cutoff || (r.expiresAt || 0) > cutoff);
+    writeDataFile(adminResetTokensFileName, toPersist);
+  } catch (err) {
+    console.warn("Notice: Failed saving admin-reset-tokens.json:", err);
+  }
+}
+
+export function reloadAdminResetTokens(): void {
+  try {
+    const fresh = loadAdminResetTokens();
+    fresh.forEach((val, key) => adminPasswordResetTokens.set(key, val));
+  } catch {}
+}
+
+// Initial bootstrap of persistent reset tokens
+reloadAdminResetTokens();
+
+// Server-side Firebase Auth Singleton helper for official email dispatch & action verification
+let serverFirebaseApp: any = null;
+export function getServerFirebaseAuth(): any {
+  if (!serverFirebaseApp) {
+    try {
+      const { initializeApp, getApps, getApp } = require("firebase/app");
+      const { getAuth } = require("firebase/auth");
+      const configPath = path.join(rootDir, "firebase-applet-config.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        serverFirebaseApp = getApps().length > 0 ? getApp() : initializeApp(config);
+        return getAuth(serverFirebaseApp);
+      }
+    } catch (err) {
+      console.warn("Notice: Server Firebase Auth initialization error:", err);
+    }
+  } else {
+    try {
+      const { getAuth } = require("firebase/auth");
+      return getAuth(serverFirebaseApp);
+    } catch {}
+  }
+  return null;
 }
 
 // Ensure Git repository config
@@ -1176,8 +1248,22 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     const cleanPass = String(password).trim();
     const activePass = getAdminPassword();
 
-    // The admin username must strictly be "House of Shriya"
-    const isUserValid = cleanUser === "house of shriya";
+    // The admin username can be "House of Shriya", "House of Shriya Atelier", or any authorized admin email
+    const configuredAdminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+    const authorizedAdminEmails = [
+      "houseofshriya.in@gmail.com",
+      "shriya14301@gmail.com",
+      "shriyapusha01@gmail.com",
+      "hello.munchmini@gmail.com",
+      "care@houseofshriya.com",
+      "kshriya2626@gmail.com",
+    ];
+
+    const isUserValid =
+      cleanUser === "house of shriya" ||
+      cleanUser === "house of shriya atelier" ||
+      (configuredAdminEmail && cleanUser === configuredAdminEmail) ||
+      authorizedAdminEmails.includes(cleanUser);
 
     // The admin password must strictly match the server environment secret
     const isPassValid = cleanPass === activePass;
@@ -1246,7 +1332,10 @@ app.all(["/api/admin/session", "/api/admin/session/"], (req, res) => {
 });
 
 // Admin Password Reset Request Flow
-// STRICT RULE: Never report email sent unless real email transmission was successfully confirmed by an active provider.
+// STRICT RULES:
+// 1. Never report email sent unless real email transmission was successfully confirmed by an active provider.
+// 2. Never expose reset tokens or codes in API responses or logs.
+// 3. Tokens are strictly single-use, 1-hour expiration, persistent on disk across restarts.
 app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req, res) => {
   try {
     const { email = "" } = req.body || {};
@@ -1265,9 +1354,11 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
     const configuredAdminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const authorizedAdminEmails = [
       "houseofshriya.in@gmail.com",
+      "shriya14301@gmail.com",
       "shriyapusha01@gmail.com",
       "hello.munchmini@gmail.com",
       "care@houseofshriya.com",
+      "kshriya2626@gmail.com",
     ];
 
     const isAuthorized =
@@ -1294,14 +1385,18 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
       code: resetCode,
       expiresAt,
       used: false,
+      createdAt: Date.now(),
     };
+
     adminPasswordResetTokens.set(resetToken, resetRecord);
     adminPasswordResetTokens.set(resetCode, resetRecord);
+    saveAdminResetTokens();
 
-    // Build reset URL
-    const host = req.get("host") || "localhost:3000";
-    const protocol = req.protocol || "http";
-    const resetUrl = `${protocol}://${host}/admin?resetToken=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
+    // Build reset URL with proxy header awareness
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+    const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+    const origin = `${proto}://${host}`;
+    const resetUrl = `${origin}/admin?resetToken=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
 
     const resetSubject = "House of Shriya · Admin Password Reset";
     const resetHtml = `
@@ -1386,6 +1481,9 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
             user: smtpUser,
             pass: smtpPass,
           },
+          connectionTimeout: 7000,
+          socketTimeout: 7000,
+          greetingTimeout: 5000,
         });
 
         await transporter.sendMail({
@@ -1411,6 +1509,9 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
             user: gmailUser,
             pass: gmailPass,
           },
+          connectionTimeout: 7000,
+          socketTimeout: 7000,
+          greetingTimeout: 5000,
         });
 
         await transporter.sendMail({
@@ -1426,57 +1527,66 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
       }
     }
 
-    // 4. If no production email service is configured, deliver via Nodemailer secure test account
-    if (!emailDelivered && !isRealResend && !isRealSmtp && !isRealSendGrid && !isRealGmail) {
+    // 4. Attempt via SendGrid if configured
+    if (!emailDelivered && isRealSendGrid) {
       try {
-        const nodemailer = await import("nodemailer");
-        const testAccount = await nodemailer.createTestAccount();
-        const transporter = nodemailer.createTransport({
-          host: testAccount.smtp.host,
-          port: testAccount.smtp.port,
-          secure: testAccount.smtp.secure,
-          auth: {
-            user: testAccount.user,
-            pass: testAccount.pass,
+        const sgRes = await fetch("https://api.sendgrid.com/v3/mail/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sendgridKey}`,
           },
+          body: JSON.stringify({
+            personalizations: [{ to: [{ email: cleanEmail }] }],
+            from: { email: process.env.SMTP_FROM || "care@houseofshriya.com", name: "House of Shriya" },
+            subject: resetSubject,
+            content: [{ type: "text/html", value: resetHtml }],
+          }),
         });
-
-        const info = await transporter.sendMail({
-          from: `"House of Shriya Atelier" <care@houseofshriya.com>`,
-          to: cleanEmail,
-          subject: resetSubject,
-          html: resetHtml,
-        });
-
-        emailDelivered = true;
-        deliveryProvider = "Ethereal SMTP";
-        const previewUrl = nodemailer.getTestMessageUrl(info);
-        console.log(`[EMAIL SERVICE] Reset email transmitted via SMTP! MessageId: ${info.messageId}`);
-        if (previewUrl) {
-          console.log(`[EMAIL SERVICE] Live Email Inbox Preview URL: ${previewUrl}`);
+        if (sgRes.status >= 200 && sgRes.status < 300) {
+          emailDelivered = true;
+          deliveryProvider = "SendGrid";
+        } else {
+          const sgData = await sgRes.json().catch(() => ({}));
+          providerError = sgData?.errors?.[0]?.message || `SendGrid error (${sgRes.status})`;
         }
       } catch (err: any) {
-        providerError = err.message || "Test SMTP transmission error";
+        providerError = err.message || "SendGrid transmission error";
       }
     }
 
-    // Dev log for reset verification
-    console.log(`[SECURITY AUDIT] Admin Password Reset initiated for ${cleanEmail}. Direct link: ${resetUrl}`);
+    // 5. Official Firebase Auth email delivery fallback
+    if (!emailDelivered) {
+      const fbAuth = getServerFirebaseAuth();
+      if (fbAuth) {
+        try {
+          const { sendPasswordResetEmail } = await import("firebase/auth");
+          const actionCodeSettings = {
+            url: resetUrl,
+            handleCodeInApp: true,
+          };
+          await sendPasswordResetEmail(fbAuth, cleanEmail, actionCodeSettings);
+          emailDelivered = true;
+          deliveryProvider = "Google Firebase Auth Delivery";
+        } catch (fbErr: any) {
+          providerError = fbErr?.message || "Firebase email delivery failed";
+        }
+      }
+    }
 
     if (emailDelivered) {
+      console.log(`[SECURITY AUDIT] Password reset instructions successfully dispatched to ${cleanEmail} via ${deliveryProvider}.`);
       res.json({
         success: true,
         emailSent: true,
-        provider: deliveryProvider,
-        token: resetToken,
-        code: resetCode,
         message: `Password reset instructions have been successfully sent to ${cleanEmail}. Please check your inbox.`,
       });
     } else {
+      console.warn(`[SECURITY AUDIT] Password reset email delivery failed for ${cleanEmail}: ${providerError}`);
       res.status(502).json({
         success: false,
         emailSent: false,
-        error: `Failed to deliver reset email: ${providerError || "Provider rejected connection"}. Please verify your email credentials in AI Studio Settings Secrets.`,
+        error: `Failed to deliver reset email: ${providerError || "No active email service configured"}. Please verify your email configuration in AI Studio Settings Secrets.`,
       });
     }
   } catch (err: any) {
@@ -1484,8 +1594,8 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
   }
 });
 
-// Admin Password Reset Confirmation Endpoint (Single-Use Token Enforcement)
-app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confirm"], (req, res) => {
+// Admin Password Reset Confirmation Endpoint (Single-Use Token Enforcement & Persistence)
+app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confirm"], async (req, res) => {
   try {
     const { token = "", newPassword = "", email = "" } = req.body || {};
     const cleanToken = String(token).trim();
@@ -1502,54 +1612,74 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
       return;
     }
 
+    // Reload freshest token state from disk
+    reloadAdminResetTokens();
+
     const record = adminPasswordResetTokens.get(cleanToken) || adminPasswordResetTokens.get(cleanToken.toUpperCase());
-    if (!record) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid, expired, or already used reset link. Please request a new password reset.",
+    if (record) {
+      if (record.used) {
+        res.status(400).json({
+          success: false,
+          error: "This reset link or code has already been used and is no longer valid. Tokens are strictly single-use. Please request a new password reset.",
+        });
+        return;
+      }
+
+      if (Date.now() > record.expiresAt) {
+        res.status(400).json({
+          success: false,
+          error: "This password reset token has expired (1 hour limit). Please request a new password reset.",
+        });
+        return;
+      }
+
+      if (cleanEmail && record.email.toLowerCase() !== cleanEmail) {
+        res.status(400).json({
+          success: false,
+          error: "The provided email address does not match the recipient of this reset token.",
+        });
+        return;
+      }
+
+      // Mark as used and persist (retaining the record so re-use returns an explicit single-use error)
+      record.used = true;
+      record.usedAt = Date.now();
+      saveAdminResetTokens();
+
+      // Apply and persist new admin password
+      setRuntimeAdminPassword(cleanNewPass);
+
+      console.log(`[SECURITY AUDIT] Master admin password successfully reset and updated for ${record.email}.`);
+
+      res.json({
+        success: true,
+        message: "Admin password successfully updated. You may now sign in with your new password.",
       });
       return;
     }
 
-    if (record.used) {
-      res.status(400).json({
-        success: false,
-        error: "This reset link has already been used and is no longer valid. Tokens are strictly single-use.",
-      });
-      return;
+    // Check if cleanToken is a valid Firebase Auth action code (oobCode)
+    const fbAuth = getServerFirebaseAuth();
+    if (fbAuth) {
+      try {
+        const { verifyPasswordResetCode, confirmPasswordReset } = await import("firebase/auth");
+        await verifyPasswordResetCode(fbAuth, cleanToken);
+        await confirmPasswordReset(fbAuth, cleanToken, cleanNewPass);
+        setRuntimeAdminPassword(cleanNewPass);
+        console.log(`[SECURITY AUDIT] Master admin password successfully reset via verified Firebase credentials.`);
+        res.json({
+          success: true,
+          message: "Admin password successfully updated. You may now sign in with your new password.",
+        });
+        return;
+      } catch (fbErr: any) {
+        // Not a valid Firebase code
+      }
     }
 
-    if (Date.now() > record.expiresAt) {
-      adminPasswordResetTokens.delete(record.token);
-      adminPasswordResetTokens.delete(record.code);
-      res.status(400).json({
-        success: false,
-        error: "This password reset token has expired (1 hour limit). Please request a new one.",
-      });
-      return;
-    }
-
-    if (cleanEmail && record.email.toLowerCase() !== cleanEmail) {
-      res.status(400).json({
-        success: false,
-        error: "Reset token email does not match requested email address.",
-      });
-      return;
-    }
-
-    // Mark as used and delete immediately to guarantee single-use
-    record.used = true;
-    adminPasswordResetTokens.delete(record.token);
-    adminPasswordResetTokens.delete(record.code);
-
-    // Apply and persist new admin password
-    setRuntimeAdminPassword(cleanNewPass);
-
-    console.log(`[SECURITY AUDIT] Master admin password successfully reset and updated for ${record.email}.`);
-
-    res.json({
-      success: true,
-      message: "Admin password successfully updated. You may now sign in with your new password.",
+    res.status(400).json({
+      success: false,
+      error: "Invalid, expired, or unrecognized reset token or code. Please check your link or request a new password reset.",
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || "Failed to confirm password reset." });
@@ -1569,6 +1699,7 @@ interface CustomerAccount {
   profile: any;
   createdAt: string;
   lastLoginAt: string;
+  updatedAt?: string;
 }
 
 function getCustomersList(): CustomerAccount[] {
@@ -1837,6 +1968,239 @@ app.patch("/api/customer/profile", (req, res) => {
     res.json({ success: true, profile: customer.profile });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || "Failed to update profile." });
+  }
+});
+
+// ==========================================
+// CUSTOMER PASSWORD RESET ENDPOINTS
+// ==========================================
+interface CustomerResetTokenRecord {
+  customerId: string;
+  email: string;
+  token: string;
+  code: string;
+  expiresAt: number;
+  used: boolean;
+  createdAt: number;
+  usedAt?: number;
+}
+
+const customerResetTokensFileName = "customer-reset-tokens.json";
+
+function loadCustomerResetTokens(): Map<string, CustomerResetTokenRecord> {
+  const map = new Map<string, CustomerResetTokenRecord>();
+  try {
+    const records = readDataFile<CustomerResetTokenRecord[]>(customerResetTokensFileName, []);
+    if (Array.isArray(records)) {
+      records.forEach((rec) => {
+        if (rec && rec.token && rec.code) {
+          map.set(rec.token, rec);
+          map.set(rec.code.toUpperCase(), rec);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Notice: Failed reading customer-reset-tokens.json:", err);
+  }
+  return map;
+}
+
+const customerPasswordResetTokens = loadCustomerResetTokens();
+
+function saveCustomerResetTokens(): void {
+  try {
+    const unique = Array.from(new Set(customerPasswordResetTokens.values()));
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const toPersist = unique.filter((r) => (r.createdAt || 0) > cutoff || (r.expiresAt || 0) > cutoff);
+    writeDataFile(customerResetTokensFileName, toPersist);
+  } catch (err) {
+    console.warn("Notice: Failed saving customer-reset-tokens.json:", err);
+  }
+}
+
+app.post("/api/customer/forgot-password", async (req, res) => {
+  try {
+    const { email = "" } = req.body || {};
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      res.status(400).json({ success: false, error: "Please provide a valid patron email address." });
+      return;
+    }
+
+    const customers = getCustomersList();
+    const customer = customers.find((c) => c.email.toLowerCase() === cleanEmail);
+    if (!customer) {
+      res.status(404).json({
+        success: false,
+        error: `No customer account found with email "${cleanEmail}". Please check your email or register.`,
+      });
+      return;
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetCode = resetToken.slice(0, 8).toUpperCase();
+    const expiresAt = Date.now() + 60 * 60 * 1000;
+
+    const record: CustomerResetTokenRecord = {
+      customerId: customer.id,
+      email: cleanEmail,
+      token: resetToken,
+      code: resetCode,
+      expiresAt,
+      used: false,
+      createdAt: Date.now(),
+    };
+
+    customerPasswordResetTokens.set(resetToken, record);
+    customerPasswordResetTokens.set(resetCode, record);
+    saveCustomerResetTokens();
+
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+    const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+    const origin = `${proto}://${host}`;
+    const resetUrl = `${origin}/auth?mode=reset&token=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
+
+    const resetSubject = "House of Shriya · Reset Your Password";
+    const resetHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a221f; max-width: 560px; margin: 0 auto; padding: 28px; border: 1px solid #d4af37; border-radius: 12px; background: #faf8f5;">
+        <h2 style="color: #0d4f3c; margin-top: 0; font-family: serif; font-size: 24px;">House of Shriya Atelier</h2>
+        <p>Hello ${customer.fullName || "Valued Patron"},</p>
+        <p>A password reset was requested for your House of Shriya customer account (<strong>${cleanEmail}</strong>).</p>
+        
+        <div style="margin: 24px 0; text-align: center;">
+          <a href="${resetUrl}" style="background-color: #0d4f3c; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block; letter-spacing: 1px;">
+            RESET YOUR PASSWORD
+          </a>
+        </div>
+
+        <p style="font-size: 13px; color: #4a453e;">Alternatively, use this one-time 8-character security code:</p>
+        <div style="background: #121916; color: #d4af37; padding: 12px 18px; border-radius: 8px; font-weight: bold; font-size: 20px; letter-spacing: 4px; display: inline-block; font-family: monospace;">
+          ${resetCode}
+        </div>
+        
+        <p style="color: #7a7469; font-size: 12px; margin-top: 24px;">This code expires in 1 hour and is single-use.</p>
+      </div>
+    `;
+
+    // Attempt delivery via configured services or Firebase
+    let emailDelivered = false;
+    let providerError = "";
+    let deliveryProvider = "";
+
+    const resendKey = process.env.RESEND_API_KEY?.trim();
+    if (resendKey && resendKey.startsWith("re_")) {
+      try {
+        const fromEmail = process.env.SMTP_FROM || "House of Shriya <onboarding@resend.dev>";
+        const resendRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
+          body: JSON.stringify({ from: fromEmail, to: cleanEmail, subject: resetSubject, html: resetHtml }),
+        });
+        if (resendRes.ok) {
+          emailDelivered = true;
+          deliveryProvider = "Resend";
+        }
+      } catch (e: any) {
+        providerError = e.message;
+      }
+    }
+
+    if (!emailDelivered) {
+      const fbAuth = getServerFirebaseAuth();
+      if (fbAuth) {
+        try {
+          const { sendPasswordResetEmail } = await import("firebase/auth");
+          await sendPasswordResetEmail(fbAuth, cleanEmail, { url: resetUrl, handleCodeInApp: true });
+          emailDelivered = true;
+          deliveryProvider = "Firebase Auth";
+        } catch (fbErr: any) {
+          providerError = fbErr?.message;
+        }
+      }
+    }
+
+    if (emailDelivered) {
+      console.log(`[SECURITY AUDIT] Patron password reset dispatched to ${cleanEmail} via ${deliveryProvider}.`);
+      res.json({
+        success: true,
+        emailSent: true,
+        message: `Password reset instructions have been sent to ${cleanEmail}. Please check your inbox.`,
+      });
+    } else {
+      res.status(502).json({
+        success: false,
+        emailSent: false,
+        error: `Failed to deliver reset email: ${providerError || "No email provider available"}.`,
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || "Failed to process customer password reset." });
+  }
+});
+
+app.post("/api/customer/confirm-reset-password", async (req, res) => {
+  try {
+    const { token = "", newPassword = "", email = "" } = req.body || {};
+    const cleanToken = String(token).trim();
+    const cleanPass = String(newPassword).trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    if (!cleanToken) {
+      res.status(400).json({ success: false, error: "Missing password reset token or code." });
+      return;
+    }
+
+    if (!cleanPass || cleanPass.length < 6) {
+      res.status(400).json({ success: false, error: "New password must be at least 6 characters long." });
+      return;
+    }
+
+    const fresh = loadCustomerResetTokens();
+    fresh.forEach((v, k) => customerPasswordResetTokens.set(k, v));
+
+    const record = customerPasswordResetTokens.get(cleanToken) || customerPasswordResetTokens.get(cleanToken.toUpperCase());
+    if (record) {
+      if (record.used) {
+        res.status(400).json({ success: false, error: "This reset link or code has already been used. Tokens are strictly single-use." });
+        return;
+      }
+      if (Date.now() > record.expiresAt) {
+        res.status(400).json({ success: false, error: "This reset link or code has expired. Please request a new one." });
+        return;
+      }
+      if (cleanEmail && record.email.toLowerCase() !== cleanEmail) {
+        res.status(400).json({ success: false, error: "The provided email does not match this reset token." });
+        return;
+      }
+
+      const customers = getCustomersList();
+      const customer = customers.find((c) => c.id === record.customerId || c.email.toLowerCase() === record.email.toLowerCase());
+      if (!customer) {
+        res.status(404).json({ success: false, error: "Associated patron account not found." });
+        return;
+      }
+
+      const newSalt = crypto.randomBytes(16).toString("hex");
+      customer.salt = newSalt;
+      customer.passwordHash = hashCustomerPassword(cleanPass, newSalt);
+      customer.updatedAt = new Date().toISOString();
+
+      record.used = true;
+      record.usedAt = Date.now();
+      saveCustomerResetTokens();
+      saveCustomersList(customers);
+
+      res.json({
+        success: true,
+        message: "Your password has been successfully updated. You may now sign in.",
+      });
+      return;
+    }
+
+    res.status(400).json({ success: false, error: "Invalid or expired reset token. Please request a new password reset." });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || "Failed to reset password." });
   }
 });
 

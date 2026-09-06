@@ -1,0 +1,19 @@
+[
+  {
+    "email": "shriya14301@gmail.com",
+    "token": "90396639db0ccef93051fe073647431c4378e31b009560c0fcd480f23b3c9000",
+    "code": "90396639",
+    "expiresAt": 1788739882237,
+    "used": false,
+    "createdAt": 1788736282237
+  },
+  {
+    "email": "shriya14301@gmail.com",
+    "token": "test_token_secure_hex_1788736287792",
+    "code": "TESTCODE",
+    "expiresAt": 1788739887792,
+    "used": true,
+    "createdAt": 1788736287792,
+    "usedAt": 1788736287906
+  }
+]
