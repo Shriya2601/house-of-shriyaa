@@ -1,8 +1,25 @@
+export interface ColorVariant {
+  id: string; // Unique variant ID, e.g. "var-emerald-1"
+  colorName: string; // e.g. "Royal Emerald", "Pastel Lilac"
+  colorHex?: string; // e.g. "#0d4f3c", "#e2725b" for visual color dot
+  price?: string; // Independent price, e.g. "₹2,999"
+  originalPrice?: string; // Independent original price, e.g. "₹4,499"
+  savings?: string; // e.g. "Save 33%"
+  description?: string; // Independent description for this color
+  fabricType?: string; // Specific fabric notes if any
+  images: string[]; // Independent images for this color variant (up to 10)
+  image?: string; // Primary image for this color
+  hoverImage?: string; // Hover image for this color
+  inStock?: boolean; // Independent in-stock status for this color
+}
+
 export interface Product {
   id: string;
   name: string;
   description: string;
   color: string;
+  colorHex?: string;
+  colorVariants?: ColorVariant[];
   rating: string;
   reviews: string;
   price: string;

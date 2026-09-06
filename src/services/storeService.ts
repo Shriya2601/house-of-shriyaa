@@ -25,6 +25,7 @@ import {
 import { db, auth } from "../lib/firebase";
 import {
   Product,
+  ColorVariant,
   Order,
   OrderStatus,
   SiteContent,
@@ -203,36 +204,147 @@ export async function deleteCategory(id: string): Promise<void> {
 }
 
 /* ============================================================
-   PRODUCTS MANAGEMENT (CRUD)
+   PRODUCTS MANAGEMENT (CRUD & INDEPENDENT COLOR VARIANTS)
 ============================================================ */
 
+export const DEFAULT_FALLBACK_IMAGE = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
+const PRODUCTS_CACHE_KEY = "hos_products_cache_v2";
+
+/**
+ * Normalizes any product document so that colorVariants is ALWAYS an array
+ * with at least one fully formed variant, preserving all existing data and images.
+ */
+export function ensureProductVariants(data: any): Product {
+  const imagesList: string[] = Array.isArray(data.images) && data.images.length > 0
+    ? data.images.filter(Boolean)
+    : [data.image || DEFAULT_FALLBACK_IMAGE, ...(data.hoverImage && data.hoverImage !== data.image ? [data.hoverImage] : [])].filter(Boolean);
+
+  const fallbackImage = imagesList[0] || data.image || DEFAULT_FALLBACK_IMAGE;
+  const fallbackHover = imagesList[1] || data.hoverImage || fallbackImage;
+
+  let variants: ColorVariant[] = [];
+
+  if (Array.isArray(data.colorVariants) && data.colorVariants.length > 0) {
+    variants = data.colorVariants.map((v: any, idx: number) => {
+      const vImgs: string[] = Array.isArray(v.images) && v.images.length > 0
+        ? v.images.filter(Boolean)
+        : (v.image ? [v.image] : imagesList);
+
+      const vPrimary = vImgs[0] || v.image || fallbackImage;
+      const vHover = vImgs[1] || v.hoverImage || vPrimary;
+
+      return {
+        id: v.id || `var-${data.id || "prod"}-${idx}-${Date.now()}`,
+        colorName: v.colorName || data.color || `Color Variant ${idx + 1}`,
+        colorHex: v.colorHex || (idx === 0 ? (data.colorHex || "#0d4f3c") : "#d4af37"),
+        price: v.price?.startsWith("₹") ? v.price : (v.price ? `₹${v.price}` : data.price || "₹2,999"),
+        originalPrice: v.originalPrice?.startsWith("₹") ? v.originalPrice : (v.originalPrice ? `₹${v.originalPrice}` : data.originalPrice || "₹4,499"),
+        savings: v.savings || data.savings || "Save 30%",
+        description: v.description !== undefined && v.description !== null ? v.description : (data.description || ""),
+        fabricType: v.fabricType || data.fabricType || "Pure Handloom",
+        images: vImgs.slice(0, 10),
+        image: vPrimary,
+        hoverImage: vHover,
+        inStock: v.inStock !== false,
+      };
+    });
+  } else {
+    // Generate default variant from existing product fields - NO data or images lost!
+    variants = [
+      {
+        id: `var-${data.id || "prod"}-0`,
+        colorName: data.color || "Standard Edition",
+        colorHex: data.colorHex || "#0d4f3c",
+        price: data.price?.startsWith("₹") ? data.price : `₹${data.price || "2,999"}`,
+        originalPrice: data.originalPrice?.startsWith("₹") ? data.originalPrice : `₹${data.originalPrice || "4,499"}`,
+        savings: data.savings || "Save 30%",
+        description: data.description || "",
+        fabricType: data.fabricType || "Pure Handloom",
+        images: imagesList.slice(0, 10),
+        image: fallbackImage,
+        hoverImage: fallbackHover,
+        inStock: data.inStock !== false,
+      },
+    ];
+  }
+
+  const primaryVariant = variants[0];
+
+  return {
+    ...data,
+    id: data.id || `hos-${Date.now()}`,
+    name: data.name || "Handcrafted Suit Set",
+    description: primaryVariant?.description || data.description || "",
+    color: primaryVariant?.colorName || data.color || "Standard Edition",
+    colorHex: primaryVariant?.colorHex || data.colorHex || "#0d4f3c",
+    colorVariants: variants,
+    rating: data.rating || "4.9",
+    reviews: data.reviews || "18",
+    price: primaryVariant?.price || data.price || "₹2,999",
+    originalPrice: primaryVariant?.originalPrice || data.originalPrice || "₹4,499",
+    savings: primaryVariant?.savings || data.savings || "Save 30%",
+    badges: data.badges || ["New Drop"],
+    image: primaryVariant?.image || fallbackImage,
+    hoverImage: primaryVariant?.hoverImage || fallbackHover,
+    images: primaryVariant?.images?.length ? primaryVariant.images : imagesList,
+    category: data.category || "All Collections",
+    fabricType: primaryVariant?.fabricType || data.fabricType || "Pure Handloom",
+    tags: data.tags || [data.category || "Party Wear"],
+    inStock: data.inStock !== false && primaryVariant?.inStock !== false,
+    sizes: ["Unstitched Suit"],
+    activeWishlist: Boolean(data.activeWishlist),
+    updatedAt: data.updatedAt || new Date().toISOString(),
+  } as Product;
+}
+
+// Helper to save products cache to localStorage
+function cacheProductsLocally(products: Product[]): void {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products));
+  } catch (err) {
+    console.warn("Failed to cache products locally (likely quota):", err);
+  }
+}
+
+// Helper to load cached products from localStorage
+export function getCachedProducts(): Product[] {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(ensureProductVariants);
+      }
+    }
+  } catch {}
+  return defaultProducts.map(ensureProductVariants);
+}
+
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
+  // Immediately serve from cache so user sees their saved updates with zero delay
+  const cached = getCachedProducts();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+
   const colRef = collection(db, "products");
   return onSnapshot(
     colRef,
     (snapshot) => {
       if (!snapshot.empty) {
-        const list = snapshot.docs.map((d) => {
-          const data = d.data();
-          const imagesList: string[] = Array.isArray(data.images) && data.images.length > 0
-            ? data.images
-            : [data.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80", ...(data.hoverImage && data.hoverImage !== data.image ? [data.hoverImage] : [])];
-          return {
-            id: d.id,
-            ...data,
-            images: imagesList.slice(0, 10),
-            image: imagesList[0] || data.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
-            hoverImage: imagesList[1] || data.hoverImage || imagesList[0] || data.image,
-          } as Product;
-        });
+        const list = snapshot.docs.map((d) => ensureProductVariants({ id: d.id, ...d.data() }));
+        cacheProductsLocally(list);
         callback(list);
       } else {
-        callback(defaultProducts);
+        const fallback = defaultProducts.map(ensureProductVariants);
+        cacheProductsLocally(fallback);
+        callback(fallback);
       }
     },
     (err) => {
-      console.warn("subscribeProducts listener error:", err);
-      callback(defaultProducts);
+      console.warn("subscribeProducts listener error, using cached products:", err);
+      const fallback = getCachedProducts();
+      callback(fallback);
     }
   );
 }
@@ -241,44 +353,46 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   const id = product.id || `hos-${Date.now()}`;
   const docRef = doc(db, "products", id);
 
-  // Synchronize up to 10 images array with primary image and hover image
-  const rawImages = Array.isArray(product.images) && product.images.length > 0
-    ? product.images.filter(Boolean)
-    : (product.image ? [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])] : []);
-
-  const sanitizedImages = rawImages.slice(0, 10);
-  const primaryImage = sanitizedImages[0] || product.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
-  const secondaryImage = sanitizedImages[1] || product.hoverImage || primaryImage;
-
-  const data: Product = {
+  // Normalize product through ensureProductVariants so all variants are fully structured
+  const sanitized = ensureProductVariants({
+    ...product,
     id,
-    name: product.name || "Untitled Suit Set",
-    description: product.description || "",
-    color: product.color || "Standard",
-    rating: product.rating || "4.9",
-    reviews: product.reviews || "12",
-    price: product.price?.startsWith("₹") ? product.price : `₹${product.price || "2,999"}`,
-    originalPrice: product.originalPrice?.startsWith("₹") ? product.originalPrice : `₹${product.originalPrice || "4,499"}`,
-    savings: product.savings || "Save 30%",
-    badges: product.badges || ["New Drop"],
-    image: primaryImage,
-    hoverImage: secondaryImage,
-    images: sanitizedImages.length > 0 ? sanitizedImages : [primaryImage],
-    category: product.category || "All Collections",
-    fabricType: product.fabricType || "Pure Chanderi Silk",
-    tags: product.tags || [product.category || "Party Wear"],
-    inStock: product.inStock !== false,
-    sizes: product.sizes || ["Unstitched Suit"],
-    activeWishlist: Boolean(product.activeWishlist),
     updatedAt: new Date().toISOString(),
-  };
+  });
 
-  await setDoc(docRef, data, { merge: true });
+  // 1. Write to Firestore
+  await setDoc(docRef, sanitized, { merge: true });
+
+  // 2. Update local cache immediately so refresh or redeployment never loses state
+  try {
+    const current = getCachedProducts();
+    const existingIdx = current.findIndex((p) => p.id === id);
+    let updated: Product[];
+    if (existingIdx > -1) {
+      updated = [...current];
+      updated[existingIdx] = sanitized;
+    } else {
+      updated = [sanitized, ...current];
+    }
+    cacheProductsLocally(updated);
+
+    // Notify any local listeners
+    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+  } catch (err) {
+    console.warn("Local storage update warning:", err);
+  }
+
   return id;
 }
 
 export async function deleteProduct(id: string): Promise<void> {
   await deleteDoc(doc(db, "products", id));
+  try {
+    const current = getCachedProducts();
+    const filtered = current.filter((p) => p.id !== id);
+    cacheProductsLocally(filtered);
+    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+  } catch {}
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {

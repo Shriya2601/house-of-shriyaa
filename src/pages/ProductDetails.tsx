@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
@@ -20,10 +20,11 @@ import {
   Layers,
   Award,
   ChevronDown,
+  Palette,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { useEditMode, CanvaEditable } from "../components/editmode";
-import { Product } from "../types";
+import { Product, ColorVariant } from "../types";
 import { products as fallbackCatalog } from "../data/products";
 import {
   StoreHeader,
@@ -36,8 +37,12 @@ import {
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
 
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
+
 export default function ProductDetails() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedColorParam = searchParams.get("color");
   const navigate = useNavigate();
   const {
     products,
@@ -58,21 +63,71 @@ export default function ProductDetails() {
     return fallbackCatalog.find((p) => p.id === id);
   }, [products, id]);
 
-  // Gallery images (deduplicated)
-  const productImages = useMemo(() => {
+  // Normalized available color variants for this product
+  const availableVariants = useMemo<ColorVariant[]>(() => {
     if (!product) return [];
-    const imgs: string[] = [];
-    if (product.image) imgs.push(product.image);
-    if (Array.isArray(product.images)) {
-      product.images.forEach((img) => {
-        if (img && !imgs.includes(img)) imgs.push(img);
+    if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
+      return product.colorVariants;
+    }
+    const defaultImgs = Array.isArray(product.images) && product.images.length > 0
+      ? product.images.filter(Boolean)
+      : [product.image || FALLBACK_IMAGE, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
+
+    return [
+      {
+        id: `var-${product.id}-0`,
+        colorName: product.color || "Standard Edition",
+        colorHex: product.colorHex || "#0d4f3c",
+        price: product.price,
+        originalPrice: product.originalPrice,
+        savings: product.savings,
+        description: product.description,
+        fabricType: product.fabricType,
+        images: defaultImgs.length > 0 ? defaultImgs : [FALLBACK_IMAGE],
+        image: defaultImgs[0] || product.image || FALLBACK_IMAGE,
+        hoverImage: defaultImgs[1] || defaultImgs[0] || product.image || FALLBACK_IMAGE,
+        inStock: product.inStock !== false,
+      },
+    ];
+  }, [product]);
+
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
+
+  // Sync selected color if URL specifies ?color=...
+  useEffect(() => {
+    if (requestedColorParam && availableVariants.length > 0) {
+      const idx = availableVariants.findIndex(
+        (v) => v.colorName.toLowerCase() === requestedColorParam.toLowerCase() || v.id === requestedColorParam
+      );
+      if (idx > -1) {
+        setSelectedColorIndex(idx);
+      }
+    }
+  }, [requestedColorParam, availableVariants]);
+
+  // Currently active color variant
+  const currentColorVariant = availableVariants[selectedColorIndex] || availableVariants[0];
+
+  // Gallery images strictly for the selected color variant!
+  const productImages = useMemo(() => {
+    if (!currentColorVariant) return [product?.image || FALLBACK_IMAGE];
+    const list: string[] = [];
+
+    if (Array.isArray(currentColorVariant.images) && currentColorVariant.images.length > 0) {
+      currentColorVariant.images.forEach((img) => {
+        if (img && !list.includes(img)) list.push(img);
       });
     }
-    if (product.hoverImage && !imgs.includes(product.hoverImage)) {
-      imgs.push(product.hoverImage);
+    if (currentColorVariant.image && !list.includes(currentColorVariant.image)) {
+      list.unshift(currentColorVariant.image);
     }
-    return imgs.length > 0 ? imgs : [product.image || ""];
-  }, [product]);
+    if (currentColorVariant.hoverImage && !list.includes(currentColorVariant.hoverImage)) {
+      list.push(currentColorVariant.hoverImage);
+    }
+
+    const filtered = list.filter(Boolean);
+    return filtered.length > 0 ? filtered : [product?.image || FALLBACK_IMAGE];
+  }, [currentColorVariant, product]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const selectedFormat = "Unstitched Suit";
@@ -81,6 +136,15 @@ export default function ProductDetails() {
   const [pincode, setPincode] = useState("");
   const [pincodeChecked, setPincodeChecked] = useState(false);
   const [addedToast, setAddedToast] = useState(false);
+
+  // Dynamic values based on selected color variant
+  const displayPrice = currentColorVariant?.price || product?.price || "₹2,999";
+  const displayOriginalPrice = currentColorVariant?.originalPrice || product?.originalPrice;
+  const displaySavings = currentColorVariant?.savings || product?.savings;
+  const displayDescription = currentColorVariant?.description || product?.description;
+  const displayFabric = currentColorVariant?.fabricType || product?.fabricType || "Pure Chanderi Silk";
+  const displayColor = currentColorVariant?.colorName || product?.color || "Artisan Craft";
+  const isCurrentlyInStock = (currentColorVariant?.inStock !== false) && (product?.inStock !== false);
 
   // App chrome states
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -104,15 +168,26 @@ export default function ProductDetails() {
     setQuantity(1);
     setPincodeChecked(false);
     if (product?.name) {
-      document.title = `${product.name} | House of Shriya Atelier`;
+      document.title = `${product.name} (${displayColor}) | House of Shriya Atelier`;
     }
-  }, [id, product?.name]);
+  }, [id, product?.name, displayColor]);
 
   const isWishlisted = Boolean(product && wishlist.has(product.id));
 
   const handleAddToCart = () => {
     if (!product) return;
-    addToCart(product, selectedFormat, quantity);
+    const variantProduct: Product = {
+      ...product,
+      color: currentColorVariant?.colorName || product.color,
+      colorHex: currentColorVariant?.colorHex || product.colorHex,
+      price: currentColorVariant?.price || product.price,
+      originalPrice: currentColorVariant?.originalPrice || product.originalPrice,
+      savings: currentColorVariant?.savings || product.savings,
+      image: currentColorVariant?.images?.[0] || currentColorVariant?.image || product.image,
+      hoverImage: currentColorVariant?.images?.[1] || currentColorVariant?.hoverImage || product.hoverImage,
+      images: currentColorVariant?.images || product.images,
+    };
+    addToCart(variantProduct, selectedFormat, quantity);
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 2500);
     setIsCartOpen(true);
@@ -120,22 +195,33 @@ export default function ProductDetails() {
 
   const handleBuyNow = () => {
     if (!product) return;
-    startInstantCheckout(product, selectedFormat);
+    const variantProduct: Product = {
+      ...product,
+      color: currentColorVariant?.colorName || product.color,
+      colorHex: currentColorVariant?.colorHex || product.colorHex,
+      price: currentColorVariant?.price || product.price,
+      originalPrice: currentColorVariant?.originalPrice || product.originalPrice,
+      savings: currentColorVariant?.savings || product.savings,
+      image: currentColorVariant?.images?.[0] || currentColorVariant?.image || product.image,
+      hoverImage: currentColorVariant?.images?.[1] || currentColorVariant?.hoverImage || product.hoverImage,
+      images: currentColorVariant?.images || product.images,
+    };
+    startInstantCheckout(variantProduct, selectedFormat);
   };
 
   const handleShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: product?.name || "House of Shriya Suit",
-          text: `Check out ${product?.name} at House of Shriya`,
-          url: window.location.href,
+          title: product?.name ? `${product.name} (${displayColor})` : "House of Shriya Suit",
+          text: `Check out ${product?.name} in ${displayColor} at House of Shriya`,
+          url: `${window.location.origin}/product/${product?.id}?color=${encodeURIComponent(displayColor)}`,
         });
         return;
       } catch {}
     }
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(`${window.location.origin}/product/${product?.id}?color=${encodeURIComponent(displayColor)}`);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     } catch {}
@@ -147,9 +233,9 @@ export default function ProductDetails() {
 
   const whatsappInquiryUrl = useMemo(() => {
     if (!product) return "https://wa.me/919501698356";
-    const msg = `Namaste House of Shriya! I am interested in the ${product.name} (${product.price}, ${product.color || "Surat Handloom"}, Unstitched Suit). Could you share more details and availability?`;
+    const msg = `Namaste House of Shriya! I am interested in the ${product.name} in ${displayColor} (${displayPrice}, Unstitched Suit). Could you share more details and availability?`;
     return `https://wa.me/919501698356?text=${encodeURIComponent(msg)}`;
-  }, [product]);
+  }, [product, displayColor, displayPrice]);
 
   // Product not found state
   if (!product && !loadingCatalog) {
@@ -294,13 +380,16 @@ export default function ProductDetails() {
 
               {/* Main Image with Smooth Fade */}
               <motion.img
-                key={activeImage}
+                key={`${product?.id}-${currentColorVariant?.id}-${activeImageIndex}`}
                 src={activeImage}
-                alt={product?.name || "Suit"}
+                alt={`${product?.name || "Suit"} - ${displayColor}`}
                 className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                 initial={{ opacity: 0.7 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.35 }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                }}
               />
 
               {/* Gallery Navigation Arrows on Image (Desktop & Tablet) */}
@@ -351,7 +440,14 @@ export default function ProductDetails() {
                         : "border-[#e8dfd5] opacity-75 hover:opacity-100 hover:border-[#0d4f3c]/50"
                     }`}
                   >
-                    <img src={img} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={img}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                      }}
+                    />
                   </button>
                 ))}
               </div>
@@ -384,7 +480,7 @@ export default function ProductDetails() {
             {/* Category / Collection Tag & Rating */}
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="uppercase tracking-widest text-[10px] font-bold text-[#0d4f3c] bg-[#0d4f3c]/10 px-2.5 py-1 rounded-full">
-                {product?.category || "Festive Wear"} · {product?.color || "Surat Artisan"}
+                {product?.category || "Festive Wear"} · {displayColor}
               </span>
 
               <div className="flex items-center gap-1 text-xs text-[#786d65]">
@@ -404,7 +500,7 @@ export default function ProductDetails() {
                 {product?.name}
               </h1>
               <p className="text-xs text-[#8c827a] mt-1">
-                Atelier Handcrafted in Surat, Gujarat · Style Code: #{product?.id.toUpperCase()}
+                Atelier Handcrafted in Surat, Gujarat · Style Code: #{product?.id.toUpperCase()} · Edition: {displayColor}
               </p>
             </div>
 
@@ -412,16 +508,16 @@ export default function ProductDetails() {
             <div className="p-4 rounded-xl bg-white border border-[#e8dfd5] shadow-2xs">
               <div className="flex items-baseline gap-3 flex-wrap">
                 <span className="text-2xl sm:text-3xl font-bold text-[#0d4f3c] font-sans">
-                  {product?.price}
+                  {displayPrice}
                 </span>
-                {product?.originalPrice && (
+                {displayOriginalPrice && (
                   <del className="text-sm text-[#8c827a] font-normal">
-                    {product.originalPrice}
+                    {displayOriginalPrice}
                   </del>
                 )}
-                {product?.savings && (
+                {displaySavings && (
                   <span className="bg-[#fcf3dc] text-[#916212] text-xs font-bold px-2.5 py-0.5 rounded-full border border-[#f0dfaa]">
-                    {product.savings}
+                    {displaySavings}
                   </span>
                 )}
               </div>
@@ -431,11 +527,79 @@ export default function ProductDetails() {
               </p>
             </div>
 
+            {/* Independent Color Variant Selection Component */}
+            <div className="p-4 rounded-xl bg-white border border-[#e8dfd5] shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#2a241e] uppercase tracking-wider flex items-center gap-2">
+                  <Palette size={14} className="text-[#0d4f3c]" />
+                  <span>Select Color Variant:</span>
+                  <span className="text-[#0d4f3c] font-serif capitalize font-semibold text-sm">
+                    {displayColor}
+                  </span>
+                </label>
+                <span className="text-[11px] font-medium text-[#786d65]">
+                  {availableVariants.length} {availableVariants.length === 1 ? "edition" : "editions"}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {availableVariants.map((variant, idx) => {
+                  const isSelected = selectedColorIndex === idx;
+                  const vPrice = variant.price || product?.price;
+                  return (
+                    <button
+                      key={variant.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setSelectedColorIndex(idx);
+                        setActiveImageIndex(0);
+                      }}
+                      className={`group flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all border ${
+                        isSelected
+                          ? "bg-[#0d4f3c] text-white border-[#0d4f3c] shadow-sm font-semibold scale-[1.02]"
+                          : "bg-[#faf8f5] text-[#2a241e] border-[#d6ccc2] hover:border-[#0d4f3c]/60 hover:bg-white"
+                      }`}
+                      title={`Switch to ${variant.colorName}`}
+                    >
+                      {/* Swatch color dot */}
+                      <span
+                        className="w-4 h-4 rounded-full border border-black/20 shrink-0 flex items-center justify-center shadow-2xs transition-transform group-hover:scale-110"
+                        style={{ backgroundColor: variant.colorHex || "#0d4f3c" }}
+                      >
+                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
+                      </span>
+
+                      <span className="font-medium whitespace-nowrap">{variant.colorName}</span>
+
+                      {vPrice && vPrice !== displayPrice && !isSelected && (
+                        <span className="text-[10px] text-[#786d65] font-normal">
+                          ({vPrice})
+                        </span>
+                      )}
+
+                      {variant.inStock === false && (
+                        <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded-full ${isSelected ? "bg-red-500/20 text-red-200" : "bg-red-100 text-red-700"}`}>
+                          Out of stock
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {currentColorVariant && (
+                <div className="text-[11px] text-[#786d65] flex items-center justify-between pt-1 border-t border-[#f0eae1]">
+                  <span>Viewing {productImages.length} photos exclusively for <strong>{displayColor}</strong></span>
+                  <span className="text-[#0d4f3c] font-medium">Independent Edition</span>
+                </div>
+              )}
+            </div>
+
             {/* Editorial Description */}
             <div className="text-sm text-[#5a544c] leading-relaxed border-b border-[#e8dfd5] pb-4">
-              <p>{product?.description}</p>
+              <p>{displayDescription}</p>
               <p className="text-xs text-[#8c827a] mt-2 italic">
-                Woven on traditional Surat handlooms with heirloom finesse, this suit drapes with effortless regal poise for festive soirees and celebration dinners.
+                Woven on traditional Surat handlooms with heirloom finesse, this {displayColor} suit drapes with effortless regal poise for festive soirees and celebration dinners.
               </p>
             </div>
 
@@ -451,7 +615,7 @@ export default function ProductDetails() {
                 </span>
               </div>
               <p className="text-[#6b6257] leading-relaxed text-[11px]">
-                Complete 3-piece pure handloom unstitched set: <strong>2.5m Kurta length</strong>, <strong>2.5m Bottom length</strong>, and <strong>2.25m artisan Dupatta</strong>. Generous cuts ready to be tailored to your bespoke measurements.
+                Complete 3-piece pure handloom unstitched set in <strong>{displayFabric}</strong>: <strong>2.5m Kurta length</strong>, <strong>2.5m Bottom length</strong>, and <strong>2.25m artisan Dupatta</strong>. Generous cuts ready to be tailored to your bespoke measurements.
               </p>
             </div>
 
