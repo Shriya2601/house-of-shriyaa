@@ -848,6 +848,43 @@ export async function customerSignIn(email: string, pass: string): Promise<User>
   return finalUser;
 }
 
+export async function customerResetPassword(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+    throw new Error("Please provide a valid email address for the password reset link.");
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail);
+  } catch (err: any) {
+    if (err?.code === "auth/user-not-found") {
+      throw new Error("No patron account was found matching this email address. You may create a new account.");
+    } else if (err?.code === "auth/invalid-email") {
+      throw new Error("Please enter a valid email address format.");
+    } else if (err?.code === "auth/too-many-requests") {
+      throw new Error("Too many reset attempts. Please wait a few moments before trying again.");
+    } else {
+      throw new Error(err?.message || "Failed to send reset email. Please verify your details.");
+    }
+  }
+}
+
+export async function customerSignOut(): Promise<void> {
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.warn("Firebase signOut error:", e);
+  }
+  activeLocalCustomerUser = null;
+  try {
+    localStorage.removeItem("hos_customer_profile");
+    localStorage.removeItem("hos_customer_token");
+    localStorage.removeItem("hos_placed_orders");
+    localStorage.removeItem("hos_atelier_bookings");
+  } catch {}
+  broadcastAuthState(null);
+}
+
 export async function validateReferralCode(
   code: string,
   customerEmail?: string
@@ -885,23 +922,6 @@ export async function validateReferralCode(
   }
 
   return { valid: false, error: "Invalid referral code. Please check and re-enter." };
-}
-
-export async function customerSignOut(): Promise<void> {
-  try {
-    localStorage.removeItem("hos_customer_profile");
-    localStorage.removeItem("hos_customer_token");
-  } catch {}
-
-  try {
-    await signOut(auth);
-  } catch {}
-
-  broadcastAuthState(null);
-}
-
-export async function customerResetPassword(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim());
 }
 
 export async function fetchCustomerProfile(uid: string): Promise<CustomerProfile | null> {

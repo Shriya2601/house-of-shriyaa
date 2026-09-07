@@ -27,6 +27,10 @@ import {
   seedInitialProductsIfEmpty,
   fetchCustomerProfile,
   updateCustomerProfile as saveProfileToDb,
+  customerSignIn,
+  customerSignUp,
+  customerSignOut,
+  customerResetPassword,
 } from "../services/storeService";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -81,6 +85,17 @@ interface StoreContextType {
   bookAtelierSession: (
     bookingData: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
   ) => Promise<AtelierBooking>;
+  signIn: (email: string, pass: string) => Promise<User>;
+  signUp: (
+    email: string,
+    pass: string,
+    fullName: string,
+    phone?: string,
+    confirmPass?: string,
+    referralCode?: string
+  ) => Promise<User>;
+  signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 
   // Live CMS & Catalog Editing
   setSiteContent: React.Dispatch<React.SetStateAction<SiteContent>>;
@@ -298,6 +313,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     const updated = await saveProfileToDb(currentUser.uid, updates);
     setCustomerProfile(updated);
+  };
+
+  const handleSignIn = async (email: string, pass: string): Promise<User> => {
+    const user = await customerSignIn(email, pass);
+    setCurrentUser(user);
+    try {
+      const prof = await fetchCustomerProfile(user.uid);
+      if (prof) setCustomerProfile(prof);
+    } catch {}
+    await refreshCustomerOrders();
+    return user;
+  };
+
+  const handleSignUp = async (
+    email: string,
+    pass: string,
+    fullName: string,
+    phone?: string,
+    confirmPass?: string,
+    referralCode?: string
+  ): Promise<User> => {
+    const user = await customerSignUp(email, pass, fullName, phone, confirmPass, referralCode);
+    setCurrentUser(user);
+    try {
+      const prof = await fetchCustomerProfile(user.uid);
+      if (prof) setCustomerProfile(prof);
+    } catch {}
+    await refreshCustomerOrders();
+    return user;
+  };
+
+  const handleSignOut = async (): Promise<void> => {
+    await customerSignOut();
+    setCurrentUser(null);
+    setCustomerProfile(null);
+    setCustomerOrders([]);
+    setAtelierBookings([]);
+  };
+
+  const handleResetPassword = async (email: string): Promise<void> => {
+    await customerResetPassword(email);
   };
 
   // Subscribe to real-time Firestore content, products, and categories
@@ -627,6 +683,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         refreshCustomerOrders,
         updateProfileDetails,
         bookAtelierSession,
+        signIn: handleSignIn,
+        signUp: handleSignUp,
+        signOut: handleSignOut,
+        resetPassword: handleResetPassword,
         setSiteContent,
         setProducts,
         updateProduct,
