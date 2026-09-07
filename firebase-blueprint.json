@@ -96,6 +96,46 @@
         "productId": { "type": "string", "description": "Optional associated product ID" },
         "createdAt": { "type": "string", "description": "Upload ISO timestamp" }
       }
+    },
+    "admins": {
+      "title": "Admin Accounts & Roles",
+      "description": "Authenticated administrator accounts and role-based permissions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth unique identifier" },
+        "email": { "type": "string", "format": "email", "description": "Admin email address" },
+        "displayName": { "type": "string", "description": "Admin display name" },
+        "role": { "type": "string", "enum": ["superadmin", "admin", "manager"], "description": "Assigned administrative role" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
+        "lastLoginAt": { "type": "string", "description": "Most recent login ISO timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "admins",
+      "description": "Admin profile documents storing roles, email, and authentication metadata"
+    },
+    "/products/{productId}": {
+      "schema": "products",
+      "description": "Products catalog"
+    },
+    "/orders/{orderId}": {
+      "schema": "orders",
+      "description": "Customer and test orders"
+    },
+    "/site_content/{documentId}": {
+      "schema": "site_content",
+      "description": "Global CMS content"
+    },
+    "/categories/{categoryId}": {
+      "schema": "categories",
+      "description": "Product categories"
+    },
+    "/uploaded_assets/{assetId}": {
+      "schema": "uploaded_assets",
+      "description": "Uploaded image assets"
     }
   }
 }

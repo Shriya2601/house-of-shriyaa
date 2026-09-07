@@ -163,12 +163,16 @@ export interface Order {
   isTest?: boolean; // For keeping test and real orders strictly isolated
 }
 
+export type AdminRole = "superadmin" | "admin" | "manager" | "editor";
+
 export interface AdminProfile {
   uid: string;
   email: string;
   displayName: string;
-  role: "admin" | "superadmin" | "editor";
+  role: AdminRole;
   createdAt: string;
+  lastLoginAt?: string;
+  photoURL?: string;
 }
 
 export interface SavedAddress extends ShippingAddress {
