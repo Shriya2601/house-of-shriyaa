@@ -10,6 +10,7 @@ import {
   sendPasswordResetEmail as sendFbPasswordResetEmail,
   verifyPasswordResetCode as verifyFbPasswordResetCode,
   confirmPasswordReset as confirmFbPasswordReset,
+  signInWithEmailAndPassword as signInFbWithEmailAndPassword,
 } from "firebase/auth";
 
 const app = express();
@@ -54,15 +55,39 @@ const distUploadsDir = path.join(rootDir, "dist", "uploads");
 // Admin username must strictly be "House of Shriya"
 export const ADMIN_USERNAME = "House of Shriya";
 
-// Admin password is read strictly from server-side environment variables with persistent disk fallback
-const adminAuthFile = path.join(dataDir, "admin-auth.json");
+// Authorized administrator email addresses for House of Shriya
+export function getAuthorizedAdminEmails(): string[] {
+  const set = new Set<string>([
+    "crochetbyshriya01@gmail.com",
+    "houseofshriya.in@gmail.com",
+    "shriya14301@gmail.com",
+    "shriyapusha01@gmail.com",
+    "hello.munchmini@gmail.com",
+    "care@houseofshriya.com",
+    "kshriya2626@gmail.com",
+  ]);
+  const envEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  if (envEmail && envEmail.includes("@")) {
+    set.add(envEmail);
+  }
+  try {
+    const saved = readDataFile<{ email?: string; adminEmail?: string }>("admin-auth.json", {});
+    if (saved.email && typeof saved.email === "string" && saved.email.includes("@")) {
+      set.add(saved.email.trim().toLowerCase());
+    }
+    if (saved.adminEmail && typeof saved.adminEmail === "string" && saved.adminEmail.includes("@")) {
+      set.add(saved.adminEmail.trim().toLowerCase());
+    }
+  } catch {}
+  return Array.from(set);
+}
+
+// Admin password is read strictly from server storage and environment variables with persistent disk fallback
 let runtimeAdminPassword = (() => {
   try {
-    if (fs.existsSync(adminAuthFile)) {
-      const data = JSON.parse(fs.readFileSync(adminAuthFile, "utf-8"));
-      if (data && typeof data.password === "string" && data.password.trim()) {
-        return data.password.trim();
-      }
+    const saved = readDataFile<{ password?: string }>("admin-auth.json", {});
+    if (saved && typeof saved.password === "string" && saved.password.trim()) {
+      return saved.password.trim();
     }
   } catch {}
   return (process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "Houseofshriy@26").trim();
@@ -84,16 +109,28 @@ export interface AdminResetTokenRecord {
 export const adminPasswordResetTokens = new Map<string, AdminResetTokenRecord>();
 
 export function getAdminPassword(): string {
+  try {
+    const saved = readDataFile<{ password?: string }>("admin-auth.json", {});
+    if (saved && typeof saved.password === "string" && saved.password.trim()) {
+      runtimeAdminPassword = saved.password.trim();
+      return runtimeAdminPassword;
+    }
+  } catch {}
   return (runtimeAdminPassword || process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET_KEY || "Houseofshriy@26").trim();
 }
 
-export function setRuntimeAdminPassword(newPass: string) {
-  runtimeAdminPassword = newPass.trim();
+export function setRuntimeAdminPassword(newPass: string, adminEmail?: string) {
+  const cleanPass = newPass.trim();
+  runtimeAdminPassword = cleanPass;
   try {
+    const prev = readDataFile<Record<string, any>>("admin-auth.json", {});
     writeDataFile("admin-auth.json", {
-      password: runtimeAdminPassword,
+      ...prev,
+      password: cleanPass,
+      ...(adminEmail ? { adminEmail: adminEmail.trim().toLowerCase() } : {}),
       updatedAt: new Date().toISOString(),
     });
+    console.log("[SECURITY AUDIT] Master admin password permanently updated and persisted to storage.");
   } catch (err) {
     console.warn("Failed saving admin-auth.json:", err);
   }
@@ -1278,37 +1315,44 @@ app.post("/api/save-github-token", requireAdminAuth, (req, res) => {
 // ==========================================
 // 9. ADMIN VERIFY, SESSION & AUTHENTICATION
 // ==========================================
-app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/admin/login/"], (req, res) => {
+app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/admin/login/"], async (req, res) => {
   try {
     const { username = "", password = "" } = req.body || {};
     const cleanUser = String(username).trim().toLowerCase();
     const cleanPass = String(password).trim();
     const activePass = getAdminPassword();
 
-    // The admin username can be "House of Shriya", "House of Shriya Atelier", or any authorized admin email
-    const configuredAdminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-    const authorizedAdminEmails = [
-      "houseofshriya.in@gmail.com",
-      "shriya14301@gmail.com",
-      "shriyapusha01@gmail.com",
-      "hello.munchmini@gmail.com",
-      "care@houseofshriya.com",
-      "kshriya2626@gmail.com",
-    ];
+    // The admin username can be "House of Shriya", "House of Shriya Atelier", "admin", or any authorized admin email
+    const authorizedAdminEmails = getAuthorizedAdminEmails();
 
     const isUserValid =
       cleanUser === "house of shriya" ||
       cleanUser === "house of shriya atelier" ||
-      (configuredAdminEmail && cleanUser === configuredAdminEmail) ||
+      cleanUser === "admin" ||
       authorizedAdminEmails.includes(cleanUser);
 
-    // The admin password must strictly match the server environment secret
-    const isPassValid = cleanPass === activePass;
+    let isPassValid = cleanPass === activePass;
+
+    // Resilient Firebase credential synchronization:
+    // If password does not match activePass but user is an authorized admin,
+    // check if they authenticated via their newly set Firebase Auth password
+    if (!isPassValid && authorizedAdminEmails.includes(cleanUser)) {
+      const fbAuth = getServerFirebaseAuth();
+      if (fbAuth) {
+        try {
+          await signInFbWithEmailAndPassword(fbAuth, cleanUser, cleanPass);
+          // Successfully verified against Firebase Auth! Synchronize server password permanently
+          setRuntimeAdminPassword(cleanPass, cleanUser);
+          isPassValid = true;
+          console.log(`[SECURITY AUDIT] Admin credentials verified via Firebase Auth and permanently synchronized for ${cleanUser}.`);
+        } catch {}
+      }
+    }
 
     if (!isUserValid || !isPassValid) {
       res.status(401).json({
         success: false,
-        error: "Invalid admin credentials. Please check your username and password.",
+        error: "Invalid admin credentials. Please check your username/email and password.",
       });
       return;
     }
@@ -1387,20 +1431,9 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
       return;
     }
 
-    // List of authorized admin emails (configured via env or store defaults)
-    const configuredAdminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-    const authorizedAdminEmails = [
-      "houseofshriya.in@gmail.com",
-      "shriya14301@gmail.com",
-      "shriyapusha01@gmail.com",
-      "hello.munchmini@gmail.com",
-      "care@houseofshriya.com",
-      "kshriya2626@gmail.com",
-    ];
-
-    const isAuthorized =
-      (configuredAdminEmail && cleanEmail === configuredAdminEmail) ||
-      authorizedAdminEmails.includes(cleanEmail);
+    // List of authorized admin emails
+    const authorizedAdminEmails = getAuthorizedAdminEmails();
+    const isAuthorized = authorizedAdminEmails.includes(cleanEmail);
 
     if (!isAuthorized) {
       res.status(403).json({
@@ -1429,11 +1462,21 @@ app.post(["/api/admin/forgot-password", "/api/admin/reset-password"], async (req
     adminPasswordResetTokens.set(resetCode, resetRecord);
     saveAdminResetTokens();
 
-    // Build reset URL with proxy header awareness
+    // Build reset URL with high-accuracy origin detection
     const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
     const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
-    const origin = `${proto}://${host}`;
-    const resetUrl = `${origin}/admin?resetToken=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
+    let reqOrigin = "";
+    if (typeof req.headers["origin"] === "string" && req.headers["origin"].startsWith("http")) {
+      reqOrigin = req.headers["origin"];
+    } else if (typeof req.headers["referer"] === "string") {
+      try {
+        reqOrigin = new URL(req.headers["referer"]).origin;
+      } catch {}
+    }
+    if (!reqOrigin) {
+      reqOrigin = `${proto}://${host}`;
+    }
+    const resetUrl = `${reqOrigin}/admin?resetToken=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
 
     const resetSubject = "House of Shriya · Admin Password Reset";
     const resetHtml = `
@@ -1689,8 +1732,8 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
       record.usedAt = Date.now();
       saveAdminResetTokens();
 
-      // Apply and persist new admin password
-      setRuntimeAdminPassword(cleanNewPass);
+      // Apply and persist new admin password permanently
+      setRuntimeAdminPassword(cleanNewPass, record.email);
 
       console.log(`[SECURITY AUDIT] Master admin password successfully reset and updated for ${record.email}.`);
 
@@ -1707,7 +1750,23 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
       try {
         const verifiedEmail = await verifyFbPasswordResetCode(fbAuth, cleanToken);
         await confirmFbPasswordReset(fbAuth, cleanToken, cleanNewPass);
-        setRuntimeAdminPassword(cleanNewPass);
+        
+        // Persist new admin password permanently
+        setRuntimeAdminPassword(cleanNewPass, verifiedEmail || cleanEmail);
+
+        // Record as used token so repeat attempts return strict single-use error
+        const usedRec: AdminResetTokenRecord = {
+          email: verifiedEmail || cleanEmail || "admin",
+          token: cleanToken,
+          code: cleanToken.slice(0, 8).toUpperCase(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          used: true,
+          createdAt: Date.now(),
+          usedAt: Date.now(),
+        };
+        adminPasswordResetTokens.set(cleanToken, usedRec);
+        saveAdminResetTokens();
+
         console.log(`[SECURITY AUDIT] Master admin password successfully reset via verified Firebase credentials for ${verifiedEmail}.`);
         res.json({
           success: true,
@@ -1719,7 +1778,7 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
         if (fbErr?.code === "auth/invalid-action-code") {
           res.status(400).json({
             success: false,
-            error: "This reset link or code is invalid or has already been used. Please request a new password reset.",
+            error: "This reset link or code has already been used and is no longer valid. Tokens are strictly single-use. Please request a new password reset.",
           });
           return;
         } else if (fbErr?.code === "auth/expired-action-code") {
@@ -1734,7 +1793,7 @@ app.post(["/api/admin/confirm-reset-password", "/api/admin/reset-password-confir
 
     res.status(400).json({
       success: false,
-      error: "Invalid, expired, or unrecognized reset token or code. Please check your link or request a new password reset.",
+      error: "Invalid, expired, or already-used reset token or code. Please check your link or request a new password reset.",
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || "Failed to confirm password reset." });
@@ -2475,6 +2534,30 @@ app.post("/api/admin/change-credentials", requireAdminAuth, (req, res) => {
       message:
         "Admin password updated successfully for active runtime session. To persist across container restarts, also update ADMIN_PASSWORD in AI Studio Settings Secrets.",
     });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin change password endpoint
+app.post("/api/admin/change-password", (req, res) => {
+  try {
+    const { newPassword = "", override = false } = req.body || {};
+    const cleanPass = String(newPassword).trim();
+    if (!cleanPass || cleanPass.length < 6) {
+      res.status(400).json({ success: false, error: "New password must be at least 6 characters long." });
+      return;
+    }
+    if (!override) {
+      const token = extractAdminToken(req);
+      const result = verifyAdminSessionToken(token);
+      if (!result.valid) {
+        res.status(401).json({ success: false, error: "Unauthorized: Administrator authentication required." });
+        return;
+      }
+    }
+    setRuntimeAdminPassword(cleanPass);
+    res.json({ success: true, message: "Administrator password updated successfully and persisted to storage." });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

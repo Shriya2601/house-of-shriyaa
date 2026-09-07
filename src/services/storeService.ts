@@ -1473,6 +1473,14 @@ export async function adminResetPassword(
       };
     }
 
+    // If server returned an explicit error (e.g. unauthorized email), report it directly
+    if (data.error && !res.ok && (res.status === 403 || res.status === 400)) {
+      return {
+        success: false,
+        error: data.error,
+      };
+    }
+
     // Attempt client-side Firebase Auth dispatch as resilient direct fallback
     try {
       await sendPasswordResetEmail(auth, clean);
@@ -1538,7 +1546,7 @@ export async function adminConfirmResetPassword(
     }
 
     // If server returned a specific error (like single-use or expired token), return it directly
-    if (data.error && !data.error.includes("unrecognized reset token")) {
+    if (data.error && !data.error.includes("Invalid, expired, or unrecognized")) {
       return {
         success: false,
         error: data.error,

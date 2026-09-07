@@ -359,9 +359,27 @@ export default function Admin() {
     try {
       const res = await adminConfirmResetPassword(resetTokenParam, newResetPassword, authEmail);
       if (res.success) {
-        setAuthSuccess(res.message || "Password updated successfully! Please sign in with your new password.");
+        // Attempt automatic login with the newly confirmed password
+        try {
+          const autoLogin = await verifyAdminLogin(authUsername || authEmail || "House of Shriya", newResetPassword);
+          if (autoLogin.success) {
+            setAdminSession({ authenticated: true, username: autoLogin.username || "House of Shriya" });
+            setAuthSuccess("Password updated and verified! Welcome to the administrator portal.");
+            setAuthPassword("");
+            setResetTokenParam("");
+            setNewResetPassword("");
+            setConfirmResetPassword("");
+            try {
+              window.history.replaceState({}, document.title, window.location.pathname);
+              setSearchParams({});
+            } catch {}
+            return;
+          }
+        } catch {}
+
+        setAuthSuccess(res.message || "Password updated successfully! Please sign in with your new permanent password.");
         setAuthMode("signin");
-        setAuthPassword("");
+        setAuthPassword(newResetPassword);
         setResetTokenParam("");
         setNewResetPassword("");
         setConfirmResetPassword("");
