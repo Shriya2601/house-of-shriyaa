@@ -6,13 +6,14 @@ export async function onRequestOptions() {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
+      "Access-Control-Max-Age": "86400",
     },
   });
 }
 
 export async function onRequestGet() {
   return new Response(
-    JSON.stringify({ status: "ok", service: "upload-image", allowedMethods: ["POST", "PUT"] }),
+    JSON.stringify({ status: "ok", service: "upload-image", allowedMethods: ["POST", "PUT", "OPTIONS"] }),
     {
       status: 200,
       headers: {
@@ -31,6 +32,8 @@ export async function onRequestPost(context: { request: Request; env: Record<str
   const headers = new Headers({
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
   });
 
   try {
@@ -42,7 +45,7 @@ export async function onRequestPost(context: { request: Request; env: Record<str
     };
 
     if (!data.image || typeof data.image !== "string") {
-      return new Response(JSON.stringify({ error: "Missing image payload" }), {
+      return new Response(JSON.stringify({ error: "Missing or invalid image payload" }), {
         status: 400,
         headers,
       });
@@ -54,16 +57,43 @@ export async function onRequestPost(context: { request: Request; env: Record<str
     let ext = ".webp";
     if (data.image.startsWith("data:image/png")) ext = ".png";
     else if (data.image.startsWith("data:image/jpeg") || data.image.startsWith("data:image/jpg")) ext = ".jpg";
+    else if (data.image.startsWith("data:image/gif")) ext = ".gif";
 
-    const fileName = `${safeProd}_${timestamp}_${random}${ext}`;
+    const generatedFileName = data.fileName || `${safeProd}_${timestamp}_${random}${ext}`;
 
-    // Cloudflare edge worker returns the optimized base64 data URL or relative URL for persistence
+    // If Cloudflare R2 bucket is bound (e.g. UPLOADS_BUCKET or R2_BUCKET), persist to R2
+    const bucket = context.env.UPLOADS_BUCKET || context.env.R2_BUCKET;
+    let finalUrl = data.image.startsWith("data:") ? data.image : `/uploads/${generatedFileName}`;
+
+    if (bucket && typeof bucket.put === "function" && data.image.startsWith("data:")) {
+      try {
+        const parts = data.image.split(",");
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        const binaryStr = atob(parts[1]);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        await bucket.put(`uploads/${generatedFileName}`, bytes, {
+          httpMetadata: { contentType: mimeType },
+        });
+        const publicR2Domain = context.env.R2_PUBLIC_DOMAIN;
+        if (publicR2Domain) {
+          finalUrl = `https://${publicR2Domain}/uploads/${generatedFileName}`;
+        }
+      } catch (r2Err) {
+        console.warn("R2 upload fallback to inline data URL:", r2Err);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
-        url: data.image.startsWith("data:") ? data.image : `/uploads/${fileName}`,
-        fileName,
-        message: "Image processed successfully",
+        url: finalUrl,
+        fileName: generatedFileName,
+        message: "Image uploaded and processed successfully",
       }),
       { status: 200, headers }
     );
@@ -74,3 +104,18 @@ export async function onRequestPost(context: { request: Request; env: Record<str
     );
   }
 }
+
+// Universal handler fallback to guarantee execution on all Cloudflare runtime dispatcher variants
+export const onRequest = async (context: { request: Request; env: Record<string, any> }) => {
+  const method = context.request.method.toUpperCase();
+  if (method === "OPTIONS") return onRequestOptions();
+  if (method === "GET") return onRequestGet();
+  if (method === "POST" || method === "PUT") return onRequestPost(context);
+  return new Response(JSON.stringify({ error: `Method ${method} not allowed` }), {
+    status: 405,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+};
