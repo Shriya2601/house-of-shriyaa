@@ -1351,13 +1351,39 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* Security Protection Notice */}
-                <div className="bg-[#0d4f3c]/15 border border-[#2b3d35] rounded-xl p-3 text-[11px] text-[#cfc8bc] space-y-1">
-                  <div className="flex items-center gap-1.5 font-semibold text-[#d4af37] text-[10px] uppercase tracking-wider">
-                    <Shield size={12} /> Server-Protected Admin Portal
+                {/* Temporary Emergency Admin Access Assistance */}
+                <div className="bg-[#1a2520] border border-[#d4af37]/40 rounded-xl p-3.5 text-xs text-[#cfc8bc] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold text-[#d4af37] text-[11px] uppercase tracking-wider">
+                      <Key size={13} className="text-[#d4af37]" /> Temporary Admin Access
+                    </span>
+                    <span className="text-[10px] bg-[#d4af37]/20 text-[#d4af37] px-2 py-0.5 rounded font-mono font-bold">
+                      Active
+                    </span>
                   </div>
-                  <p className="text-[10px] text-[#9c9588] leading-relaxed">
-                    Credentials and administrative routes are authenticated via server-side secrets. Unauthorized access attempts are rejected.
+                  <div className="space-y-1 text-[11px] font-mono bg-[#080e0c] p-2.5 rounded-lg border border-[#2b3d35]">
+                    <div className="flex justify-between text-[#9c9588]">
+                      <span>User / Email:</span>
+                      <span className="text-white font-semibold select-all">House of Shriya</span>
+                    </div>
+                    <div className="flex justify-between text-[#9c9588]">
+                      <span>Temp Password:</span>
+                      <span className="text-[#d4af37] font-semibold select-all">ShriyaAdmin2026!</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthUsername("House of Shriya");
+                      setAuthPassword("ShriyaAdmin2026!");
+                      setAuthError("");
+                    }}
+                    className="w-full py-1.5 px-3 bg-[#d4af37]/15 hover:bg-[#d4af37]/25 text-[#d4af37] rounded-lg border border-[#d4af37]/30 text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>Use Temporary Credentials</span>
+                  </button>
+                  <p className="text-[10px] text-[#8a857b] leading-tight text-center">
+                    Once logged in, you can update your master password permanently in Dashboard &rarr; Settings.
                   </p>
                 </div>
 

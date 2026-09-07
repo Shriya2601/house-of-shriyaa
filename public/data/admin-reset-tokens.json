@@ -31,5 +31,22 @@
     "used": true,
     "createdAt": 1788737202230,
     "usedAt": 1788737217500
+  },
+  {
+    "email": "crochetbyshriya01@gmail.com",
+    "token": "033465049d575acdc88fa2c0f35ca45c7d2605aad9749214b6f0352199a4a99b",
+    "code": "03346504",
+    "expiresAt": 1788763632303,
+    "used": false,
+    "createdAt": 1788760032303
+  },
+  {
+    "email": "crochetbyshriya01@gmail.com",
+    "token": "9ee55469c8421903d46a0cd37c5b440469a02d18d3029648d83971bf4c50545f",
+    "code": "9EE55469",
+    "expiresAt": 1788763936710,
+    "used": true,
+    "createdAt": 1788760336710,
+    "usedAt": 1788760350455
   }
 ]
