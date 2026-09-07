@@ -958,3 +958,277 @@ export async function updateCustomerProfile(uid: string, updates: Partial<Custom
     await setDoc(docRef, { ...updates, updatedAt: new Date().toISOString() }, { merge: true });
   } catch {}
 }
+
+/* ============================================================
+   ADMIN PORTAL AUTHENTICATION & BOOKING/ORDER MANAGEMENT
+============================================================ */
+
+export const ADMIN_EMAIL = "houseofshriya.in@gmail.com";
+export const ADMIN_FALLBACK_PASS = "Houseofshriy@26";
+
+export function isAdminSessionValid(): boolean {
+  if (auth.currentUser && auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    return true;
+  }
+  try {
+    const raw = localStorage.getItem("hos_admin_session");
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+export async function adminLogin(email: string, pass: string): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (cleanEmail !== ADMIN_EMAIL.toLowerCase()) {
+    throw new Error("Access Restricted: Only authorized House of Shriya atelier administrators may sign in here.");
+  }
+
+  let user: User | null = null;
+  try {
+    const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+    user = cred.user;
+  } catch (err: any) {
+    if (
+      (err?.code === "auth/user-not-found" ||
+        err?.code === "auth/invalid-credential" ||
+        err?.code === "auth/wrong-password") &&
+      pass === ADMIN_FALLBACK_PASS
+    ) {
+      try {
+        const createCred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+        user = createCred.user;
+        await updateProfile(user, { displayName: "House of Shriya Admin" });
+      } catch {
+        user = createSyntheticCustomerUser("admin_hos_root", cleanEmail, "House of Shriya Admin");
+      }
+    } else {
+      if (pass === ADMIN_FALLBACK_PASS) {
+        user = createSyntheticCustomerUser("admin_hos_root", cleanEmail, "House of Shriya Admin");
+      } else {
+        throw new Error(err?.message || "Invalid administrator credentials.");
+      }
+    }
+  }
+
+  if (!user) {
+    throw new Error("Could not verify administrator identity.");
+  }
+
+  try {
+    localStorage.setItem(
+      "hos_admin_session",
+      JSON.stringify({
+        email: cleanEmail,
+        timestamp: Date.now(),
+        displayName: "House of Shriya Admin",
+      })
+    );
+  } catch {}
+
+  broadcastAuthState(user);
+  return user;
+}
+
+export async function adminLogout(): Promise<void> {
+  try {
+    localStorage.removeItem("hos_admin_session");
+  } catch {}
+  try {
+    await signOut(auth);
+  } catch {}
+  broadcastAuthState(null);
+}
+
+export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
+  let list: AtelierBooking[] = [];
+  try {
+    const local = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    list = local;
+  } catch {}
+
+  try {
+    const colRef = collection(db, "bookings");
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AtelierBooking));
+      const seen = new Set<string>();
+      const combined: AtelierBooking[] = [];
+      for (const b of [...remote, ...list]) {
+        const key = b.bookingNumber || b.id;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(b);
+        }
+      }
+      combined.sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      try {
+        localStorage.setItem("hos_atelier_bookings", JSON.stringify(combined));
+      } catch {}
+      return combined;
+    }
+  } catch (e) {
+    console.warn("Firestore adminFetchAllBookings fetch error:", e);
+  }
+
+  return list;
+}
+
+export async function adminUpdateBooking(
+  bookingId: string,
+  updates: Partial<AtelierBooking>
+): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    const local: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    const idx = local.findIndex((b) => b.id === bookingId || b.bookingNumber === bookingId);
+    if (idx > -1) {
+      local[idx] = { ...local[idx], ...updates, updatedAt: now };
+      localStorage.setItem("hos_atelier_bookings", JSON.stringify(local));
+    }
+  } catch {}
+
+  try {
+    const docRef = doc(db, "bookings", bookingId);
+    await updateDoc(docRef, { ...updates, updatedAt: now });
+  } catch (e) {
+    console.warn("Firestore adminUpdateBooking error:", e);
+  }
+}
+
+export async function adminDeleteBooking(bookingId: string): Promise<void> {
+  try {
+    const local: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    const filtered = local.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
+    localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
+  } catch {}
+
+  try {
+    const docRef = doc(db, "bookings", bookingId);
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.warn("Firestore adminDeleteBooking error:", e);
+  }
+}
+
+export async function adminCreateAtelierBooking(
+  bookingInput: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt">
+): Promise<AtelierBooking> {
+  const now = new Date();
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const bookingNumber = `ATELIER-ADM-${now.getFullYear().toString().slice(-2)}${(now.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${randomSuffix}`;
+  const bookingId = `book_adm_${Date.now()}_${randomSuffix}`;
+
+  const booking: AtelierBooking = {
+    ...bookingInput,
+    id: bookingId,
+    bookingNumber,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  try {
+    const local = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    localStorage.setItem("hos_atelier_bookings", JSON.stringify([booking, ...local]));
+  } catch {}
+
+  try {
+    const bookingRef = doc(db, "bookings", bookingId);
+    await setDoc(bookingRef, booking, { merge: true });
+  } catch (e) {
+    console.warn("Firestore adminCreateAtelierBooking error:", e);
+  }
+
+  window.dispatchEvent(new CustomEvent("hos-booking-created", { detail: booking }));
+  return booking;
+}
+
+export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Order> {
+  const now = new Date();
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  const orderNumber =
+    orderInput.orderNumber || `HOS-ADM-${now.getFullYear().toString().slice(-2)}${randomNum}`;
+  const orderId = orderInput.id || `order_adm_${Date.now()}_${randomNum}`;
+
+  const order: Order = {
+    id: orderId,
+    orderNumber,
+    customer: orderInput.customer || {
+      fullName: "Walk-in / Direct Patron",
+      email: "atelier.order@houseofshriya.in",
+      phone: "9501698356",
+    },
+    shippingAddress: orderInput.shippingAddress || {
+      addressLine1: "Atelier Studio / Direct Pickup",
+      city: "Ludhiana",
+      state: "Punjab",
+      pincode: "141001",
+    },
+    items: orderInput.items || [],
+    subtotal: orderInput.subtotal || 0,
+    shippingFee: orderInput.shippingFee || 0,
+    total: orderInput.total || (orderInput.subtotal || 0) + (orderInput.shippingFee || 0),
+    paymentMethod: orderInput.paymentMethod || "Instant UPI / NetBanking",
+    paymentStatus: orderInput.paymentStatus || "Paid",
+    orderStatus: orderInput.orderStatus || "confirmed",
+    trackingCourier: orderInput.trackingCourier,
+    trackingNumber: orderInput.trackingNumber,
+    notes: orderInput.notes || "Booked directly via House of Shriya Admin Portal",
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  const current = getCachedOrders();
+  cacheOrdersLocally([order, ...current]);
+
+  try {
+    const docRef = doc(db, "orders", orderId);
+    await setDoc(docRef, order, { merge: true });
+  } catch (e) {
+    console.warn("Firestore adminCreateOrder error:", e);
+  }
+
+  window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: order }));
+  return order;
+}
+
+export async function adminUpdateOrder(
+  orderId: string,
+  updates: Partial<Order>
+): Promise<void> {
+  const now = new Date().toISOString();
+  const current = getCachedOrders();
+  const idx = current.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+  if (idx > -1) {
+    current[idx] = { ...current[idx], ...updates, updatedAt: now };
+    cacheOrdersLocally(current);
+  }
+
+  try {
+    const docRef = doc(db, "orders", orderId);
+    await updateDoc(docRef, { ...updates, updatedAt: now });
+  } catch (e) {
+    console.warn("Firestore adminUpdateOrder error:", e);
+  }
+}
+
+export async function adminDeleteOrder(orderId: string): Promise<void> {
+  const current = getCachedOrders();
+  const filtered = current.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
+  cacheOrdersLocally(filtered);
+
+  try {
+    const docRef = doc(db, "orders", orderId);
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.warn("Firestore adminDeleteOrder error:", e);
+  }
+}

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import ProductDetails from "./pages/ProductDetails";
 import InfoPage from "./pages/InfoPage";
+import AdminPortal from "./pages/AdminPortal";
 import NotFound from "./pages/NotFound";
 import { StoreProvider } from "./context/StoreContext";
 import { EditModeProvider } from "./components/editmode";
@@ -19,6 +20,7 @@ export default function App() {
           <PookieChatbot />
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/admin" element={<AdminPortal />} />
             <Route path="/product/:id" element={<ProductDetails />} />
             <Route path="/our-story" element={<InfoPage path="/our-story" />} />
             <Route path="/craftsmanship" element={<InfoPage path="/craftsmanship" />} />

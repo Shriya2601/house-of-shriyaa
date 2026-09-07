@@ -6,54 +6,61 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Site Content & CMS: Publicly readable
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'houseofshriya.in@gmail.com' ||
+        request.auth.token.email.matches('(?i)houseofshriya\\.in@gmail\\.com')
+      );
+    }
+
+    // Site Content & CMS: Publicly readable, admin writable
     match /site_content/{documentId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // Products Catalog: Publicly readable
+    // Products Catalog: Publicly readable, admin writable
     match /products/{productId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // Categories & Taxonomy: Publicly readable
+    // Categories & Taxonomy: Publicly readable, admin writable
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // Customer Profiles: Registered patrons can read and update their own profile
+    // Customer Profiles: Registered patrons can read and update their own profile; admin has full access
     match /customers/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow read, write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       // Allow fallback create during first sign-up
       allow create: if isSignedIn();
 
       // Subcollection for user-specific bookings & order receipts
       match /bookings/{bookingId} {
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
+        allow read, write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       }
     }
 
-    // Orders & Ensemble Bookings: Customers can place orders, track them, and read their own
+    // Orders & Ensemble Bookings: Customers can place orders, track them, and read their own; admin can manage all
     match /orders/{orderId} {
       allow create: if request.resource.data != null;
       allow read: if true; // Allows order tracking by order number & customer order history
-      allow update, delete: if isSignedIn() && (
+      allow update, delete: if isAdmin() || (isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         resource.data.customer.email == request.auth.token.email
-      );
+      ));
     }
 
-    // Atelier & Consultation Bookings: Patrons can book atelier visits and view their appointments
+    // Atelier & Consultation Bookings: Patrons can book atelier visits and view their appointments; admin can manage all
     match /bookings/{bookingId} {
       allow create: if request.resource.data != null;
       allow read: if true; // Allows booking reference verification
-      allow update, delete: if isSignedIn() && (
+      allow update, delete: if isAdmin() || (isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         resource.data.email == request.auth.token.email
-      );
+      ));
     }
 
     // Default fallback: Deny all unmatched collections

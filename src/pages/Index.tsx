@@ -29,6 +29,7 @@ import {
   Home,
   Info,
   Layers,
+  Lock,
   LogOut,
   Mail,
   MapPin,
@@ -2863,6 +2864,13 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
               >
                 <BuilderText as="span" text="Contact Us" />
               </button>
+              <Link
+                to="/admin"
+                className="text-left text-[#faf8f5]/50 hover:text-[#d4af37] transition-colors text-[11px] block mt-1"
+                title="Atelier Administration Portal"
+              >
+                <BuilderText as="span" text="Admin Portal" />
+              </Link>
             </div>
             <div>
               <BuilderText as="strong" text="Stay in the know" />
@@ -2874,9 +2882,19 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
             </div>
           </div>
         </div>
-        <div className="footer-bottom">
+        <div className="footer-bottom flex flex-wrap items-center justify-between gap-2">
           <BuilderText as="span" text={siteContent?.footerNote ? siteContent.footerNote.replace(/\s*·?\s*(?:SURAT|WORLDWIDE SHIPPING).*$/i, "").trim() : "© House of Shriya. Made for your forever wardrobe."} />
-          <BuilderText as="span" text={`${siteContent?.atelierCity || "Surat, Gujarat, India"} · Worldwide Shipping`} />
+          <div className="flex items-center gap-3">
+            <BuilderText as="span" text={`${siteContent?.atelierCity || "Surat, Gujarat, India"} · Worldwide Shipping`} />
+            <Link
+              to="/admin"
+              className="text-[#faf8f5]/40 hover:text-[#d4af37] text-[11px] inline-flex items-center gap-1 transition-colors"
+              title="Atelier Admin Portal"
+            >
+              <Lock size={10} />
+              <span>Admin</span>
+            </Link>
+          </div>
         </div>
       </div>
     </footer>
