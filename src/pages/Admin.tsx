@@ -85,6 +85,9 @@ import {
   setStoredAdminSession,
   clearStoredAdminSession,
   defaultSiteContent,
+  AdminAuthAuditLog,
+  subscribeAdminAuditLogs,
+  fetchAdminAuditLogs,
 } from "../services/storeService";
 import { User } from "firebase/auth";
 import { ProductImageUploader } from "../components/admin/ProductImageUploader";
@@ -197,8 +200,31 @@ export default function Admin() {
   const [cmsSaving, setCmsSaving] = useState(false);
   const [cmsSaveNotice, setCmsSaveNotice] = useState("");
 
+  // Audit Logs State
+  const [auditLogs, setAuditLogs] = useState<AdminAuthAuditLog[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
+
   const isAuthenticated = Boolean(adminSession?.authenticated);
   const currentAdminName = adminSession?.username || "House of Shriya";
+
+  useEffect(() => {
+    if (adminSession?.authenticated) {
+      const unsub = subscribeAdminAuditLogs((logs) => {
+        setAuditLogs(logs);
+      });
+      return () => unsub();
+    }
+  }, [adminSession?.authenticated]);
+
+  const reloadAuditLogs = async () => {
+    setLoadingAuditLogs(true);
+    try {
+      const logs = await fetchAdminAuditLogs(50);
+      setAuditLogs(logs);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
 
   // Validate active admin session with backend on mount
   useEffect(() => {
@@ -4747,6 +4773,129 @@ export default function Admin() {
                   <p>
                     Passwords are salted with a cryptographic hex salt and digested using 256-bit SHA algorithms before persisting in Firestore. If you ever update credentials, the change applies immediately to all future logins.
                   </p>
+                </div>
+              </div>
+
+              {/* Authentication Audit Trail Card */}
+              <div className="bg-white p-5 rounded-2xl border border-[#e5ded6] shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#f0eae1]">
+                  <div>
+                    <h3 className="font-serif font-bold text-base text-[#1e1b18] flex items-center gap-2">
+                      <Shield size={18} className="text-[#0d4f3c]" />
+                      <span>Authentication Audit Trail</span>
+                    </h3>
+                    <p className="text-xs text-[#6b6257]">
+                      Real-time audit log of all administrator login attempts recorded in Cloud Firestore collection <code className="bg-[#faf8f5] px-1.5 py-0.5 rounded border border-[#e5ded6] text-[#0d4f3c] font-mono text-[10px]">admin_audit_logs</code>.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={reloadAuditLogs}
+                    disabled={loadingAuditLogs}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#faf8f5] hover:bg-[#f0eae1] border border-[#d6ccc2] rounded-xl text-xs font-bold text-[#1e1b18] transition-colors"
+                  >
+                    <RefreshCw size={13} className={loadingAuditLogs ? "animate-spin" : ""} />
+                    <span>{loadingAuditLogs ? "Refreshing..." : "Refresh Logs"}</span>
+                  </button>
+                </div>
+
+                {/* Summary Metric Chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 bg-[#faf8f5] border border-[#e5ded6] rounded-xl text-xs">
+                    <span className="text-[10px] uppercase font-bold text-[#8c8275] block mb-0.5">Total Logs</span>
+                    <span className="text-base font-bold text-[#1e1b18] font-mono">{auditLogs.length}</span>
+                  </div>
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl text-xs">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block mb-0.5">Successful Logins</span>
+                    <span className="text-base font-bold text-emerald-700 font-mono">
+                      {auditLogs.filter((l) => l.status === "SUCCESS").length}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-rose-50/60 border border-rose-200 rounded-xl text-xs">
+                    <span className="text-[10px] uppercase font-bold text-rose-800 block mb-0.5">Access Denied / Failed</span>
+                    <span className="text-base font-bold text-rose-700 font-mono">
+                      {auditLogs.filter((l) => l.status === "FAILURE").length}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs">
+                    <span className="text-[10px] uppercase font-bold text-amber-800 block mb-0.5">Privacy &amp; Passwords</span>
+                    <span className="text-[11px] font-bold text-amber-900 block leading-tight">Excluded from logs</span>
+                  </div>
+                </div>
+
+                {/* Audit Logs Table / List */}
+                {auditLogs.length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-[#d6ccc2] rounded-xl bg-[#faf8f5]">
+                    <Shield size={24} className="mx-auto text-[#8c8275] mb-2 opacity-50" />
+                    <p className="text-xs text-[#6b6257] font-medium">No audit logs recorded yet.</p>
+                    <p className="text-[10px] text-[#8c8275]">Authentication attempts will appear here automatically.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-[#e5ded6]">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-[#faf8f5] text-[#8c8275] text-[10px] uppercase tracking-wider border-b border-[#e5ded6]">
+                          <th className="py-2.5 px-3 font-bold">Timestamp</th>
+                          <th className="py-2.5 px-3 font-bold">Status</th>
+                          <th className="py-2.5 px-3 font-bold">Identifier / User</th>
+                          <th className="py-2.5 px-3 font-bold">Method</th>
+                          <th className="py-2.5 px-3 font-bold">Audit Reason</th>
+                          <th className="py-2.5 px-3 font-bold">Client IP</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#f0eae1]">
+                        {auditLogs.map((log, idx) => (
+                          <tr key={log.id || idx} className="hover:bg-[#faf8f5]/60 transition-colors">
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#6b6257] whitespace-nowrap">
+                              {new Date(log.timestampMs || log.timestamp).toLocaleString("en-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              {log.status === "SUCCESS" ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <CheckCircle2 size={11} className="text-emerald-600" />
+                                  SUCCESS
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                  <XCircle size={11} className="text-rose-600" />
+                                  ACCESS DENIED
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-[#1e1b18] whitespace-nowrap">
+                              {log.attemptedIdentifier}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[10px] text-[#6b6257] whitespace-nowrap">
+                              <span className="bg-[#faf8f5] px-1.5 py-0.5 rounded border border-[#e5ded6]">
+                                {log.authMethod}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-[#1e1b18] max-w-xs break-words">
+                              {log.reason}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[10px] text-[#8c8275] whitespace-nowrap">
+                              {log.ipAddress}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="bg-[#faf8f5] p-3 rounded-xl border border-[#e5ded6] text-[11px] text-[#6b6257] flex items-center justify-between">
+                  <span>
+                    Security Governance: Audit events are synchronized to Firestore <code className="text-[#0d4f3c] font-mono">admin_audit_logs</code>.
+                  </span>
+                  <span className="text-[10px] text-[#8c8275]">
+                    Showing latest {auditLogs.length} attempts
+                  </span>
                 </div>
               </div>
             </div>

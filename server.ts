@@ -12,6 +12,15 @@ import {
   confirmPasswordReset as confirmFbPasswordReset,
   signInWithEmailAndPassword as signInFbWithEmailAndPassword,
 } from "firebase/auth";
+import {
+  getFirestore as getFbFirestore,
+  collection as fbCollection,
+  addDoc as fbAddDoc,
+  getDocs as fbGetDocs,
+  query as fbQuery,
+  orderBy as fbOrderBy,
+  limit as fbLimit,
+} from "firebase/firestore";
 
 const app = express();
 const PORT = 3000;
@@ -356,6 +365,123 @@ export function getServerFirebaseAuth(): any {
     console.warn("Notice: Server Firebase Auth initialization error:", err);
   }
   return null;
+}
+
+// Server-side Firestore Singleton helper for secure audit logging and data sync
+let serverFirestoreInstance: any = null;
+export function getServerFirestore(): any {
+  if (serverFirestoreInstance) {
+    return serverFirestoreInstance;
+  }
+  try {
+    const configPath = path.join(rootDir, "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      const app = getFbApps().length > 0 ? getFbApp() : initFbApp(config);
+      serverFirestoreInstance = config.firestoreDatabaseId
+        ? getFbFirestore(app, config.firestoreDatabaseId)
+        : getFbFirestore(app);
+      return serverFirestoreInstance;
+    }
+  } catch (err) {
+    console.warn("Notice: Server Firestore initialization error:", err);
+  }
+  return null;
+}
+
+export interface AdminAuthAuditRecord {
+  id?: string;
+  timestamp: string; // ISO 8601 string
+  timestampMs: number;
+  attemptedIdentifier: string; // username or email (NEVER password)
+  status: "SUCCESS" | "FAILURE";
+  reason: string;
+  failureCategory?: string;
+  authMethod: string;
+  ipAddress: string;
+  userAgent: string;
+}
+
+export async function recordAdminAuthAudit(
+  data: Omit<AdminAuthAuditRecord, "timestamp" | "timestampMs">
+): Promise<AdminAuthAuditRecord> {
+  const timestampMs = Date.now();
+  const timestamp = new Date(timestampMs).toISOString();
+  const entry: AdminAuthAuditRecord = {
+    ...data,
+    timestamp,
+    timestampMs,
+  };
+
+  // 1. Console security audit message (explicitly excluding passwords)
+  const prefix = entry.status === "SUCCESS" ? "✅ [AUTH AUDIT SUCCESS]" : "❌ [AUTH AUDIT FAILURE]";
+  console.log(`${prefix} ${timestamp} | Identifier: "${entry.attemptedIdentifier}" | Method: ${entry.authMethod} | Status: ${entry.status} | Reason: ${entry.reason} | IP: ${entry.ipAddress}`);
+
+  // 2. Persist locally to src/data/admin-audit-logs.json and public/data/admin-audit-logs.json
+  try {
+    const existing = readDataFile<AdminAuthAuditRecord[]>("admin-audit-logs.json", []);
+    const updated = [entry, ...existing.slice(0, 199)];
+    writeDataFile("admin-audit-logs.json", updated);
+  } catch (err) {
+    console.warn("Local audit log save warning:", err);
+  }
+
+  // 3. Persist to Firestore collection "admin_audit_logs"
+  try {
+    const db = getServerFirestore();
+    if (db) {
+      const docData: Record<string, any> = {
+        timestamp,
+        timestampMs,
+        attemptedIdentifier: entry.attemptedIdentifier || "anonymous",
+        status: entry.status,
+        reason: entry.reason,
+        authMethod: entry.authMethod || "UNKNOWN",
+        ipAddress: entry.ipAddress || "unknown",
+        userAgent: entry.userAgent || "unknown",
+      };
+      if (entry.failureCategory) {
+        docData.failureCategory = entry.failureCategory;
+      }
+      const addDocPromise = fbAddDoc(fbCollection(db, "admin_audit_logs"), docData);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Firestore write timeout")), 3000)
+      );
+      const docRef: any = await Promise.race([addDocPromise, timeoutPromise]);
+      entry.id = docRef.id;
+      console.log(`[AUTH AUDIT] Stored audit record ${docRef.id} in Firestore collection "admin_audit_logs"`);
+    }
+  } catch (err) {
+    console.warn("[AUTH AUDIT] Notice: Could not write directly to Firestore (retained in local persistent store):", err);
+  }
+
+  return entry;
+}
+
+export async function getAdminAuthAuditLogs(limitCount = 50): Promise<AdminAuthAuditRecord[]> {
+  // First try fetching from Firestore collection
+  try {
+    const db = getServerFirestore();
+    if (db) {
+      const q = fbQuery(fbCollection(db, "admin_audit_logs"), fbOrderBy("timestampMs", "desc"), fbLimit(limitCount));
+      const getDocsPromise = fbGetDocs(q);
+      const timeoutPromise = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error("Firestore read timeout")), 3000)
+      );
+      const snap: any = await Promise.race([getDocsPromise, timeoutPromise]);
+      if (snap && !snap.empty) {
+        return snap.docs.map((doc: any) => ({
+          id: doc.id,
+          ...doc.data(),
+        } as AdminAuthAuditRecord));
+      }
+    }
+  } catch (err) {
+    console.warn("Notice: Fetching audit logs from Firestore fallback to local file:", err);
+  }
+
+  // Fallback to local persistent records
+  return readDataFile<AdminAuthAuditRecord[]>("admin-audit-logs.json", []).slice(0, limitCount);
 }
 
 // Ensure Git repository config
@@ -1338,17 +1464,48 @@ app.post("/api/save-github-token", requireAdminAuth, (req, res) => {
 // 9. ADMIN VERIFY, SESSION & AUTHENTICATION
 // ==========================================
 app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/admin/login/"], async (req, res) => {
+  const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1";
+  const userAgent = (req.headers["user-agent"] as string) || "unknown";
+
   try {
     const { username = "", password = "" } = req.body || {};
     const cleanUser = String(username).trim().toLowerCase();
     const cleanPass = String(password).trim();
     const activePass = getAdminPassword();
 
+    if (!cleanUser || !cleanPass) {
+      await recordAdminAuthAudit({
+        attemptedIdentifier: cleanUser || "(blank)",
+        status: "FAILURE",
+        reason: "Access Denied: Missing username or password field in request.",
+        failureCategory: "EMPTY_CREDENTIALS",
+        authMethod: "UNKNOWN",
+        ipAddress,
+        userAgent,
+      });
+      res.status(400).json({
+        success: false,
+        error: "Both username/email and password are required.",
+      });
+      return;
+    }
+
     // The admin username can be "House of Shriya", "House of Shriya Atelier", "admin", or any authorized admin email
     const authorizedAdminEmails = getAuthorizedAdminEmails();
 
     // 1. First check if password matches active master, temp, reset, or environment records
     let isPassValid = isValidAdminPassword(cleanPass);
+    let authMethod = "UNKNOWN";
+
+    if (isPassValid) {
+      if (cleanPass === activePass || cleanPass === (process.env.ADMIN_PASSWORD || "").trim()) {
+        authMethod = "MASTER_KEY";
+      } else if (cleanPass === "ShriyaAdmin2026!" || cleanPass === "ShriyaAdminPass2026!") {
+        authMethod = "TEMP_KEY";
+      } else {
+        authMethod = "STORED_CREDENTIALS";
+      }
+    }
 
     // 2. Resilient Firebase credential synchronization:
     // If candidate password is not yet recognized on server, verify against Firebase Auth
@@ -1362,10 +1519,15 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
 
         for (const testEmail of candidateEmails) {
           try {
-            await signInFbWithEmailAndPassword(fbAuth, testEmail, cleanPass);
+            const signInPromise = signInFbWithEmailAndPassword(fbAuth, testEmail, cleanPass);
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Auth timeout")), 2500)
+            );
+            await Promise.race([signInPromise, timeoutPromise]);
             // Successfully verified against Firebase Auth! Synchronize server password permanently
             setRuntimeAdminPassword(cleanPass, testEmail);
             isPassValid = true;
+            authMethod = "FIREBASE_AUTH";
             console.log(`[SECURITY AUDIT] Admin credentials verified via Firebase Auth and permanently synchronized for ${testEmail}.`);
             break;
           } catch {}
@@ -1395,13 +1557,49 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     // If password is authenticated, accept any non-empty username or known identifier
     const isUserValid = (isPassValid && cleanUser.length > 0) || isKnownAdminNameOrEmail;
 
-    if (!isUserValid || !isPassValid) {
+    if (!isPassValid) {
+      await recordAdminAuthAudit({
+        attemptedIdentifier: cleanUser,
+        status: "FAILURE",
+        reason: `Access Denied: Password mismatch for identifier "${cleanUser}". Verified against master key, temporary key, and Firebase Auth.`,
+        failureCategory: "INVALID_PASSWORD",
+        authMethod: "UNKNOWN",
+        ipAddress,
+        userAgent,
+      });
       res.status(401).json({
         success: false,
         error: "Invalid admin credentials. Please check your username/email and password.",
       });
       return;
     }
+
+    if (!isUserValid) {
+      await recordAdminAuthAudit({
+        attemptedIdentifier: cleanUser,
+        status: "FAILURE",
+        reason: `Access Denied: Identifier "${cleanUser}" is not recognized as an authorized administrator account.`,
+        failureCategory: "UNKNOWN_IDENTIFIER",
+        authMethod,
+        ipAddress,
+        userAgent,
+      });
+      res.status(401).json({
+        success: false,
+        error: "Invalid admin credentials. Please check your username/email and password.",
+      });
+      return;
+    }
+
+    // Record successful authentication audit (NEVER includes password)
+    await recordAdminAuthAudit({
+      attemptedIdentifier: cleanUser,
+      status: "SUCCESS",
+      reason: `Admin authenticated successfully via ${authMethod} (granted administrative session).`,
+      authMethod,
+      ipAddress,
+      userAgent,
+    });
 
     const issuedAt = Date.now();
     const expiresAt = issuedAt + 24 * 60 * 60 * 1000;
@@ -1421,7 +1619,54 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
       message: "Authentication successful.",
     });
   } catch (err: any) {
+    await recordAdminAuthAudit({
+      attemptedIdentifier: "(unknown)",
+      status: "FAILURE",
+      reason: `Access Denied: Server error during authentication: ${err.message || "Unknown error"}`,
+      failureCategory: "SYSTEM_ERROR",
+      authMethod: "UNKNOWN",
+      ipAddress,
+      userAgent,
+    });
     res.status(400).json({ success: false, error: err.message || "Failed to authenticate." });
+  }
+});
+
+// Audit Logs retrieval endpoint for Admin Dashboard
+app.get("/api/admin/audit-logs", async (req, res) => {
+  try {
+    const limitCount = Math.min(100, Math.max(10, parseInt(req.query.limit as string, 10) || 50));
+    const logs = await getAdminAuthAuditLogs(limitCount);
+    res.json({
+      success: true,
+      count: logs.length,
+      logs,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, logs: [] });
+  }
+});
+
+// Client audit logging endpoint (allows recording client-side auth events to Firestore)
+app.post("/api/admin/audit-logs", async (req, res) => {
+  try {
+    const { attemptedIdentifier = "", status = "FAILURE", reason = "", authMethod = "CLIENT", failureCategory } = req.body || {};
+    const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1";
+    const userAgent = (req.headers["user-agent"] as string) || "unknown";
+
+    const log = await recordAdminAuthAudit({
+      attemptedIdentifier: String(attemptedIdentifier).slice(0, 100),
+      status: status === "SUCCESS" ? "SUCCESS" : "FAILURE",
+      reason: String(reason).slice(0, 300),
+      failureCategory: failureCategory ? String(failureCategory).slice(0, 50) : undefined,
+      authMethod: String(authMethod).slice(0, 50),
+      ipAddress,
+      userAgent,
+    });
+
+    res.json({ success: true, log });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -2546,11 +2791,23 @@ app.post("/api/customer/confirm-reset-password", async (req, res) => {
 });
 
 // Update runtime credentials (admin protected)
-app.post("/api/admin/change-credentials", requireAdminAuth, (req, res) => {
+app.post("/api/admin/change-credentials", requireAdminAuth, async (req, res) => {
+  const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1";
+  const userAgent = (req.headers["user-agent"] as string) || "unknown";
+
   try {
     const { currentPassword = "", newPassword = "" } = req.body || {};
 
     if (!isValidAdminPassword(currentPassword)) {
+      await recordAdminAuthAudit({
+        attemptedIdentifier: "House of Shriya Admin",
+        status: "FAILURE",
+        reason: "Access Denied: Current password does not match server records during credential update.",
+        failureCategory: "INVALID_PASSWORD",
+        authMethod: "CHANGE_CREDENTIALS",
+        ipAddress,
+        userAgent,
+      });
       res.status(401).json({
         success: false,
         error: "Current password does not match server records.",
@@ -2559,6 +2816,15 @@ app.post("/api/admin/change-credentials", requireAdminAuth, (req, res) => {
     }
 
     if (!newPassword || newPassword.trim().length < 6) {
+      await recordAdminAuthAudit({
+        attemptedIdentifier: "House of Shriya Admin",
+        status: "FAILURE",
+        reason: "Access Denied: New password rejected (too short, minimum 6 characters required).",
+        failureCategory: "MALFORMED_REQUEST",
+        authMethod: "CHANGE_CREDENTIALS",
+        ipAddress,
+        userAgent,
+      });
       res.status(400).json({
         success: false,
         error: "New password must be at least 6 characters long.",
@@ -2567,6 +2833,15 @@ app.post("/api/admin/change-credentials", requireAdminAuth, (req, res) => {
     }
 
     setRuntimeAdminPassword(newPassword.trim());
+
+    await recordAdminAuthAudit({
+      attemptedIdentifier: "House of Shriya Admin",
+      status: "SUCCESS",
+      reason: "Admin credentials successfully changed and synchronized.",
+      authMethod: "CHANGE_CREDENTIALS",
+      ipAddress,
+      userAgent,
+    });
 
     // Issue updated fresh token
     const issuedAt = Date.now();

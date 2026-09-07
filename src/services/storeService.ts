@@ -2218,3 +2218,88 @@ export async function sendUserPasswordReset(email: string): Promise<void> {
     console.warn("sendUserPasswordReset notice:", err);
   }
 }
+
+/* ============================================================
+   ADMIN AUTHENTICATION AUDIT LOGGING (Firestore & API)
+   ============================================================ */
+export interface AdminAuthAuditLog {
+  id?: string;
+  timestamp: string;
+  timestampMs: number;
+  attemptedIdentifier: string;
+  status: "SUCCESS" | "FAILURE";
+  reason: string;
+  failureCategory?: string;
+  authMethod: string;
+  ipAddress: string;
+  userAgent: string;
+}
+
+export async function fetchAdminAuditLogs(limitCount = 50): Promise<AdminAuthAuditLog[]> {
+  try {
+    const res = await fetch(`/api/admin/audit-logs?limit=${limitCount}`, {
+      headers: {
+        ...getAdminAuthHeaders(),
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.logs)) {
+        return data.logs;
+      }
+    }
+  } catch (err) {
+    console.warn("fetchAdminAuditLogs API notice:", err);
+  }
+
+  // Fallback direct Firestore read
+  try {
+    const colRef = collection(db, "admin_audit_logs");
+    const q = query(colRef, orderBy("timestampMs", "desc"), limit(limitCount));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      } as AdminAuthAuditLog));
+    }
+  } catch (err) {
+    console.warn("fetchAdminAuditLogs Firestore notice:", err);
+  }
+
+  return [];
+}
+
+export function subscribeAdminAuditLogs(
+  callback: (logs: AdminAuthAuditLog[]) => void,
+  limitCount = 50
+): () => void {
+  // Trigger initial fetch from API
+  fetchAdminAuditLogs(limitCount).then((initialLogs) => {
+    if (initialLogs.length > 0) callback(initialLogs);
+  });
+
+  try {
+    const colRef = collection(db, "admin_audit_logs");
+    const q = query(colRef, orderBy("timestampMs", "desc"), limit(limitCount));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list: AdminAuthAuditLog[] = snapshot.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          } as AdminAuthAuditLog));
+          callback(list);
+        }
+      },
+      (err) => {
+        console.warn("subscribeAdminAuditLogs listener notice:", err);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn("subscribeAdminAuditLogs init notice:", err);
+    return () => {};
+  }
+}

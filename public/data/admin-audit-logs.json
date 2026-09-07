@@ -1,0 +1,45 @@
+[
+  {
+    "attemptedIdentifier": "houseofshriya.in@gmail.com",
+    "status": "SUCCESS",
+    "reason": "Admin authenticated successfully via MASTER_KEY (granted administrative session).",
+    "authMethod": "MASTER_KEY",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "curl/7.88.1",
+    "timestamp": "2026-09-07T09:50:20.884Z",
+    "timestampMs": 1788774620884
+  },
+  {
+    "attemptedIdentifier": "houseofshriya.in@gmail.com",
+    "status": "FAILURE",
+    "reason": "Access Denied: Password mismatch for identifier \"houseofshriya.in@gmail.com\". Verified against master key, temporary key, and Firebase Auth.",
+    "failureCategory": "INVALID_PASSWORD",
+    "authMethod": "UNKNOWN",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "curl/7.88.1",
+    "timestamp": "2026-09-07T09:49:55.661Z",
+    "timestampMs": 1788774595661
+  },
+  {
+    "attemptedIdentifier": "houseofshriya.in@gmail.com",
+    "status": "FAILURE",
+    "reason": "Access Denied: Password mismatch for identifier \"houseofshriya.in@gmail.com\". Verified against master key, temporary key, and Firebase Auth.",
+    "failureCategory": "INVALID_PASSWORD",
+    "authMethod": "UNKNOWN",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "curl/7.88.1",
+    "timestamp": "2026-09-07T09:49:00.247Z",
+    "timestampMs": 1788774540247
+  },
+  {
+    "attemptedIdentifier": "houseofshriya.in@gmail.com",
+    "status": "FAILURE",
+    "reason": "Access Denied: Password mismatch for identifier \"houseofshriya.in@gmail.com\". Verified against master key, temporary key, and Firebase Auth.",
+    "failureCategory": "INVALID_PASSWORD",
+    "authMethod": "UNKNOWN",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "curl/7.88.1",
+    "timestamp": "2026-09-07T09:48:46.599Z",
+    "timestampMs": 1788774526599
+  }
+]
