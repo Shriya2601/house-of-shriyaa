@@ -393,7 +393,9 @@ export interface AdminAuthAuditRecord {
   id?: string;
   timestamp: string; // ISO 8601 string
   timestampMs: number;
+  email: string; // email or user identifier (NEVER password)
   attemptedIdentifier: string; // username or email (NEVER password)
+  success: boolean; // boolean flag indicating if attempt succeeded or failed
   status: "SUCCESS" | "FAILURE";
   reason: string;
   failureCategory?: string;
@@ -403,19 +405,29 @@ export interface AdminAuthAuditRecord {
 }
 
 export async function recordAdminAuthAudit(
-  data: Omit<AdminAuthAuditRecord, "timestamp" | "timestampMs">
+  data: Omit<AdminAuthAuditRecord, "timestamp" | "timestampMs" | "email" | "success"> & {
+    email?: string;
+    success?: boolean;
+  }
 ): Promise<AdminAuthAuditRecord> {
   const timestampMs = Date.now();
   const timestamp = new Date(timestampMs).toISOString();
+  const email = data.email || data.attemptedIdentifier || "unknown";
+  const success = data.success !== undefined ? Boolean(data.success) : data.status === "SUCCESS";
+  const status: "SUCCESS" | "FAILURE" = success ? "SUCCESS" : "FAILURE";
+
   const entry: AdminAuthAuditRecord = {
     ...data,
+    email,
+    success,
+    status,
     timestamp,
     timestampMs,
   };
 
   // 1. Console security audit message (explicitly excluding passwords)
-  const prefix = entry.status === "SUCCESS" ? "✅ [AUTH AUDIT SUCCESS]" : "❌ [AUTH AUDIT FAILURE]";
-  console.log(`${prefix} ${timestamp} | Identifier: "${entry.attemptedIdentifier}" | Method: ${entry.authMethod} | Status: ${entry.status} | Reason: ${entry.reason} | IP: ${entry.ipAddress}`);
+  const prefix = entry.success ? "✅ [AUTH AUDIT SUCCESS]" : "❌ [AUTH AUDIT FAILURE]";
+  console.log(`${prefix} ${timestamp} | Email/Identifier: "${entry.email}" | Method: ${entry.authMethod} | Success: ${entry.success} | Reason: ${entry.reason} | IP: ${entry.ipAddress}`);
 
   // 2. Persist locally to src/data/admin-audit-logs.json and public/data/admin-audit-logs.json
   try {
@@ -426,14 +438,16 @@ export async function recordAdminAuthAudit(
     console.warn("Local audit log save warning:", err);
   }
 
-  // 3. Persist to Firestore collection "admin_audit_logs"
+  // 3. Persist to Firestore collections "admin_auth_logs" and "admin_audit_logs"
   try {
     const db = getServerFirestore();
     if (db) {
       const docData: Record<string, any> = {
         timestamp,
         timestampMs,
-        attemptedIdentifier: entry.attemptedIdentifier || "anonymous",
+        email: entry.email,
+        attemptedIdentifier: entry.attemptedIdentifier || entry.email || "anonymous",
+        success: entry.success,
         status: entry.status,
         reason: entry.reason,
         authMethod: entry.authMethod || "UNKNOWN",
@@ -443,13 +457,21 @@ export async function recordAdminAuthAudit(
       if (entry.failureCategory) {
         docData.failureCategory = entry.failureCategory;
       }
-      const addDocPromise = fbAddDoc(fbCollection(db, "admin_audit_logs"), docData);
+
+      // Push to 'admin_auth_logs' (primary requirement) and 'admin_audit_logs'
+      const addAuthLogPromise = fbAddDoc(fbCollection(db, "admin_auth_logs"), docData);
+      const addAuditLogPromise = fbAddDoc(fbCollection(db, "admin_audit_logs"), docData).catch(() => null);
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Firestore write timeout")), 3000)
       );
-      const docRef: any = await Promise.race([addDocPromise, timeoutPromise]);
-      entry.id = docRef.id;
-      console.log(`[AUTH AUDIT] Stored audit record ${docRef.id} in Firestore collection "admin_audit_logs"`);
+
+      const authLogRef: any = await Promise.race([addAuthLogPromise, timeoutPromise]);
+      entry.id = authLogRef.id;
+      console.log(`[AUTH LOG] Pushed document ${authLogRef.id} to Firestore collection 'admin_auth_logs' (email: ${entry.email}, success: ${entry.success})`);
+
+      // Ensure audit log promise finishes in background
+      addAuditLogPromise.catch(() => {});
     }
   } catch (err) {
     console.warn("[AUTH AUDIT] Notice: Could not write directly to Firestore (retained in local persistent store):", err);
@@ -459,11 +481,11 @@ export async function recordAdminAuthAudit(
 }
 
 export async function getAdminAuthAuditLogs(limitCount = 50): Promise<AdminAuthAuditRecord[]> {
-  // First try fetching from Firestore collection
+  // First try fetching from Firestore collection 'admin_auth_logs', fallback to 'admin_audit_logs'
   try {
     const db = getServerFirestore();
     if (db) {
-      const q = fbQuery(fbCollection(db, "admin_audit_logs"), fbOrderBy("timestampMs", "desc"), fbLimit(limitCount));
+      const q = fbQuery(fbCollection(db, "admin_auth_logs"), fbOrderBy("timestampMs", "desc"), fbLimit(limitCount));
       const getDocsPromise = fbGetDocs(q);
       const timeoutPromise = new Promise<any>((_, reject) =>
         setTimeout(() => reject(new Error("Firestore read timeout")), 3000)
@@ -477,7 +499,20 @@ export async function getAdminAuthAuditLogs(limitCount = 50): Promise<AdminAuthA
       }
     }
   } catch (err) {
-    console.warn("Notice: Fetching audit logs from Firestore fallback to local file:", err);
+    console.warn("Notice: Fetching audit logs from admin_auth_logs fallback to admin_audit_logs:", err);
+    try {
+      const db = getServerFirestore();
+      if (db) {
+        const q2 = fbQuery(fbCollection(db, "admin_audit_logs"), fbOrderBy("timestampMs", "desc"), fbLimit(limitCount));
+        const snap2 = await fbGetDocs(q2);
+        if (snap2 && !snap2.empty) {
+          return snap2.docs.map((doc: any) => ({
+            id: doc.id,
+            ...doc.data(),
+          } as AdminAuthAuditRecord));
+        }
+      }
+    } catch {}
   }
 
   // Fallback to local persistent records
@@ -1473,11 +1508,19 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     const cleanPass = String(password).trim();
     const activePass = getAdminPassword();
 
+    const attemptedEmail = cleanUser.includes("@")
+      ? cleanUser
+      : (cleanUser === "house of shriya" || cleanUser === "admin" || cleanUser === "house of shriya admin" || cleanUser.includes("shriya"))
+        ? "houseofshriya.in@gmail.com"
+        : (cleanUser ? `${cleanUser}@houseofshriya.in` : "unknown");
+
     if (!cleanUser || !cleanPass) {
       await recordAdminAuthAudit({
+        email: attemptedEmail,
         attemptedIdentifier: cleanUser || "(blank)",
+        success: false,
         status: "FAILURE",
-        reason: "Access Denied: Missing username or password field in request.",
+        reason: "Access Denied: Missing username/email or password field in request.",
         failureCategory: "EMPTY_CREDENTIALS",
         authMethod: "UNKNOWN",
         ipAddress,
@@ -1559,7 +1602,9 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
 
     if (!isPassValid) {
       await recordAdminAuthAudit({
+        email: attemptedEmail,
         attemptedIdentifier: cleanUser,
+        success: false,
         status: "FAILURE",
         reason: `Access Denied: Password mismatch for identifier "${cleanUser}". Verified against master key, temporary key, and Firebase Auth.`,
         failureCategory: "INVALID_PASSWORD",
@@ -1576,7 +1621,9 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
 
     if (!isUserValid) {
       await recordAdminAuthAudit({
+        email: attemptedEmail,
         attemptedIdentifier: cleanUser,
+        success: false,
         status: "FAILURE",
         reason: `Access Denied: Identifier "${cleanUser}" is not recognized as an authorized administrator account.`,
         failureCategory: "UNKNOWN_IDENTIFIER",
@@ -1593,7 +1640,9 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
 
     // Record successful authentication audit (NEVER includes password)
     await recordAdminAuthAudit({
+      email: attemptedEmail,
       attemptedIdentifier: cleanUser,
+      success: true,
       status: "SUCCESS",
       reason: `Admin authenticated successfully via ${authMethod} (granted administrative session).`,
       authMethod,
@@ -1620,7 +1669,9 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     });
   } catch (err: any) {
     await recordAdminAuthAudit({
+      email: "unknown",
       attemptedIdentifier: "(unknown)",
+      success: false,
       status: "FAILURE",
       reason: `Access Denied: Server error during authentication: ${err.message || "Unknown error"}`,
       failureCategory: "SYSTEM_ERROR",

@@ -4837,7 +4837,7 @@ export default function Admin() {
                         <tr className="bg-[#faf8f5] text-[#8c8275] text-[10px] uppercase tracking-wider border-b border-[#e5ded6]">
                           <th className="py-2.5 px-3 font-bold">Timestamp</th>
                           <th className="py-2.5 px-3 font-bold">Status</th>
-                          <th className="py-2.5 px-3 font-bold">Identifier / User</th>
+                          <th className="py-2.5 px-3 font-bold">Email / Identifier</th>
                           <th className="py-2.5 px-3 font-bold">Method</th>
                           <th className="py-2.5 px-3 font-bold">Audit Reason</th>
                           <th className="py-2.5 px-3 font-bold">Client IP</th>
@@ -4856,7 +4856,7 @@ export default function Admin() {
                               })}
                             </td>
                             <td className="py-2.5 px-3 whitespace-nowrap">
-                              {log.status === "SUCCESS" ? (
+                              {(log.success ?? (log.status === "SUCCESS")) ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                                   <CheckCircle2 size={11} className="text-emerald-600" />
                                   SUCCESS
@@ -4864,12 +4864,12 @@ export default function Admin() {
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                                   <XCircle size={11} className="text-rose-600" />
-                                  ACCESS DENIED
+                                  FAILED
                                 </span>
                               )}
                             </td>
                             <td className="py-2.5 px-3 font-bold text-[#1e1b18] whitespace-nowrap">
-                              {log.attemptedIdentifier}
+                              {log.email || log.attemptedIdentifier}
                             </td>
                             <td className="py-2.5 px-3 font-mono text-[10px] text-[#6b6257] whitespace-nowrap">
                               <span className="bg-[#faf8f5] px-1.5 py-0.5 rounded border border-[#e5ded6]">

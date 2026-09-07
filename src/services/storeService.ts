@@ -2226,7 +2226,9 @@ export interface AdminAuthAuditLog {
   id?: string;
   timestamp: string;
   timestampMs: number;
+  email?: string;
   attemptedIdentifier: string;
+  success?: boolean;
   status: "SUCCESS" | "FAILURE";
   reason: string;
   failureCategory?: string;
@@ -2252,9 +2254,9 @@ export async function fetchAdminAuditLogs(limitCount = 50): Promise<AdminAuthAud
     console.warn("fetchAdminAuditLogs API notice:", err);
   }
 
-  // Fallback direct Firestore read
+  // Fallback direct Firestore read from admin_auth_logs collection
   try {
-    const colRef = collection(db, "admin_audit_logs");
+    const colRef = collection(db, "admin_auth_logs");
     const q = query(colRef, orderBy("timestampMs", "desc"), limit(limitCount));
     const snap = await getDocs(q);
     if (!snap.empty) {
@@ -2264,7 +2266,18 @@ export async function fetchAdminAuditLogs(limitCount = 50): Promise<AdminAuthAud
       } as AdminAuthAuditLog));
     }
   } catch (err) {
-    console.warn("fetchAdminAuditLogs Firestore notice:", err);
+    console.warn("fetchAdminAuditLogs Firestore admin_auth_logs notice:", err);
+    try {
+      const colRef2 = collection(db, "admin_audit_logs");
+      const q2 = query(colRef2, orderBy("timestampMs", "desc"), limit(limitCount));
+      const snap2 = await getDocs(q2);
+      if (!snap2.empty) {
+        return snap2.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        } as AdminAuthAuditLog));
+      }
+    } catch {}
   }
 
   return [];
@@ -2280,7 +2293,7 @@ export function subscribeAdminAuditLogs(
   });
 
   try {
-    const colRef = collection(db, "admin_audit_logs");
+    const colRef = collection(db, "admin_auth_logs");
     const q = query(colRef, orderBy("timestampMs", "desc"), limit(limitCount));
     const unsubscribe = onSnapshot(
       q,

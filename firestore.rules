@@ -67,6 +67,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /admin_auth_logs/{logId} {
+      allow read, write: if true;
+    }
+
     // Default fallback: Deny all unmatched collections to prevent open database vulnerabilities
     match /{document=**} {
       allow read, write: if false;
