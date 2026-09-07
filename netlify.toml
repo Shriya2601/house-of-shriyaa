@@ -1,0 +1,56 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Ensure POST /api/upload-image is forcefully rewritten to the Netlify Function
+[[redirects]]
+  from = "/api/upload-image"
+  to = "/.netlify/functions/upload-image"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/upload-images-batch"
+  to = "/.netlify/functions/upload-images-batch"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/delete-image"
+  to = "/.netlify/functions/delete-image"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/admin/verify"
+  to = "/.netlify/functions/admin-verify"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/admin/session"
+  to = "/.netlify/functions/admin-session"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+
+# Single Page App routing for React Router storefront & admin
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

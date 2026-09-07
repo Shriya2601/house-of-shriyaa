@@ -63,14 +63,85 @@ export async function onRequestPost(context: { request: Request; env: Record<str
       });
     }
 
-    const [b64Payload, signature] = token.split(".");
-    const payload = atob(b64Payload);
-    const [username, , expiresAtStr] = payload.split(":");
-    const expiresAt = parseInt(expiresAtStr, 10);
+    const parts = token.split(".");
 
-    if (Date.now() > expiresAt) {
-      return new Response(JSON.stringify({ valid: false, error: "Token expired." }), {
-        status: 401,
+    // Case 1: Firebase ID Token (JWT with 3 parts: header.payload.signature)
+    if (parts.length === 3) {
+      try {
+        const payloadJson = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+        const payload = JSON.parse(payloadJson);
+        const now = Math.floor(Date.now() / 1000);
+        const projectId = "house-of-shriya-54a6e";
+
+        if (
+          payload.exp &&
+          payload.exp > now &&
+          (payload.aud === projectId || payload.iss === `https://securetoken.google.com/${projectId}`)
+        ) {
+          const email = (payload.email || "").toLowerCase().trim();
+          const authorizedEmails = [
+            "kshriya2626@gmail.com",
+            "crochetbyshriya01@gmail.com",
+            "houseofshriya.in@gmail.com",
+            "shriya14301@gmail.com",
+            "shriyapusha01@gmail.com",
+            "hello.munchmini@gmail.com",
+            "care@houseofshriya.com",
+            "admin@houseofshriya.com",
+          ];
+          const envEmail = (context.env.ADMIN_EMAIL || "").toLowerCase().trim();
+          if (envEmail) authorizedEmails.push(envEmail);
+
+          if (authorizedEmails.includes(email) || payload.admin === true || payload.role === "admin") {
+            return new Response(
+              JSON.stringify({
+                valid: true,
+                username: payload.name || payload.email || "Atelier Owner",
+                role: "superadmin",
+              }),
+              {
+                status: 200,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*",
+                },
+              }
+            );
+          }
+        }
+      } catch {}
+    }
+
+    // Case 2: Server HMAC session token (2 parts: payload.signature)
+    if (parts.length === 2) {
+      const [b64Payload, signature] = parts;
+      const payload = atob(b64Payload);
+      const [username, , expiresAtStr] = payload.split(":");
+      const expiresAt = parseInt(expiresAtStr, 10);
+
+      if (Date.now() > expiresAt) {
+        return new Response(JSON.stringify({ valid: false, error: "Token expired." }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+
+      const expectedSig = await generateHmacSha256(payload, secret);
+      if (expectedSig !== signature) {
+        return new Response(JSON.stringify({ valid: false, error: "Invalid signature." }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+
+      return new Response(JSON.stringify({ valid: true, username }), {
+        status: 200,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -78,19 +149,8 @@ export async function onRequestPost(context: { request: Request; env: Record<str
       });
     }
 
-    const expectedSig = await generateHmacSha256(payload, secret);
-    if (expectedSig !== signature) {
-      return new Response(JSON.stringify({ valid: false, error: "Invalid signature." }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-
-    return new Response(JSON.stringify({ valid: true, username, expiresAt }), {
-      status: 200,
+    return new Response(JSON.stringify({ valid: false, error: "Invalid token structure." }), {
+      status: 401,
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",

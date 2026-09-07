@@ -146,8 +146,6 @@ export function isValidAdminPassword(candidatePass: string): boolean {
   if (clean === (process.env.ADMIN_PASSWORD || "").trim()) return true;
   if (clean === (process.env.ADMIN_SECRET_KEY || "").trim()) return true;
   if (clean === "Houseofshriy@26") return true;
-  if (clean === "ShriyaAdmin2026!") return true;
-  if (clean === "ShriyaAdminPass2026!") return true;
   try {
     const saved = readDataFile<Record<string, any>>("admin-auth.json", {});
     if (saved && saved.tempPassword && clean === String(saved.tempPassword).trim()) return true;
@@ -178,24 +176,55 @@ export function verifyAdminSessionToken(token: string | undefined): { valid: boo
     return { valid: false, error: "Missing or malformed session token." };
   }
   try {
-    const [b64Payload, signature] = token.split(".");
-    if (!b64Payload || !signature) {
-      return { valid: false, error: "Invalid token structure." };
-    }
-    const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
-    const [username, , expiresAtStr] = payload.split(":");
-    const expiresAt = parseInt(expiresAtStr, 10);
+    const parts = token.split(".");
 
-    if (isNaN(expiresAt) || Date.now() > expiresAt) {
-      return { valid: false, error: "Session token has expired. Please sign in again." };
+    // Case 1: Firebase ID Token (JWT with 3 parts: header.payload.signature)
+    if (parts.length === 3) {
+      try {
+        const payloadStr = Buffer.from(parts[1], "base64url").toString("utf-8");
+        const payload = JSON.parse(payloadStr);
+        const now = Math.floor(Date.now() / 1000);
+        const projectId = "house-of-shriya-54a6e";
+
+        if (
+          payload.exp &&
+          payload.exp > now &&
+          (payload.aud === projectId || (payload.iss && payload.iss.includes(projectId)))
+        ) {
+          const email = (payload.email || "").toLowerCase().trim();
+          const authorizedEmails = getAuthorizedAdminEmails();
+          if (authorizedEmails.includes(email) || payload.admin === true || payload.role === "admin") {
+            return {
+              valid: true,
+              username: payload.name || payload.email || "House of Shriya Admin",
+            };
+          }
+        }
+      } catch (jwtErr) {
+        // Fall through
+      }
     }
 
-    const expectedSig = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
-    if (expectedSig !== signature) {
-      return { valid: false, error: "Invalid session signature." };
+    // Case 2: Server-signed HMAC session token (2 parts: payload.signature)
+    if (parts.length === 2) {
+      const [b64Payload, signature] = parts;
+      const payload = Buffer.from(b64Payload, "base64").toString("utf-8");
+      const [username, , expiresAtStr] = payload.split(":");
+      const expiresAt = parseInt(expiresAtStr, 10);
+
+      if (isNaN(expiresAt) || Date.now() > expiresAt) {
+        return { valid: false, error: "Session token has expired. Please sign in again." };
+      }
+
+      const expectedSig = crypto.createHmac("sha256", ADMIN_SECRET).update(payload).digest("hex");
+      if (expectedSig !== signature) {
+        return { valid: false, error: "Invalid session signature." };
+      }
+
+      return { valid: true, username: username || "House of Shriya" };
     }
 
-    return { valid: true, username: username || "House of Shriya" };
+    return { valid: false, error: "Unsupported token format." };
   } catch (err: any) {
     return { valid: false, error: err.message || "Failed to verify session token." };
   }
@@ -1549,8 +1578,6 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     if (isPassValid) {
       if (cleanPass === activePass || cleanPass === (process.env.ADMIN_PASSWORD || "").trim()) {
         authMethod = "MASTER_KEY";
-      } else if (cleanPass === "ShriyaAdmin2026!" || cleanPass === "ShriyaAdminPass2026!") {
-        authMethod = "TEMP_KEY";
       } else {
         authMethod = "STORED_CREDENTIALS";
       }

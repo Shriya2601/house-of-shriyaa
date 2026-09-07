@@ -27,18 +27,8 @@ const AdminAuthContext = createContext<AdminAuthContextType | undefined>(undefin
 
 export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [adminUser, setAdminUser] = useState<User | null>(null);
-  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(() => {
-    const cached = getCachedAdminSession();
-    if (!cached) return null;
-    return {
-      uid: cached.uid,
-      email: cached.email,
-      displayName: cached.displayName,
-      role: (cached.role as "superadmin" | "admin" | "manager") || "admin",
-      createdAt: "",
-    };
-  });
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => Boolean(getCachedAdminSession()));
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 

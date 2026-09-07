@@ -10,10 +10,25 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    function isPrimaryAdminEmail() {
+      return request.auth.token.email != null &&
+             (request.auth.token.email.lower() == "kshriya2626@gmail.com" ||
+              request.auth.token.email.lower() == "houseofshriya.in@gmail.com" ||
+              request.auth.token.email.lower() == "crochetbyshriya01@gmail.com" ||
+              request.auth.token.email.lower() == "shriya14301@gmail.com" ||
+              request.auth.token.email.lower() == "shriyapusha01@gmail.com" ||
+              request.auth.token.email.lower() == "hello.munchmini@gmail.com" ||
+              request.auth.token.email.lower() == "care@houseofshriya.com" ||
+              request.auth.token.email.lower() == "admin@houseofshriya.com");
+    }
+
     // Admin Profiles & Roles
     match /admins/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && (
+        (request.auth.uid == userId && isPrimaryAdminEmail()) ||
+        isAdmin()
+      );
       allow update, delete: if isAdmin();
     }
 

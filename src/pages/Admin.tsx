@@ -100,9 +100,7 @@ export default function Admin() {
   const navigate = useNavigate();
   const { adminUser, adminProfile, isAdmin, logout } = useAdminAuth();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [adminSession, setAdminSession] = useState<{ authenticated: boolean; username: string } | null>(() =>
-    getStoredAdminSession()
-  );
+  const [adminSession, setAdminSession] = useState<{ authenticated: boolean; username: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
   // Navigation tabs in Admin
@@ -211,13 +209,13 @@ export default function Admin() {
   const currentAdminName = adminProfile?.displayName || adminSession?.username || "House of Shriya";
 
   useEffect(() => {
-    if (adminSession?.authenticated) {
+    if (isAuthenticated) {
       const unsub = subscribeAdminAuditLogs((logs) => {
         setAuditLogs(logs);
       });
       return () => unsub();
     }
-  }, [adminSession?.authenticated]);
+  }, [isAuthenticated]);
 
   const reloadAuditLogs = async () => {
     setLoadingAuditLogs(true);

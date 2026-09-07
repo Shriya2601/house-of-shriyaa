@@ -231,6 +231,12 @@ export function subscribeAdminAuthState(
 
     try {
       const { isAdmin, profile } = await checkIsAdmin(user);
+      if (isAdmin && user) {
+        try {
+          const idToken = await user.getIdToken();
+          setStoredAdminSession(profile?.displayName || user.displayName || "House of Shriya", idToken);
+        } catch {}
+      }
       callback({ user, profile, isAdmin, loading: false });
     } catch {
       callback({ user, profile: null, isAdmin: false, loading: false });

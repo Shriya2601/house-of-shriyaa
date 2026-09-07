@@ -1,6 +1,19 @@
 [
   {
     "email": "houseofshriya.in@gmail.com",
+    "attemptedIdentifier": "admin",
+    "success": false,
+    "status": "FAILURE",
+    "reason": "Access Denied: Password mismatch for identifier \"admin\". Verified against master key, temporary key, and Firebase Auth.",
+    "failureCategory": "INVALID_PASSWORD",
+    "authMethod": "UNKNOWN",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "curl/7.88.1",
+    "timestamp": "2026-09-07T17:42:14.937Z",
+    "timestampMs": 1788802934937
+  },
+  {
+    "email": "houseofshriya.in@gmail.com",
     "attemptedIdentifier": "houseofshriya.in@gmail.com",
     "success": true,
     "status": "SUCCESS",

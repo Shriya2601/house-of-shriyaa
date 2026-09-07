@@ -119,3 +119,94 @@ export const onRequest = async (context: { request: Request; env: Record<string,
     },
   });
 };
+
+// Netlify Functions v2 Handler (default export)
+export default async function (request: Request) {
+  const method = request.method.toUpperCase();
+  if (method === "OPTIONS") return onRequestOptions();
+  if (method === "GET") return onRequestGet();
+  if (method === "POST" || method === "PUT") return onRequestPost({ request, env: {} });
+  return new Response(JSON.stringify({ error: `Method ${method} not allowed` }), {
+    status: 405,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+}
+
+// Netlify Functions v1 / AWS Lambda Handler (named export)
+export async function handler(event: any) {
+  const method = (event.httpMethod || "GET").toUpperCase();
+
+  const corsHeaders: Record<string, string> = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
+  };
+
+  if (method === "OPTIONS") {
+    return { statusCode: 204, headers: corsHeaders, body: "" };
+  }
+
+  if (method === "GET") {
+    return {
+      statusCode: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "ok", service: "upload-image", allowedMethods: ["POST", "PUT", "OPTIONS"] }),
+    };
+  }
+
+  if (method === "POST" || method === "PUT") {
+    try {
+      let rawBody = event.body || "{}";
+      if (event.isBase64Encoded) {
+        rawBody = Buffer.from(rawBody, "base64").toString("utf-8");
+      }
+      const data = JSON.parse(rawBody);
+
+      if (!data.image || typeof data.image !== "string") {
+        return {
+          statusCode: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ error: "Missing or invalid image payload" }),
+        };
+      }
+
+      const safeProd = (data.productId || "prod").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+      const timestamp = Date.now();
+      const random = Math.floor(1000 + Math.random() * 9000);
+      let ext = ".webp";
+      if (data.image.startsWith("data:image/png")) ext = ".png";
+      else if (data.image.startsWith("data:image/jpeg") || data.image.startsWith("data:image/jpg")) ext = ".jpg";
+      else if (data.image.startsWith("data:image/gif")) ext = ".gif";
+
+      const generatedFileName = data.fileName || `${safeProd}_${timestamp}_${random}${ext}`;
+      const finalUrl = data.image.startsWith("data:") ? data.image : `/uploads/${generatedFileName}`;
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          success: true,
+          url: finalUrl,
+          fileName: generatedFileName,
+          message: "Image uploaded and processed successfully",
+        }),
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to process image upload";
+      return {
+        statusCode: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ error: message }),
+      };
+    }
+  }
+
+  return {
+    statusCode: 405,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ error: `Method ${method} not allowed` }),
+  };
+}

@@ -41,6 +41,12 @@ import {
 import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
 import savedCategoriesJson from "../data/categories.json";
+import {
+  adminSignInWithEmail,
+  adminCreateAccount,
+  adminSignOutSession,
+  adminSendPasswordReset,
+} from "./adminAuthService";
 
 export interface FirestoreWriteResult {
   success: boolean;
@@ -1435,38 +1441,18 @@ export function clearStoredAdminSession(): void {
 ============================================================ */
 
 export async function adminSignIn(email: string, pass: string): Promise<User> {
-  const verified = await verifyAdminLogin(email, pass);
-  if (!verified.success) {
-    throw new Error(verified.error || "Invalid administrator credentials. Access denied.");
-  }
-  const verifiedName = verified.username || "House of Shriya";
-  return createSyntheticCustomerUser("admin_active", email.trim(), verifiedName);
+  const result = await adminSignInWithEmail(email, pass);
+  return result.user;
 }
 
 export async function adminSignUp(email: string, pass: string, displayName: string): Promise<User> {
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanPass = pass.trim();
-  const cleanName = displayName.trim() || "House of Shriya Admin";
-
-  const verified = await verifyAdminLogin(cleanEmail, cleanPass);
-  if (verified.success) {
-    return createSyntheticCustomerUser("admin_active", cleanEmail, verified.username || cleanName);
-  }
-
-  // Attempt credential initialization
-  const res = await changeAdminCredentials("Houseofshriy@26", cleanName, cleanPass);
-  if (res.success) {
-    return createSyntheticCustomerUser("admin_active", cleanEmail, cleanName);
-  }
-
-  throw new Error("Admin credentials are authenticated securely by the server. Please sign in with your administrator password.");
+  const result = await adminCreateAccount(email, pass, displayName, "admin");
+  return result.user;
 }
 
 export async function adminSignOut(): Promise<void> {
   clearStoredAdminSession();
-  try {
-    await signOut(auth);
-  } catch {}
+  await adminSignOutSession();
 }
 
 export async function adminResetPassword(

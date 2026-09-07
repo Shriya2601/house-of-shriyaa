@@ -1,0 +1,11 @@
+# Force proxy API endpoints to Netlify Serverless Functions (prevents 405 Method Not Allowed)
+/api/upload-image         /.netlify/functions/upload-image        200!
+/api/upload-images-batch  /.netlify/functions/upload-images-batch 200!
+/api/delete-image         /.netlify/functions/delete-image        200!
+/api/admin/verify         /.netlify/functions/admin-verify        200!
+/api/admin/session        /.netlify/functions/admin-session       200!
+/api/health               /.netlify/functions/health              200!
+/api/*                    /.netlify/functions/:splat              200!
+
+# SPA catch-all rule for React Router
+/*                        /index.html                             200
