@@ -416,7 +416,7 @@ export default function CanvaDeploymentModal() {
               </span>
             </div>
             <p className="text-xs text-stone-300">
-              Cloudflare Pages automatically deploys every commit pushed to GitHub. Do not run <code className="text-amber-300">npx wrangler deploy</code> (this is a React + Vite Pages site, not a Worker).
+              Cloudflare Pages automatically deploys every commit pushed to GitHub. Never use <code className="text-amber-300">npx wrangler deploy</code> (which is for standalone Workers). If your CI/dashboard asks for a Deploy Command, use <code className="text-emerald-300 font-mono">npx wrangler pages deploy dist --project-name=house-of-shriya</code> or leave it blank.
             </p>
             <div className="space-y-2 font-mono text-xs">
               <div className="flex items-center justify-between bg-black/50 p-2.5 rounded-lg border border-white/10">
