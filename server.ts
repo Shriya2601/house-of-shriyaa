@@ -50,13 +50,19 @@ const publicUploadsDir = path.join(rootDir, "public", "uploads");
 const distUploadsDir = path.join(rootDir, "dist", "uploads");
 
 // Ensure directories exist
-[dataDir, publicDataDir, publicUploadsDir].forEach((dir) => {
+[dataDir, publicDataDir, publicUploadsDir, distUploadsDir, distDataDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch {}
   }
 });
+
+// Directly serve uploads and public data assets
+app.use("/uploads", express.static(publicUploadsDir));
+app.use("/uploads", express.static(distUploadsDir));
+app.use("/data", express.static(publicDataDir));
+app.use("/data", express.static(distDataDir));
 
 // ==========================================
 // ADMIN SECURITY & SESSION AUTHENTICATION
