@@ -34,7 +34,7 @@
         "badges": { "type": "array", "description": "Tag badges e.g. Bestseller, New Drop" },
         "image": { "type": "string", "description": "Primary high-res image URL" },
         "hoverImage": { "type": "string", "description": "Secondary hover image URL" },
-        "images": { "type": "array", "description": "List of up to 10 product gallery photos uploaded from device or cloud" },
+        "images": { "type": "array", "description": "List of product gallery photos" },
         "category": { "type": "string", "description": "Category slug or name" },
         "fabricType": { "type": "string", "description": "Fabric classification" },
         "tags": { "type": "array", "description": "Search and filter tags" },
@@ -56,7 +56,7 @@
     },
     "orders": {
       "title": "Customer Orders",
-      "description": "Real live orders placed through checkout by customers.",
+      "description": "Orders placed through checkout by customers.",
       "fields": {
         "orderNumber": { "type": "string", "description": "Unique order reference (e.g. HOS-2026-1001)" },
         "customer": { "type": "object", "description": "Customer name, email, phone" },
@@ -69,61 +69,20 @@
         "paymentStatus": { "type": "string", "description": "Payment status (Pending, Paid)" },
         "orderStatus": { "type": "string", "description": "Fulfillment status (pending, confirmed, shipped, delivered, cancelled)" },
         "trackingNumber": { "type": "string", "description": "Courier AWB tracking number" },
-        "notes": { "type": "string", "description": "Customer or admin notes" },
+        "notes": { "type": "string", "description": "Customer notes" },
         "createdAt": { "type": "string", "description": "Order placement ISO timestamp" },
         "updatedAt": { "type": "string", "description": "Status change ISO timestamp" }
       }
-    },
-    "admin_settings": {
-      "title": "Admin Configuration & Credentials",
-      "description": "Secure store administration credentials and boutique settings.",
-      "fields": {
-        "username": { "type": "string", "description": "Admin login username" },
-        "passwordHash": { "type": "string", "description": "Salted SHA-256 password hash" },
-        "salt": { "type": "string", "description": "Cryptographic salt" },
-        "updatedAt": { "type": "string", "description": "Timestamp of last credential update" },
-        "lastLoginAt": { "type": "string", "description": "Timestamp of most recent successful login" }
-      }
-    },
-    "uploaded_assets": {
-      "title": "Uploaded Media & Image Assets",
-      "description": "Media assets and product photography uploaded directly from admin devices.",
-      "fields": {
-        "name": { "type": "string", "description": "Original file name" },
-        "dataUrl": { "type": "string", "description": "High resolution optimized image data URL" },
-        "size": { "type": "number", "description": "File size in bytes" },
-        "type": { "type": "string", "description": "MIME type (image/jpeg, image/png, image/webp)" },
-        "productId": { "type": "string", "description": "Optional associated product ID" },
-        "createdAt": { "type": "string", "description": "Upload ISO timestamp" }
-      }
-    },
-    "admins": {
-      "title": "Admin Accounts & Roles",
-      "description": "Authenticated administrator accounts and role-based permissions.",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string", "description": "Firebase Auth unique identifier" },
-        "email": { "type": "string", "format": "email", "description": "Admin email address" },
-        "displayName": { "type": "string", "description": "Admin display name" },
-        "role": { "type": "string", "enum": ["superadmin", "admin", "manager"], "description": "Assigned administrative role" },
-        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
-        "lastLoginAt": { "type": "string", "description": "Most recent login ISO timestamp" }
-      },
-      "required": ["uid", "email", "role"]
     }
   },
   "firestore": {
-    "/admins/{adminId}": {
-      "schema": "admins",
-      "description": "Admin profile documents storing roles, email, and authentication metadata"
-    },
     "/products/{productId}": {
       "schema": "products",
       "description": "Products catalog"
     },
     "/orders/{orderId}": {
       "schema": "orders",
-      "description": "Customer and test orders"
+      "description": "Customer orders"
     },
     "/site_content/{documentId}": {
       "schema": "site_content",
@@ -132,10 +91,6 @@
     "/categories/{categoryId}": {
       "schema": "categories",
       "description": "Product categories"
-    },
-    "/uploaded_assets/{assetId}": {
-      "schema": "uploaded_assets",
-      "description": "Uploaded image assets"
     }
   }
 }

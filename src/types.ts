@@ -28,7 +28,7 @@ export interface Product {
   badges: string[];
   image: string;
   hoverImage: string;
-  images?: string[]; // Up to 10 product images uploaded from device
+  images?: string[];
   category: string;
   fabricType: string;
   tags: string[];
@@ -86,14 +86,6 @@ export interface SiteContent {
   catalogSubtitle?: string;
   navLinks?: NavItem[];
   updatedAt?: string;
-}
-
-export interface AdminAuthCredentials {
-  username: string; // e.g. "house of shriya"
-  passwordHash: string;
-  salt: string;
-  updatedAt: string;
-  lastLoginAt?: string;
 }
 
 export interface CategoryItem {
@@ -160,24 +152,12 @@ export interface Order {
   referralDiscount?: number;
   createdAt: string; // ISO date string
   updatedAt: string;
-  isTest?: boolean; // For keeping test and real orders strictly isolated
-}
-
-export type AdminRole = "superadmin" | "admin" | "manager" | "editor";
-
-export interface AdminProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: AdminRole;
-  createdAt: string;
-  lastLoginAt?: string;
-  photoURL?: string;
+  isTest?: boolean;
 }
 
 export interface SavedAddress extends ShippingAddress {
   id: string;
-  label?: string; // "Home", "Work", "Studio", etc.
+  label?: string;
   phone?: string;
   isDefault?: boolean;
 }
@@ -208,27 +188,6 @@ export interface CustomerProfile {
   createdAt?: string;
   updatedAt?: string;
 }
-
-export type UserRole = "customer" | "vip" | "wholesale" | "admin" | "editor";
-export type UserAccountStatus = "active" | "suspended" | "pending";
-
-export interface UserAccount {
-  id: string;
-  fullName: string;
-  email: string;
-  phone?: string;
-  role: UserRole;
-  status: UserAccountStatus;
-  totalOrders?: number;
-  totalSpent?: number;
-  createdAt: string;
-  lastLoginAt?: string;
-  notes?: string;
-  savedAddresses?: SavedAddress[];
-  city?: string;
-  state?: string;
-}
-
 
 export type AccessoryCategory = "earrings" | "necklaces" | "bangles" | "handbags" | "footwear";
 
@@ -269,21 +228,10 @@ export interface TryOnResult {
 export interface DailyCreditsState {
   creditsRemaining: number;
   maxCredits: number;
-  lastResetDate: string; // YYYY-MM-DD
+  lastResetDate: string;
   history: {
     timestamp: number;
     suitName: string;
     action: string;
   }[];
-}
-
-export interface UploadedAsset {
-  id: string;
-  name: string;
-  dataUrl: string;
-  url?: string;
-  size: number;
-  type: string;
-  productId?: string;
-  createdAt: string;
 }

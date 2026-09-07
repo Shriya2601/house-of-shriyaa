@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import LuxuryImageViewerModal from "../components/gallery/LuxuryImageViewerModal";
 import { useStore } from "../context/StoreContext";
-import { useEditMode, CanvaEditable } from "../components/editmode";
+import { CanvaEditable } from "../components/editmode";
 import { Product, ColorVariant } from "../types";
 import { products as fallbackCatalog } from "../data/products";
 import {
@@ -57,7 +57,6 @@ export default function ProductDetails() {
     siteContent,
     setIsCartOpen,
   } = useStore();
-  const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
 
   // Find product by id from live store or fallback catalog
   const product = useMemo(() => {
@@ -370,21 +369,6 @@ export default function ProductDetails() {
               className="relative aspect-[3/4] sm:aspect-[4/5] lg:aspect-[3/4] w-full rounded-2xl overflow-hidden bg-[#f4eee6] border border-[#e8dfd5] shadow-xs group cursor-zoom-in"
               title="Click to open full high-resolution image viewer (Zoom & Pan)"
             >
-              {/* Canva Edit Button in Edit Mode */}
-              {isEditMode && !isPreviewOnly && product && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    quickEditProduct(product);
-                  }}
-                  className="absolute top-3 left-3 z-30 bg-[#7D2AE8] hover:bg-[#6d20d8] text-white text-xs px-3 py-1.5 rounded-md shadow-lg flex items-center gap-1.5 font-sans font-semibold border border-white/20 transition-all"
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
-                  <span>Edit Product Content</span>
-                </button>
-              )}
-
               {/* Product Badges */}
               <div className="absolute top-3 left-3 z-20 flex flex-wrap gap-1.5 max-w-[calc(100%-80px)]">
                 {(product?.badges || ["Bestseller", "Pure Surat Silk"]).map((badge) => (

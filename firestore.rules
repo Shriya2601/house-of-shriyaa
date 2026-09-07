@@ -6,88 +6,35 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-
-    function isPrimaryAdminEmail() {
-      return request.auth.token.email != null &&
-             (request.auth.token.email.lower() == "kshriya2626@gmail.com" ||
-              request.auth.token.email.lower() == "houseofshriya.in@gmail.com" ||
-              request.auth.token.email.lower() == "crochetbyshriya01@gmail.com" ||
-              request.auth.token.email.lower() == "shriya14301@gmail.com" ||
-              request.auth.token.email.lower() == "shriyapusha01@gmail.com" ||
-              request.auth.token.email.lower() == "hello.munchmini@gmail.com" ||
-              request.auth.token.email.lower() == "care@houseofshriya.com" ||
-              request.auth.token.email.lower() == "admin@houseofshriya.com");
-    }
-
-    // Admin Profiles & Roles
-    match /admins/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if isSignedIn() && (
-        (request.auth.uid == userId && isPrimaryAdminEmail()) ||
-        isAdmin()
-      );
-      allow update, delete: if isAdmin();
-    }
-
-    // Site Content & CMS: Publicly readable; administrative updates require admin role
+    // Site Content & CMS: Publicly readable
     match /site_content/{documentId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
-    // Products Catalog: Publicly readable; administrative catalog management
+    // Products Catalog: Publicly readable
     match /products/{productId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
-    // Categories & Taxonomy: Publicly readable; administrative category management
+    // Categories & Taxonomy: Publicly readable
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
-    // Orders: Anyone (customers) can create orders; administrative tracking restricted to admins
+    // Orders: Customers can create orders
     match /orders/{orderId} {
       allow create: if request.resource.data != null &&
                        request.resource.data.orderNumber is string;
-      allow read, update, delete: if isAdmin();
+      allow read: if isSignedIn();
+      allow update, delete: if false;
     }
 
-    // Admin Credentials & Boutique Settings
-    match /admin_settings/{documentId} {
-      allow read, write: if isAdmin();
-    }
-
-    match /admin_auth/{documentId} {
-      allow read, write: if isAdmin();
-    }
-
-    // Uploaded Media & Product Images
-    match /uploaded_assets/{assetId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // User Accounts & Customer Profiles
-    match /users/{userId} {
-      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-    }
-
+    // Customer Profiles: Authenticated users can manage their own profile
     match /customers/{userId} {
-      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-    }
-
-    // Authentication Audit Logs (secure audit trail)
-    match /admin_audit_logs/{logId} {
-      allow read, write: if isAdmin();
-    }
-
-    match /admin_auth_logs/{logId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
     // Default fallback: Deny all unmatched collections
@@ -96,5 +43,3 @@ service cloud.firestore {
     }
   }
 }
-
-
