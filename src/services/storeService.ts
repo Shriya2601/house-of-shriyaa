@@ -32,6 +32,7 @@ import {
   HeroSlide,
   CustomerProfile,
   SavedAddress,
+  AtelierBooking,
 } from "../types";
 import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
@@ -461,6 +462,9 @@ export async function createRealOrder(
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     orderStatus: orderInput.orderStatus || "pending",
+    status: orderInput.orderStatus || "pending",
+    totalAmount: orderInput.total,
+    customerAddress: orderInput.shippingAddress,
   };
 
   const current = getCachedOrders();
@@ -469,10 +473,95 @@ export async function createRealOrder(
   try {
     const docRef = doc(db, "orders", orderId);
     await setDoc(docRef, fullOrder, { merge: true });
-  } catch {}
+  } catch (err) {
+    console.warn("Firestore order root save notice:", err);
+  }
+
+  // If customer is signed in, also store in customer profile subcollection
+  if (fullOrder.userId) {
+    try {
+      const userBookingRef = doc(db, "customers", fullOrder.userId, "bookings", orderId);
+      await setDoc(userBookingRef, fullOrder, { merge: true });
+    } catch (err) {
+      console.warn("Firestore user booking subcollection save notice:", err);
+    }
+  }
 
   window.dispatchEvent(new CustomEvent("hos-order-created", { detail: fullOrder }));
   return fullOrder;
+}
+
+export async function createAtelierBooking(
+  bookingInput: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
+): Promise<AtelierBooking> {
+  const now = new Date();
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const bookingNumber = `HOS-APT-${now.getFullYear()}-${randomSuffix}`;
+  const bookingId = `book_${Date.now()}_${randomSuffix}`;
+
+  const booking: AtelierBooking = {
+    ...bookingInput,
+    id: bookingId,
+    bookingNumber,
+    status: "confirmed",
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  // Cache in localStorage
+  try {
+    const local = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    localStorage.setItem("hos_atelier_bookings", JSON.stringify([booking, ...local]));
+  } catch {}
+
+  // Save to Firestore root bookings collection
+  try {
+    const bookingRef = doc(db, "bookings", bookingId);
+    await setDoc(bookingRef, booking, { merge: true });
+  } catch (e) {
+    console.warn("Firestore booking root save:", e);
+  }
+
+  // Save to customer's personal bookings subcollection
+  if (booking.userId) {
+    try {
+      const userBookingRef = doc(db, "customers", booking.userId, "bookings", bookingId);
+      await setDoc(userBookingRef, booking, { merge: true });
+    } catch (e) {
+      console.warn("Firestore user subcollection booking save:", e);
+    }
+  }
+
+  window.dispatchEvent(new CustomEvent("hos-booking-created", { detail: booking }));
+  return booking;
+}
+
+export async function fetchAtelierBookings(emailOrUid?: string): Promise<AtelierBooking[]> {
+  let list: AtelierBooking[] = [];
+  try {
+    list = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+  } catch {}
+
+  if (emailOrUid) {
+    try {
+      const colRef = collection(db, "bookings");
+      const q = query(colRef, where("email", "==", emailOrUid.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AtelierBooking));
+      const seen = new Set<string>();
+      const merged: AtelierBooking[] = [];
+      for (const b of [...remote, ...list]) {
+        if (!seen.has(b.bookingNumber || b.id)) {
+          seen.add(b.bookingNumber || b.id);
+          merged.push(b);
+        }
+      }
+      return merged;
+    } catch (e) {
+      console.warn("Error fetching remote bookings:", e);
+    }
+  }
+  return list;
 }
 
 export async function updateOrderStatus(
@@ -652,11 +741,20 @@ export async function customerSignUp(
       userCredUser = cred.user;
     }
   } catch (err: any) {
-    if (err?.code !== "auth/email-already-in-use") {
+    if (err?.code === "auth/email-already-in-use") {
+      throw new Error("This email is already registered. Please sign in with your password.");
+    } else if (err?.code === "auth/weak-password") {
+      throw new Error("Password is too weak. Please enter at least 6 characters.");
+    } else if (err?.code === "auth/invalid-email") {
+      throw new Error("Please enter a valid email address.");
+    } else if (err?.code === "auth/operation-not-allowed") {
+      throw new Error(
+        "Email/Password sign-in provider is not yet enabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password."
+      );
+    } else {
+      console.warn("Firebase Auth sign-up warning, checking local patron session:", err);
       // Fallback synthetic if offline
       userCredUser = createSyntheticCustomerUser(`cust_${Date.now()}`, cleanEmail, cleanName);
-    } else {
-      throw new Error("This email is already registered. Please sign in instead.");
     }
   }
 
@@ -667,6 +765,7 @@ export async function customerSignUp(
     fullName: cleanName,
     phone: cleanPhone,
     savedAddresses: [],
+    tier: "House Patron",
     referralCode: referralCode || undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -679,7 +778,9 @@ export async function customerSignUp(
 
   try {
     await setDoc(doc(db, "customers", uid), profile, { merge: true });
-  } catch {}
+  } catch (err) {
+    console.warn("Firestore customer profile save notice:", err);
+  }
 
   const finalUser = userCredUser || createSyntheticCustomerUser(uid, cleanEmail, cleanName);
   broadcastAuthState(finalUser);
@@ -699,17 +800,39 @@ export async function customerSignIn(email: string, pass: string): Promise<User>
     const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
     finalUser = cred.user;
   } catch (err: any) {
-    // If client SDK offline or credentials check local profile
-    const cached = localStorage.getItem("hos_customer_profile");
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (parsed.email?.toLowerCase() === cleanEmail) {
-        finalUser = createSyntheticCustomerUser(parsed.uid, parsed.email, parsed.fullName || "Patron");
+    if (err?.code === "auth/operation-not-allowed") {
+      throw new Error(
+        "Email/Password sign-in provider is not yet enabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password."
+      );
+    } else if (
+      err?.code === "auth/invalid-credential" ||
+      err?.code === "auth/wrong-password" ||
+      err?.code === "auth/user-not-found"
+    ) {
+      const cached = localStorage.getItem("hos_customer_profile");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.email?.toLowerCase() === cleanEmail) {
+          finalUser = createSyntheticCustomerUser(parsed.uid, parsed.email, parsed.fullName || "Patron");
+        } else {
+          throw new Error("Invalid email or password. Please verify your credentials.");
+        }
       } else {
-        throw new Error("Incorrect email or password. Please try again.");
+        throw new Error("Invalid email or password. Please verify your credentials.");
       }
     } else {
-      throw new Error("Incorrect email or password. Please try again.");
+      // If client SDK offline or credentials check local profile
+      const cached = localStorage.getItem("hos_customer_profile");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.email?.toLowerCase() === cleanEmail) {
+          finalUser = createSyntheticCustomerUser(parsed.uid, parsed.email, parsed.fullName || "Patron");
+        } else {
+          throw new Error(err?.message || "Authentication failed. Please verify your details.");
+        }
+      } else {
+        throw new Error(err?.message || "Authentication failed. Please verify your details.");
+      }
     }
   }
 

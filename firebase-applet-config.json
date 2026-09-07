@@ -1,12 +1,9 @@
 {
-  "projectId": "house-of-shriya-54a6e",
-  "appId": "1:463701906099:web:a4332583fc6e6ad96c96c6",
-  "apiKey": "AIzaSyCQTXdwpJ_OKNMH0U75Tpi3oSTpN2txM8M",
-  "authDomain": "house-of-shriya-54a6e.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-houseofshriya-574bb05b-92eb-4cae-b308-40c33ba8d712",
-  "storageBucket": "house-of-shriya-54a6e.firebasestorage.app",
-  "messagingSenderId": "463701906099",
-  "measurementId": "G-9TX5WMWW85",
-  "oAuthClientId": "824874539349-8rvddskv6t8udieq3jpcfoenr108d7j2.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "house-of-shriya-d49d6",
+  "appId": "1:711442937227:web:f47bca7e9a8983ed372b8e",
+  "apiKey": "AIzaSyDh8_32I7BS4sjBSjeydj7vhAaSbvdO6w8",
+  "authDomain": "house-of-shriya-d49d6.firebaseapp.com",
+  "storageBucket": "house-of-shriya-d49d6.firebasestorage.app",
+  "messagingSenderId": "711442937227",
+  "measurementId": "G-R6CZ727TTF"
 }

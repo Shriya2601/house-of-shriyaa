@@ -8,7 +8,7 @@ import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
 import { customerSignOut, findOrderByOrderNumber } from "../services/storeService";
-import { SavedAddress, Order } from "../types";
+import { SavedAddress, Order, AtelierBooking } from "../types";
 import {
   ArrowRight,
   Bell,
@@ -842,12 +842,32 @@ export function InteractiveModal({
   onClose: () => void;
   onOpenAuth?: () => void;
 }) {
-  const { currentUser, customerProfile, customerOrders, siteContent, updateProfile } = useStore();
+  const {
+    currentUser,
+    customerProfile,
+    customerOrders,
+    atelierBookings,
+    siteContent,
+    updateProfileDetails,
+    bookAtelierSession,
+  } = useStore();
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [searchedOrder, setSearchedOrder] = useState<Order | null>(null);
   const [trackError, setTrackError] = useState("");
   const [isAddingAddress, setIsAddingAddress] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
+
+  // Atelier Booking States
+  const [historyTab, setHistoryTab] = useState<"orders" | "bookings">("orders");
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [bookingService, setBookingService] = useState("Atelier Fitting Session");
+  const [bookingDate, setBookingDate] = useState("");
+  const [bookingTime, setBookingTime] = useState("11:30 AM");
+  const [bookingPhone, setBookingPhone] = useState(customerProfile?.phone || "");
+  const [bookingNotes, setBookingNotes] = useState("");
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
+
   const [newAddr, setNewAddr] = useState<Omit<SavedAddress, "id">>({
     label: "Home",
     fullName: customerProfile?.fullName || "",
@@ -888,20 +908,51 @@ export function InteractiveModal({
       id: "addr_" + Date.now(),
     };
     const updated = [...(customerProfile.savedAddresses || []), addressToAdd];
-    await updateProfile({ savedAddresses: updated });
+    await updateProfileDetails({ savedAddresses: updated });
     setIsAddingAddress(false);
   };
 
   const handleDeleteAddress = async (id: string) => {
     if (!customerProfile) return;
     const updated = (customerProfile.savedAddresses || []).filter((a) => a.id !== id);
-    await updateProfile({ savedAddresses: updated });
+    await updateProfileDetails({ savedAddresses: updated });
+  };
+
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bookingDate) return;
+    setBookingSubmitting(true);
+    try {
+      await bookAtelierSession({
+        fullName: customerProfile?.fullName || currentUser?.displayName || "Patron",
+        email: currentUser?.email || "",
+        phone: bookingPhone || customerProfile?.phone || "",
+        serviceType: bookingService,
+        preferredDate: bookingDate,
+        preferredTime: bookingTime,
+        notes: bookingNotes,
+      });
+      setBookingSuccessMsg("Your atelier booking is confirmed and stored in your profile!");
+      setIsBookingOpen(false);
+      setBookingNotes("");
+      setHistoryTab("bookings");
+      setTimeout(() => setBookingSuccessMsg(""), 5000);
+    } catch (err) {
+      console.warn("Booking creation notice:", err);
+    } finally {
+      setBookingSubmitting(false);
+    }
   };
 
   const renderContent = () => {
     switch (type) {
       case "track_order": {
         const orderToDisplay = searchedOrder || (customerOrders.length > 0 ? customerOrders[0] : null);
+
+        const orderTotal = orderToDisplay ? (orderToDisplay.totalAmount ?? orderToDisplay.total ?? 0) : 0;
+        const orderStatusText = orderToDisplay ? (orderToDisplay.status || orderToDisplay.orderStatus || "pending").replace("_", " ") : "";
+        const city = orderToDisplay?.customerAddress?.city || orderToDisplay?.shippingAddress?.city || "New Delhi";
+        const pincode = orderToDisplay?.customerAddress?.pincode || orderToDisplay?.shippingAddress?.pincode || "110001";
 
         return (
           <div className="space-y-4">
@@ -933,14 +984,14 @@ export function InteractiveModal({
                   <div>
                     <span className="text-xs text-[#8c6d37] font-bold block">ORDER #{orderToDisplay.orderNumber}</span>
                     <strong className="text-sm text-[#1e1b18] font-serif">
-                      {orderToDisplay.items[0]?.name || "Luxury Couture Order"}
+                      {orderToDisplay.items[0]?.name || orderToDisplay.items[0]?.productName || "Luxury Couture Order"}
                     </strong>
                     <span className="text-xs text-[#706458] block mt-0.5">
-                      {orderToDisplay.items.length} {orderToDisplay.items.length === 1 ? "item" : "items"} · Total: ₹{orderToDisplay.totalAmount.toLocaleString()}
+                      {orderToDisplay.items.length} {orderToDisplay.items.length === 1 ? "item" : "items"} · Total: ₹{orderTotal.toLocaleString()}
                     </span>
                   </div>
                   <span className="bg-[#0d4f3c] text-[#faf8f5] text-xs font-bold px-2.5 py-1 rounded-full capitalize">
-                    {orderToDisplay.status.replace("_", " ")}
+                    {orderStatusText}
                   </span>
                 </div>
 
@@ -976,7 +1027,7 @@ export function InteractiveModal({
                     <div>
                       <strong className="text-xs text-[#1e1b18] block">Dispatched via Premium Express Carrier</strong>
                       <span className="text-[0.7rem] text-[#0d4f3c] font-medium">
-                        Delivery to: {orderToDisplay.customerAddress.city}, {orderToDisplay.customerAddress.pincode}
+                        Delivery to: {city}, {pincode}
                       </span>
                     </div>
                   </div>
@@ -1010,7 +1061,7 @@ export function InteractiveModal({
               <Package size={36} className="mx-auto text-[#c5a059]" />
               <div>
                 <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
-                <p className="text-[#706458] mt-1">Sign in with your account to view your past couture orders and invoices.</p>
+                <p className="text-[#706458] mt-1">Sign in with your account to view your past couture orders, fittings, and bookings.</p>
               </div>
               {onOpenAuth && (
                 <button
@@ -1028,61 +1079,256 @@ export function InteractiveModal({
           );
         }
 
-        if (customerOrders.length === 0) {
-          return (
-            <div className="text-center py-8 space-y-3 text-xs">
-              <Package size={36} className="mx-auto text-[#c5a059]" />
-              <div>
-                <strong className="text-sm font-serif text-[#1e1b18] block">No Orders Yet</strong>
-                <p className="text-[#706458] mt-1">You haven't placed any orders yet. Discover our latest couture collection!</p>
+        return (
+          <div className="space-y-4">
+            {/* Tab switcher: Orders vs Atelier Bookings */}
+            <div className="flex items-center justify-between border-b border-[#ebe2d8] pb-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistoryTab("orders");
+                    setIsBookingOpen(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    historyTab === "orders" && !isBookingOpen
+                      ? "bg-[#0d4f3c] text-white"
+                      : "bg-[#f5efeb] text-[#706458] hover:bg-[#ebe2d8]"
+                  }`}
+                >
+                  Couture Orders ({customerOrders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistoryTab("bookings");
+                    setIsBookingOpen(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    historyTab === "bookings" && !isBookingOpen
+                      ? "bg-[#0d4f3c] text-white"
+                      : "bg-[#f5efeb] text-[#706458] hover:bg-[#ebe2d8]"
+                  }`}
+                >
+                  Atelier Bookings ({atelierBookings.length})
+                </button>
               </div>
+
               <button
-                onClick={() => {
-                  onClose();
-                  document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
-                }}
-                className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                type="button"
+                onClick={() => setIsBookingOpen(!isBookingOpen)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-[#f5eee6] hover:bg-[#ebe0d3] text-[#8c6d37] rounded-lg text-xs font-bold border border-[#d8cbba] transition-colors"
               >
-                Browse Collections
+                <Plus size={13} />
+                <span>{isBookingOpen ? "View History" : "New Booking"}</span>
               </button>
             </div>
-          );
-        }
 
-        return (
-          <div className="space-y-3">
-            {customerOrders.map((order) => (
-              <div key={order.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <strong className="text-[#8c6d37]">Order #{order.orderNumber}</strong>
-                  <span className="text-[#0d4f3c] font-bold capitalize">{order.status.replace("_", " ")}</span>
+            {bookingSuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span>{bookingSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* NEW ATELIER BOOKING FORM */}
+            {isBookingOpen ? (
+              <form onSubmit={handleCreateBooking} className="bg-[#faf7f2] p-4 rounded-xl border border-[#ebe2d8] space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <strong className="text-sm font-serif text-[#1e1b18]">Book Atelier Consultation or Fitting</strong>
+                  <span className="text-[10px] text-[#8c6d37] font-semibold uppercase tracking-wider">Bespoke Service</span>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#1e1b18]">
-                    {order.items.map((i) => i.name).join(", ")}
-                  </p>
-                  <span className="text-[0.7rem] text-[#706458] block mt-0.5">
-                    Placed on {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-[#f5efeb] text-xs">
-                  <span className="text-[#706458]">Total: ₹{order.totalAmount.toLocaleString()} ({order.paymentMethod.toUpperCase()})</span>
-                  <button
-                    onClick={() => {
-                      setSearchedOrder(order);
-                      setTrackSearchQuery(order.orderNumber);
-                    }}
-                    className="text-[#0d4f3c] font-bold hover:underline"
+                <p className="text-[#706458] text-[11px]">
+                  Reserve a personalized drape, custom measurement, or bridal consultation with our master couturiers.
+                </p>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#1e1b18]">Service Required</label>
+                  <select
+                    value={bookingService}
+                    onChange={(e) => setBookingService(e.target.value)}
+                    className="w-full p-2 border border-[#ebe2d8] rounded-lg bg-white text-xs"
                   >
-                    Track Package →
+                    <option value="Atelier Fitting Session">Atelier Fitting Session (Flagship Boutique)</option>
+                    <option value="Virtual Drape & Styling">Virtual Drape & Styling (Video Consultation)</option>
+                    <option value="Bespoke Bridal Consultation">Bespoke Bridal Trousseau Consultation</option>
+                    <option value="Custom Tailoring Measurement">Custom Tailoring & Measurement Session</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#1e1b18]">Preferred Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={bookingDate}
+                      min={new Date().toISOString().split("T")[0]}
+                      onChange={(e) => setBookingDate(e.target.value)}
+                      className="w-full p-2 border border-[#ebe2d8] rounded-lg bg-white text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#1e1b18]">Preferred Time Slot</label>
+                    <select
+                      value={bookingTime}
+                      onChange={(e) => setBookingTime(e.target.value)}
+                      className="w-full p-2 border border-[#ebe2d8] rounded-lg bg-white text-xs"
+                    >
+                      <option value="11:00 AM">11:00 AM - 12:00 PM</option>
+                      <option value="01:00 PM">01:00 PM - 02:00 PM</option>
+                      <option value="03:30 PM">03:30 PM - 04:30 PM</option>
+                      <option value="05:30 PM">05:30 PM - 06:30 PM</option>
+                      <option value="07:00 PM">07:00 PM - 08:00 PM</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#1e1b18]">Contact Phone / WhatsApp</label>
+                  <input
+                    type="tel"
+                    placeholder="10 digit mobile number"
+                    required
+                    value={bookingPhone}
+                    onChange={(e) => setBookingPhone(e.target.value)}
+                    className="w-full p-2 border border-[#ebe2d8] rounded-lg bg-white text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#1e1b18]">Special Requests or Occasion (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bridal trousseau, festive unstitched suit selection"
+                    value={bookingNotes}
+                    onChange={(e) => setBookingNotes(e.target.value)}
+                    className="w-full p-2 border border-[#ebe2d8] rounded-lg bg-white text-xs"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={bookingSubmitting}
+                    className="flex-1 py-2.5 bg-[#0d4f3c] hover:bg-[#083528] text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    {bookingSubmitting ? "Confirming Booking..." : "Confirm & Save Booking"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingOpen(false)}
+                    className="px-4 py-2.5 bg-gray-200 text-gray-700 font-bold rounded-lg text-xs"
+                  >
+                    Cancel
                   </button>
                 </div>
-              </div>
-            ))}
+              </form>
+            ) : historyTab === "orders" ? (
+              customerOrders.length === 0 ? (
+                <div className="text-center py-8 space-y-3 text-xs">
+                  <Package size={36} className="mx-auto text-[#c5a059]" />
+                  <div>
+                    <strong className="text-sm font-serif text-[#1e1b18] block">No Orders Yet</strong>
+                    <p className="text-[#706458] mt-1">You haven't placed any couture orders yet. Discover our latest creations!</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                  >
+                    Browse Collections
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {customerOrders.map((order) => {
+                    const totalVal = order.totalAmount ?? order.total ?? 0;
+                    const statusStr = (order.status || order.orderStatus || "pending").replace("_", " ");
+                    const pMethod = (order.paymentMethod || "COD").toUpperCase();
+
+                    return (
+                      <div key={order.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <strong className="text-[#8c6d37]">Order #{order.orderNumber}</strong>
+                          <span className="text-[#0d4f3c] font-bold capitalize">{statusStr}</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#1e1b18]">
+                            {order.items.map((i) => i.name || i.productName || "Couture Ensemble").join(", ")}
+                          </p>
+                          <span className="text-[0.7rem] text-[#706458] block mt-0.5">
+                            Placed on {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-[#f5efeb] text-xs">
+                          <span className="text-[#706458]">Total: ₹{totalVal.toLocaleString()} ({pMethod})</span>
+                          <button
+                            onClick={() => {
+                              setSearchedOrder(order);
+                              setTrackSearchQuery(order.orderNumber);
+                              onClose();
+                            }}
+                            className="text-[#0d4f3c] font-bold hover:underline"
+                          >
+                            Track Package →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              /* ATELIER BOOKINGS LIST */
+              atelierBookings.length === 0 ? (
+                <div className="text-center py-8 space-y-3 text-xs">
+                  <Clock size={36} className="mx-auto text-[#c5a059]" />
+                  <div>
+                    <strong className="text-sm font-serif text-[#1e1b18] block">No Atelier Bookings Yet</strong>
+                    <p className="text-[#706458] mt-1">
+                      Schedule a virtual drape consultation or boutique fitting session with our couture specialists.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsBookingOpen(true)}
+                    className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
+                  >
+                    Schedule Booking
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {atelierBookings.map((bk) => (
+                    <div key={bk.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono font-bold text-[#8c6d37]">{bk.bookingNumber}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase text-[10px]">
+                          {bk.status}
+                        </span>
+                      </div>
+                      <strong className="text-sm font-serif text-[#1e1b18] block">{bk.serviceType}</strong>
+                      <div className="flex items-center gap-3 text-[#706458] text-[11px]">
+                        <span>📅 {bk.preferredDate}</span>
+                        <span>⏰ {bk.preferredTime}</span>
+                        <span>📞 {bk.phone}</span>
+                      </div>
+                      {bk.notes && (
+                        <p className="text-[11px] text-[#8c827a] italic pt-1 border-t border-[#f5efeb]">
+                          "{bk.notes}"
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
         );
       }

@@ -10,6 +10,7 @@ import {
   CustomerInfo,
   PaymentMethod,
   CustomerProfile,
+  AtelierBooking,
 } from "../types";
 import {
   defaultSiteContent,
@@ -20,6 +21,8 @@ import {
   subscribeProducts,
   subscribeCategories,
   createRealOrder,
+  createAtelierBooking,
+  fetchAtelierBookings,
   subscribeAuthState,
   seedInitialProductsIfEmpty,
   fetchCustomerProfile,
@@ -72,8 +75,12 @@ interface StoreContextType {
   authLoading: boolean;
   customerProfile: CustomerProfile | null;
   customerOrders: Order[];
+  atelierBookings: AtelierBooking[];
   refreshCustomerOrders: () => Promise<void>;
   updateProfileDetails: (updates: Partial<CustomerProfile>) => Promise<void>;
+  bookAtelierSession: (
+    bookingData: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
+  ) => Promise<AtelierBooking>;
 
   // Live CMS & Catalog Editing
   setSiteContent: React.Dispatch<React.SetStateAction<SiteContent>>;
@@ -132,6 +139,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  const [atelierBookings, setAtelierBookings] = useState<AtelierBooking[]>(() => {
+    try {
+      const saved = localStorage.getItem("hos_atelier_bookings");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Sync Cart to localStorage
   useEffect(() => {
     try {
@@ -161,7 +177,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [wishlist]);
 
-  // Fetch / Sync customer orders
+  // Fetch / Sync customer orders and bookings from Firestore
   const refreshCustomerOrders = useCallback(async () => {
     let combinedOrders: Order[] = [];
     try {
@@ -169,27 +185,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       combinedOrders = [...local];
     } catch {}
 
-    if (currentUser?.email) {
+    if (currentUser?.email || currentUser?.uid) {
       try {
         const colRef = collection(db, "orders");
-        const q = query(
-          colRef,
-          where("customer.email", "==", currentUser.email.trim().toLowerCase()),
-          orderBy("createdAt", "desc")
-        );
-        const snap = await getDocs(q);
-        const remoteOrders = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
-        
-        // Merge without duplicates
+        const remoteOrders: Order[] = [];
+
+        // 1. Query by customer.email (without requiring composite index)
+        if (currentUser.email) {
+          try {
+            const q = query(
+              colRef,
+              where("customer.email", "==", currentUser.email.trim().toLowerCase())
+            );
+            const snap = await getDocs(q);
+            snap.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
+          } catch (err) {
+            console.warn("Error querying orders by email:", err);
+          }
+        }
+
+        // 2. Query by userId
+        if (currentUser.uid) {
+          try {
+            const qUser = query(colRef, where("userId", "==", currentUser.uid));
+            const snapUser = await getDocs(qUser);
+            snapUser.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
+          } catch (err) {
+            console.warn("Error querying orders by userId:", err);
+          }
+
+          // 3. Query patron's personal bookings subcollection
+          try {
+            const userSubCol = collection(db, "customers", currentUser.uid, "bookings");
+            const subSnap = await getDocs(userSubCol);
+            subSnap.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
+          } catch (err) {
+            console.warn("Error querying patron bookings subcollection:", err);
+          }
+        }
+
+        // Merge without duplicates and sort newest first
         const seen = new Set<string>();
         const merged: Order[] = [];
         for (const ord of [...remoteOrders, ...combinedOrders]) {
           const key = ord.orderNumber || ord.id;
-          if (!seen.has(key)) {
+          if (key && !seen.has(key)) {
             seen.add(key);
-            merged.push(ord);
+            merged.push({
+              ...ord,
+              status: ord.status || ord.orderStatus || "pending",
+              totalAmount: ord.totalAmount ?? ord.total ?? 0,
+              customerAddress: ord.customerAddress || ord.shippingAddress,
+            });
           }
         }
+        merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         combinedOrders = merged;
       } catch (e) {
         console.warn("Error querying customer remote orders:", e);
@@ -197,6 +247,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     setCustomerOrders(combinedOrders);
+
+    // Also fetch atelier bookings
+    if (currentUser?.email || currentUser?.uid) {
+      try {
+        const bookings = await fetchAtelierBookings(currentUser.email || currentUser.uid);
+        setAtelierBookings(bookings);
+      } catch (e) {
+        console.warn("Error syncing atelier bookings:", e);
+      }
+    }
   }, [currentUser]);
 
   // Subscribe to real-time Firebase Auth & load profile
@@ -460,17 +520,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     // Create real order in Firestore database
     const newOrder = await createRealOrder({
+      userId: currentUser?.uid,
       customer: details.customer,
       shippingAddress: details.shippingAddress,
-      items: orderItems,
+      customerAddress: details.shippingAddress,
+      items: orderItems.map((item) => ({
+        ...item,
+        name: item.productName,
+      })),
       subtotal,
       shippingFee,
       total,
+      totalAmount: total,
       referralDiscount: discount,
       referralCode: details.referralCode,
       paymentMethod: details.paymentMethod,
       paymentStatus: details.paymentMethod === "Cash on Delivery (COD)" ? "Pending" : "Paid",
       orderStatus: "pending",
+      status: "pending",
       notes: details.notes || "",
       isTest: false, // strictly marked as real customer order
     });
@@ -492,6 +559,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setInstantCheckoutProduct(null);
 
     return newOrder;
+  };
+
+  const bookAtelierSession = async (
+    bookingData: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
+  ): Promise<AtelierBooking> => {
+    const booking = await createAtelierBooking({
+      ...bookingData,
+      userId: currentUser?.uid || bookingData.userId,
+    });
+    setAtelierBookings((prev) => [booking, ...prev.filter((b) => b.id !== booking.id)]);
+    return booking;
   };
 
   const toggleWishlist = (productId: string) => {
@@ -545,8 +623,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         authLoading,
         customerProfile,
         customerOrders,
+        atelierBookings,
         refreshCustomerOrders,
         updateProfileDetails,
+        bookAtelierSession,
         setSiteContent,
         setProducts,
         updateProduct,

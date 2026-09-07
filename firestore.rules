@@ -24,17 +24,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Orders: Customers can create orders
-    match /orders/{orderId} {
-      allow create: if request.resource.data != null &&
-                       request.resource.data.orderNumber is string;
-      allow read: if isSignedIn();
-      allow update, delete: if false;
-    }
-
-    // Customer Profiles: Authenticated users can manage their own profile
+    // Customer Profiles: Registered patrons can read and update their own profile
     match /customers/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
+      // Allow fallback create during first sign-up
+      allow create: if isSignedIn();
+
+      // Subcollection for user-specific bookings & order receipts
+      match /bookings/{bookingId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // Orders & Ensemble Bookings: Customers can place orders, track them, and read their own
+    match /orders/{orderId} {
+      allow create: if request.resource.data != null;
+      allow read: if true; // Allows order tracking by order number & customer order history
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.customer.email == request.auth.token.email
+      );
+    }
+
+    // Atelier & Consultation Bookings: Patrons can book atelier visits and view their appointments
+    match /bookings/{bookingId} {
+      allow create: if request.resource.data != null;
+      allow read: if true; // Allows booking reference verification
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.email == request.auth.token.email
+      );
     }
 
     // Default fallback: Deny all unmatched collections

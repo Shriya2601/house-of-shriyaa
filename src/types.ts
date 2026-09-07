@@ -136,6 +136,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   orderNumber: string; // e.g. HOS-2026-1001
+  userId?: string;
   customer: CustomerInfo;
   shippingAddress: ShippingAddress;
   items: OrderItem[];
@@ -153,6 +154,26 @@ export interface Order {
   createdAt: string; // ISO date string
   updatedAt: string;
   isTest?: boolean;
+  // Compatibility aliases
+  status?: string;
+  totalAmount?: number;
+  customerAddress?: ShippingAddress;
+}
+
+export interface AtelierBooking {
+  id: string;
+  bookingNumber: string;
+  userId?: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  serviceType: string;
+  preferredDate: string;
+  preferredTime: string;
+  notes?: string;
+  status: "confirmed" | "pending" | "completed" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SavedAddress extends ShippingAddress {

@@ -3,7 +3,8 @@
     "site_content": {
       "title": "Site Content & CMS",
       "description": "Global website editable content including announcement ribbon, hero slides, brand story, atelier details, and footer.",
-      "fields": {
+      "type": "object",
+      "properties": {
         "announcementText": { "type": "string", "description": "Announcement bar headline text" },
         "announcementCta": { "type": "string", "description": "Announcement bar CTA text" },
         "announcementVisible": { "type": "boolean", "description": "Whether announcement bar is displayed" },
@@ -20,7 +21,8 @@
     "products": {
       "title": "Product Catalog",
       "description": "Handcrafted Indian couture and suit catalog items.",
-      "fields": {
+      "type": "object",
+      "properties": {
         "name": { "type": "string", "description": "Product name" },
         "description": { "type": "string", "description": "Product fabric weave description" },
         "color": { "type": "string", "description": "Color name" },
@@ -46,7 +48,8 @@
     "categories": {
       "title": "Product Categories",
       "description": "Category taxonomy for filtering and navigation.",
-      "fields": {
+      "type": "object",
+      "properties": {
         "name": { "type": "string", "description": "Category display label" },
         "slug": { "type": "string", "description": "URL slug" },
         "description": { "type": "string", "description": "Category description" },
@@ -55,10 +58,12 @@
       }
     },
     "orders": {
-      "title": "Customer Orders",
-      "description": "Orders placed through checkout by customers.",
-      "fields": {
+      "title": "Customer Orders & Bookings",
+      "description": "Orders and couture ensemble bookings placed by customers.",
+      "type": "object",
+      "properties": {
         "orderNumber": { "type": "string", "description": "Unique order reference (e.g. HOS-2026-1001)" },
+        "userId": { "type": "string", "description": "Firebase Auth UID of customer who booked" },
         "customer": { "type": "object", "description": "Customer name, email, phone" },
         "shippingAddress": { "type": "object", "description": "Full delivery address, city, state, pincode" },
         "items": { "type": "array", "description": "List of ordered items with quantity, price, size, selected fabric" },
@@ -73,6 +78,41 @@
         "createdAt": { "type": "string", "description": "Order placement ISO timestamp" },
         "updatedAt": { "type": "string", "description": "Status change ISO timestamp" }
       }
+    },
+    "customers": {
+      "title": "Customer Profiles",
+      "description": "Registered patron accounts with personal details, saved shipping addresses, and sizing preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "Patron email address" },
+        "fullName": { "type": "string", "description": "Patron full name" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "tier": { "type": "string", "description": "Patron loyalty tier (e.g. Gold, Platinum)" },
+        "referralCode": { "type": "string", "description": "Customer unique referral share code" },
+        "savedAddresses": { "type": "array", "description": "List of saved shipping addresses" },
+        "sizingProfile": { "type": "object", "description": "Bespoke sizing and cut preferences" },
+        "createdAt": { "type": "string", "description": "Account registration timestamp" },
+        "updatedAt": { "type": "string", "description": "Profile update timestamp" }
+      }
+    },
+    "bookings": {
+      "title": "Atelier & Consultation Bookings",
+      "description": "Private VIP atelier styling appointments, virtual bridal consultations, and fitting bookings.",
+      "type": "object",
+      "properties": {
+        "bookingNumber": { "type": "string", "description": "Unique booking reference number" },
+        "userId": { "type": "string", "description": "Firebase Auth UID of customer" },
+        "fullName": { "type": "string", "description": "Client full name" },
+        "email": { "type": "string", "description": "Client email" },
+        "phone": { "type": "string", "description": "Contact phone" },
+        "serviceType": { "type": "string", "description": "Type of booking: Atelier Visit, Virtual Drape Consultation, Bespoke Fitting" },
+        "preferredDate": { "type": "string", "description": "Preferred appointment date" },
+        "preferredTime": { "type": "string", "description": "Preferred appointment time slot" },
+        "notes": { "type": "string", "description": "Special styling requirements or attire focus" },
+        "status": { "type": "string", "description": "Booking status: confirmed, pending, completed, cancelled" },
+        "createdAt": { "type": "string", "description": "Booking creation ISO timestamp" }
+      }
     }
   },
   "firestore": {
@@ -82,7 +122,19 @@
     },
     "/orders/{orderId}": {
       "schema": "orders",
-      "description": "Customer orders"
+      "description": "Customer orders and ensemble bookings"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "bookings",
+      "description": "Private atelier styling and consultation bookings"
+    },
+    "/customers/{userId}": {
+      "schema": "customers",
+      "description": "Customer accounts and patron profiles"
+    },
+    "/customers/{userId}/bookings/{bookingId}": {
+      "schema": "bookings",
+      "description": "User specific bookings and appointment history"
     },
     "/site_content/{documentId}": {
       "schema": "site_content",
