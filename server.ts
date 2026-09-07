@@ -1347,31 +1347,53 @@ app.post(["/api/admin/verify", "/api/admin/verify/", "/api/admin/login", "/api/a
     // The admin username can be "House of Shriya", "House of Shriya Atelier", "admin", or any authorized admin email
     const authorizedAdminEmails = getAuthorizedAdminEmails();
 
-    const isUserValid =
-      cleanUser === "house of shriya" ||
-      cleanUser === "house of shriya atelier" ||
-      cleanUser === "admin" ||
-      cleanUser === "crochetbyshriya01@gmail.com" ||
-      cleanUser === "houseofshriya.in@gmail.com" ||
-      authorizedAdminEmails.includes(cleanUser);
-
+    // 1. First check if password matches active master, temp, reset, or environment records
     let isPassValid = isValidAdminPassword(cleanPass);
 
-    // Resilient Firebase credential synchronization:
-    // If password does not match activePass but user is an authorized admin,
-    // check if they authenticated via their newly set Firebase Auth password
-    if (!isPassValid && (authorizedAdminEmails.includes(cleanUser) || cleanUser.includes("@"))) {
+    // 2. Resilient Firebase credential synchronization:
+    // If candidate password is not yet recognized on server, verify against Firebase Auth
+    // across candidate email or authorized admin emails
+    if (!isPassValid) {
       const fbAuth = getServerFirebaseAuth();
       if (fbAuth) {
-        try {
-          await signInFbWithEmailAndPassword(fbAuth, cleanUser, cleanPass);
-          // Successfully verified against Firebase Auth! Synchronize server password permanently
-          setRuntimeAdminPassword(cleanPass, cleanUser);
-          isPassValid = true;
-          console.log(`[SECURITY AUDIT] Admin credentials verified via Firebase Auth and permanently synchronized for ${cleanUser}.`);
-        } catch {}
+        const candidateEmails = cleanUser.includes("@")
+          ? [cleanUser]
+          : authorizedAdminEmails;
+
+        for (const testEmail of candidateEmails) {
+          try {
+            await signInFbWithEmailAndPassword(fbAuth, testEmail, cleanPass);
+            // Successfully verified against Firebase Auth! Synchronize server password permanently
+            setRuntimeAdminPassword(cleanPass, testEmail);
+            isPassValid = true;
+            console.log(`[SECURITY AUDIT] Admin credentials verified via Firebase Auth and permanently synchronized for ${testEmail}.`);
+            break;
+          } catch {}
+        }
       }
     }
+
+    // 3. Resilient Admin Identifier Validation
+    const normalizedUser = cleanUser.replace(/[\s_\-\.]+/g, "");
+    const isKnownAdminNameOrEmail =
+      cleanUser === "house of shriya" ||
+      cleanUser === "house of shriya atelier" ||
+      cleanUser === "house of shriya admin" ||
+      normalizedUser === "houseofshriya" ||
+      normalizedUser === "shriya" ||
+      normalizedUser === "admin" ||
+      normalizedUser === "administrator" ||
+      normalizedUser === "superadmin" ||
+      normalizedUser === "owner" ||
+      normalizedUser === "atelier" ||
+      normalizedUser === "crochetbyshriya01" ||
+      cleanUser === "crochetbyshriya01@gmail.com" ||
+      cleanUser === "houseofshriya.in@gmail.com" ||
+      cleanUser.includes("@") ||
+      authorizedAdminEmails.includes(cleanUser);
+
+    // If password is authenticated, accept any non-empty username or known identifier
+    const isUserValid = (isPassValid && cleanUser.length > 0) || isKnownAdminNameOrEmail;
 
     if (!isUserValid || !isPassValid) {
       res.status(401).json({
@@ -1422,11 +1444,13 @@ app.all(["/api/admin/session", "/api/admin/session/"], (req, res) => {
       return;
     }
 
+    const sessionUser = result.username || "House of Shriya";
     res.json({
       authenticated: true,
       valid: true,
+      username: sessionUser,
       user: {
-        username: "House of Shriya",
+        username: sessionUser,
         role: "admin",
       },
       message: "Session is active and verified.",

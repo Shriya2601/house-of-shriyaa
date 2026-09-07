@@ -1337,8 +1337,18 @@ export async function changeAdminCredentials(
   }
 }
 
+let inMemoryAdminSession: { authenticated: boolean; username: string; token?: string; expiresAt: number } | null = null;
+
 export function getStoredAdminSession(): { authenticated: boolean; username: string; token?: string } | null {
   try {
+    if (inMemoryAdminSession && inMemoryAdminSession.authenticated && inMemoryAdminSession.expiresAt > Date.now()) {
+      return {
+        authenticated: true,
+        username: inMemoryAdminSession.username,
+        token: inMemoryAdminSession.token,
+      };
+    }
+
     let raw: string | null = null;
 
     // 1. Check active session storage
@@ -1358,9 +1368,10 @@ export function getStoredAdminSession(): { authenticated: boolean; username: str
 
     const parsed = JSON.parse(raw);
     if (parsed && parsed.authenticated && parsed.expiresAt > Date.now()) {
+      inMemoryAdminSession = parsed;
       return {
         authenticated: true,
-        username: parsed.username || "house of shriya",
+        username: parsed.username || "House of Shriya",
         token: parsed.token,
       };
     } else if (parsed && parsed.expiresAt && parsed.expiresAt <= Date.now()) {
@@ -1376,10 +1387,11 @@ export function setStoredAdminSession(username: string, token?: string): void {
   try {
     const sessionPayload = {
       authenticated: true,
-      username: username || "house of shriya",
+      username: username || "House of Shriya",
       token: token || `hos_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24-hour session
     };
+    inMemoryAdminSession = sessionPayload;
     const raw = JSON.stringify(sessionPayload);
 
     if (typeof sessionStorage !== "undefined") {
@@ -1400,6 +1412,7 @@ export function setStoredAdminSession(username: string, token?: string): void {
 }
 
 export function clearStoredAdminSession(): void {
+  inMemoryAdminSession = null;
   try {
     if (typeof sessionStorage !== "undefined") {
       sessionStorage.removeItem(SESSION_KEY);
