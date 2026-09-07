@@ -1,80 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Site Content & CMS: Publicly readable; writable for administrative updates
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Admin Profiles & Roles
+    match /admins/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    // Site Content & CMS: Publicly readable; administrative updates require admin role
     match /site_content/{documentId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
     // Products Catalog: Publicly readable; administrative catalog management
     match /products/{productId} {
       allow read: if true;
-      allow create, update: if request.resource.data != null &&
-                               request.resource.data.name is string &&
-                               request.resource.data.name.size() > 0;
-      allow delete: if true;
+      allow write: if isAdmin();
     }
 
     // Categories & Taxonomy: Publicly readable; administrative category management
     match /categories/{categoryId} {
       allow read: if true;
-      allow create, update: if request.resource.data != null &&
-                               request.resource.data.name is string;
-      allow delete: if true;
+      allow write: if isAdmin();
     }
 
-    // Orders: Anyone (customers) can create orders; administrative and patron tracking
+    // Orders: Anyone (customers) can create orders; administrative tracking restricted to admins
     match /orders/{orderId} {
       allow create: if request.resource.data != null &&
                        request.resource.data.orderNumber is string;
-      allow read, update, delete: if true;
+      allow read, update, delete: if isAdmin();
     }
 
     // Admin Credentials & Boutique Settings
     match /admin_settings/{documentId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     match /admin_auth/{documentId} {
-      allow read, write: if true;
-    }
-
-    // Admin profiles / metadata
-    match /admins/{userId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     // Uploaded Media & Product Images
     match /uploaded_assets/{assetId} {
       allow read: if true;
-      allow create, update: if request.resource.data != null &&
-                               (request.resource.data.dataUrl is string || request.resource.data.url is string);
-      allow delete: if true;
+      allow write: if isAdmin();
     }
 
-    // User Accounts & Customer Profiles (readable for patron profiles and administrative management)
+    // User Accounts & Customer Profiles
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
     match /customers/{userId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
-    // Authentication Audit Logs (secure audit trail for debugging and security audits)
+    // Authentication Audit Logs (secure audit trail)
     match /admin_audit_logs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     match /admin_auth_logs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Default fallback: Deny all unmatched collections to prevent open database vulnerabilities
+    // Default fallback: Deny all unmatched collections
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate, Navigate } from "react-router-dom";
+import { useAdminAuth } from "../context/AdminAuthContext";
 import {
   Crown,
   ShoppingBag,
@@ -96,6 +97,8 @@ import { MediaManager } from "../components/admin/MediaManager";
 import { optimizeImageFile, persistAssetToFirestore } from "../services/imageUploadService";
 
 export default function Admin() {
+  const navigate = useNavigate();
+  const { adminUser, adminProfile, isAdmin, logout } = useAdminAuth();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [adminSession, setAdminSession] = useState<{ authenticated: boolean; username: string } | null>(() =>
     getStoredAdminSession()
@@ -204,8 +207,8 @@ export default function Admin() {
   const [auditLogs, setAuditLogs] = useState<AdminAuthAuditLog[]>([]);
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
-  const isAuthenticated = Boolean(adminSession?.authenticated);
-  const currentAdminName = adminSession?.username || "House of Shriya";
+  const isAuthenticated = Boolean(isAdmin || adminSession?.authenticated);
+  const currentAdminName = adminProfile?.displayName || adminSession?.username || "House of Shriya";
 
   useEffect(() => {
     if (adminSession?.authenticated) {
@@ -468,11 +471,17 @@ export default function Admin() {
     clearStoredAdminSession();
     setAdminSession(null);
     try {
+      await logout();
+    } catch {
+      // non-blocking
+    }
+    try {
       await adminSignOut();
     } catch {
       // non-blocking
     }
     setSelectedOrder(null);
+    navigate("/admin/login", { replace: true });
   };
 
   // Orders Calculations (Separating Real vs Test Orders)
@@ -1261,387 +1270,9 @@ export default function Admin() {
     );
   }
 
-  // Not Authenticated: Secure Admin Login / Setup View
+  // Not Authenticated: Redirect to dedicated /admin/login
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#080e0c] text-[#faf8f5] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-        {/* Subtle decorative radial background glows */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#0d4f3c]/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#d4af37]/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#0d4f3c] border border-[#d4af37]/40 shadow-xl mb-4 text-[#d4af37]">
-            <Crown size={32} strokeWidth={1.5} />
-          </div>
-          <span className="text-[11px] font-bold tracking-[0.25em] text-[#d4af37] uppercase block">
-            ATELIER GOVERNANCE
-          </span>
-          <h1 className="font-serif text-3xl font-bold tracking-wide text-[#faf8f5] mt-1">
-            House of Shriya
-          </h1>
-          <p className="text-xs text-[#a39e93] mt-1.5">
-            Official Admin Dashboard &amp; Real-time Content Management Suite
-          </p>
-        </div>
-
-        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-          <div className="bg-[#121916] border border-[#d4af37]/30 py-8 px-6 shadow-2xl rounded-2xl sm:px-10 backdrop-blur-md">
-            {/* Mode switch tabs */}
-            <div className="flex border-b border-[#22302a] mb-6">
-              <button
-                type="button"
-                onClick={() => { setAuthMode("signin"); setAuthError(""); setAuthSuccess(""); }}
-                className={`flex-1 pb-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-                  authMode === "signin"
-                    ? "border-[#d4af37] text-[#d4af37]"
-                    : "border-transparent text-[#8a857b] hover:text-white"
-                }`}
-              >
-                Admin Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode("reset"); setAuthError(""); setAuthSuccess(""); }}
-                className={`flex-1 pb-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-                  authMode === "reset" || authMode === "confirm_reset"
-                    ? "border-[#d4af37] text-[#d4af37]"
-                    : "border-transparent text-[#8a857b] hover:text-white"
-                }`}
-              >
-                Forgot / Reset Password
-              </button>
-            </div>
-
-            {authError && (
-              <div className="mb-4 bg-red-950/60 border border-red-800 text-red-300 text-xs px-3.5 py-2.5 rounded-lg flex flex-col gap-1.5">
-                <div className="flex items-start gap-2">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
-                  <span>{authError}</span>
-                </div>
-                {authMode === "confirm_reset" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("reset");
-                      setAuthError("");
-                      setAuthSuccess("");
-                    }}
-                    className="self-start text-[11px] font-semibold text-[#d4af37] underline hover:text-[#e6c34f] pl-6 transition-colors"
-                  >
-                    Request a new reset email →
-                  </button>
-                )}
-              </div>
-            )}
-
-            {authSuccess && (
-              <div className="mb-4 bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs px-3.5 py-2.5 rounded-lg flex items-start gap-2">
-                <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-400" />
-                <span>{authSuccess}</span>
-              </div>
-            )}
-
-            {authMode === "signin" && (
-              <form onSubmit={handleSignIn} className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Admin Username
-                  </label>
-                  <div className="relative">
-                    <UserCheck size={15} className="absolute left-3 top-3 text-[#7a7469]" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. house of shriya"
-                      value={authUsername}
-                      onChange={(e) => setAuthUsername(e.target.value)}
-                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Security Password
-                  </label>
-                  <div className="relative">
-                    <Lock size={15} className="absolute left-3 top-3 text-[#7a7469]" />
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                    />
-                  </div>
-                </div>
-
-                {/* Temporary Emergency Admin Access Assistance */}
-                <div className="bg-[#1a2520] border border-[#d4af37]/40 rounded-xl p-3.5 text-xs text-[#cfc8bc] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-bold text-[#d4af37] text-[11px] uppercase tracking-wider">
-                      <Key size={13} className="text-[#d4af37]" /> Temporary Admin Access
-                    </span>
-                    <span className="text-[10px] bg-[#d4af37]/20 text-[#d4af37] px-2 py-0.5 rounded font-mono font-bold">
-                      Active
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-[11px] font-mono bg-[#080e0c] p-2.5 rounded-lg border border-[#2b3d35]">
-                    <div className="flex justify-between text-[#9c9588]">
-                      <span>User / Email:</span>
-                      <span className="text-white font-semibold select-all">House of Shriya</span>
-                    </div>
-                    <div className="flex justify-between text-[#9c9588]">
-                      <span>Temp Password:</span>
-                      <span className="text-[#d4af37] font-semibold select-all">ShriyaAdmin2026!</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthUsername("House of Shriya");
-                      setAuthPassword("ShriyaAdmin2026!");
-                      setAuthError("");
-                    }}
-                    className="w-full py-1.5 px-3 bg-[#d4af37]/15 hover:bg-[#d4af37]/25 text-[#d4af37] rounded-lg border border-[#d4af37]/30 text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <span>Use Temporary Credentials</span>
-                  </button>
-                  <p className="text-[10px] text-[#8a857b] leading-tight text-center">
-                    Once logged in, you can update your master password permanently in Dashboard &rarr; Settings.
-                  </p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  className="w-full mt-2 bg-[#0d4f3c] hover:bg-[#146e54] text-[#faf8f5] font-bold text-xs uppercase tracking-widest py-3 rounded-xl border border-[#d4af37]/40 shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  <Shield size={15} className="text-[#d4af37]" />
-                  <span>{authSubmitting ? "Authenticating..." : "Enter Secure Dashboard"}</span>
-                </button>
-              </form>
-            )}
-
-            {authMode === "setup" && (
-              <form onSubmit={handleSetupAdmin} className="space-y-4">
-                <div className="bg-[#0d4f3c]/20 border border-[#0d4f3c]/40 p-3 rounded-lg text-[11px] text-[#cfc8bc]">
-                  First time configuring your store? Create the primary owner admin credentials below.
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Owner Display Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Shriya Sharma"
-                    value={authDisplayName}
-                    onChange={(e) => setAuthDisplayName(e.target.value)}
-                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Owner Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. shriyapusha01@gmail.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Create Password (Min 6 characters)
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="••••••••"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  className="w-full mt-2 bg-[#d4af37] hover:bg-[#e6c34f] text-[#080e0c] font-bold text-xs uppercase tracking-widest py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  <Crown size={15} />
-                  <span>{authSubmitting ? "Provisioning..." : "Create Admin Account"}</span>
-                </button>
-              </form>
-            )}
-
-            {authMode === "reset" && (
-              <form onSubmit={handleResetPassword} className="space-y-4">
-                <p className="text-xs text-[#a39e93]">
-                  Enter your registered admin email address and we’ll send a password reset link directly to your inbox.
-                </p>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Registered Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. shriyapusha01@gmail.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  className="w-full mt-2 bg-[#0d4f3c] hover:bg-[#146e54] text-[#faf8f5] font-bold text-xs uppercase tracking-widest py-3 rounded-xl border border-[#d4af37]/40 shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  <Mail size={15} />
-                  <span>{authSubmitting ? "Sending Link..." : "Send Reset Link"}</span>
-                </button>
-
-                <div className="pt-2 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("confirm_reset");
-                      setAuthError("");
-                      setAuthSuccess("");
-                    }}
-                    className="text-xs text-[#d4af37] hover:underline"
-                  >
-                    Already have a reset code or link token? Set new password →
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {authMode === "confirm_reset" && (
-              <form onSubmit={handleConfirmReset} className="space-y-4">
-                <p className="text-xs text-[#a39e93]">
-                  Enter your single-use reset code or token received via email, along with your desired new password.
-                </p>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Registered Email (Optional)
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="e.g. shriyapusha01@gmail.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Security Code / Reset Token
-                  </label>
-                  <div className="relative">
-                    <Key size={15} className="absolute left-3 top-3 text-[#7a7469]" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Enter 8-character code or token"
-                      value={resetTokenParam}
-                      onChange={(e) => setResetTokenParam(e.target.value)}
-                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    New Security Password (Min 6 characters)
-                  </label>
-                  <div className="relative">
-                    <Lock size={15} className="absolute left-3 top-3 text-[#7a7469]" />
-                    <input
-                      type="password"
-                      required
-                      minLength={6}
-                      placeholder="••••••••"
-                      value={newResetPassword}
-                      onChange={(e) => setNewResetPassword(e.target.value)}
-                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold tracking-wider text-[#cfc8bc] uppercase mb-1">
-                    Confirm New Password
-                  </label>
-                  <div className="relative">
-                    <Lock size={15} className="absolute left-3 top-3 text-[#7a7469]" />
-                    <input
-                      type="password"
-                      required
-                      minLength={6}
-                      placeholder="••••••••"
-                      value={confirmResetPassword}
-                      onChange={(e) => setConfirmResetPassword(e.target.value)}
-                      className="w-full bg-[#080e0c] border border-[#2b3d35] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-[#5a544a] focus:outline-hidden focus:border-[#d4af37]"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  className="w-full mt-2 bg-[#d4af37] hover:bg-[#e6c34f] text-[#080e0c] font-bold text-xs uppercase tracking-widest py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  <CheckCircle2 size={15} />
-                  <span>{authSubmitting ? "Updating Password..." : "Update Password & Sign In"}</span>
-                </button>
-
-                <div className="pt-2 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("reset");
-                      setAuthError("");
-                      setAuthSuccess("");
-                    }}
-                    className="text-xs text-[#a39e93] hover:text-[#d4af37] transition-colors"
-                  >
-                    ← Back to Request Reset Link
-                  </button>
-                </div>
-              </form>
-            )}
-
-            <div className="mt-6 pt-4 border-t border-[#22302a] text-center">
-              <Link
-                to="/"
-                className="text-xs text-[#d4af37] hover:underline inline-flex items-center gap-1.5"
-              >
-                <ArrowLeft size={13} /> Return to House of Shriya Storefront
-              </Link>
-            </div>
-          </div>
-
-          <p className="text-[11px] text-center text-[#6e685f] mt-4">
-            Domain-independent cloud persistence · Secured by Google Firebase
-          </p>
-        </div>
-      </div>
-    );
+    return <Navigate to="/admin/login" replace />;
   }
 
   // Authenticated: Production-Ready Admin Dashboard / CMS

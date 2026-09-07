@@ -15,10 +15,17 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { AdminProfile, AdminRole } from "../types";
+import { setStoredAdminSession, clearStoredAdminSession } from "./storeService";
 
-// Primary owner emails recognized as initial superadmins
+// Primary authorized emails recognized as initial superadmins
 export const PRIMARY_ADMIN_EMAILS = [
+  "crochetbyshriya01@gmail.com",
+  "houseofshriya.in@gmail.com",
+  "shriya14301@gmail.com",
   "shriyapusha01@gmail.com",
+  "hello.munchmini@gmail.com",
+  "care@houseofshriya.com",
+  "kshriya2626@gmail.com",
   "admin@houseofshriya.com",
 ];
 
@@ -107,8 +114,10 @@ export async function adminSignInWithEmail(
     // Non-blocking
   }
 
-  // Store local session helper
+  // Store local session helper & backend auth token
   try {
+    const idToken = await user.getIdToken();
+    setStoredAdminSession(profile?.displayName || user.displayName || "House of Shriya", idToken);
     localStorage.setItem(
       ADMIN_SESSION_KEY,
       JSON.stringify({
@@ -139,7 +148,7 @@ export async function adminCreateAccount(
   const cred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
   const user = cred.user;
 
-  const cleanName = displayName.trim() || "Atelier Admin";
+  const cleanName = displayName.trim() || "House of Shriya";
   await updateProfile(user, { displayName: cleanName });
 
   const profile: AdminProfile = {
@@ -154,6 +163,8 @@ export async function adminCreateAccount(
   await setDoc(doc(db, "admins", user.uid), profile);
 
   try {
+    const idToken = await user.getIdToken();
+    setStoredAdminSession(cleanName, idToken);
     localStorage.setItem(
       ADMIN_SESSION_KEY,
       JSON.stringify({
@@ -184,6 +195,7 @@ export async function adminSendPasswordReset(email: string): Promise<void> {
  */
 export async function adminSignOutSession(): Promise<void> {
   try {
+    clearStoredAdminSession();
     localStorage.removeItem(ADMIN_SESSION_KEY);
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
   } catch {
