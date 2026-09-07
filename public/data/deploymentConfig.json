@@ -5,9 +5,9 @@
   "cloudflareProject": "house-of-shriya",
   "buildOutputDir": "dist",
   "buildCommand": "npm run build",
-  "lastDeployCommit": "8a6b8c1",
-  "lastDeployTime": "2026-09-07T04:40:14.000Z",
+  "lastDeployCommit": "dc5c783",
+  "lastDeployTime": "2026-09-07T04:52:30.000Z",
   "autoSyncToGit": true,
-  "lastDeployFullHash": "8a6b8c1d2be8043d3129c1e0b5cf821b3743579b",
-  "lastCommitMessage": "fix(deps): synchronize package.json and package-lock.json for clean Cloudflare Pages build"
+  "lastDeployFullHash": "dc5c783e8707545394569bc57791799a4cba56a5",
+  "lastCommitMessage": "fix(ci): restore complete package-lock.json with full package tree and integrity hashes for clean npm ci"
 }
