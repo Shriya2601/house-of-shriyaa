@@ -177,6 +177,8 @@
   .brand-lockup {
     gap: clamp(0.2rem, 1vw, 0.4rem);
     justify-content: center;
+    margin-inline: auto;
+    text-align: center;
     color: #1e1b18;
     font-family: "Cinzel", Georgia, serif;
     font-size: clamp(0.64rem, 3.2vw, 1.05rem);

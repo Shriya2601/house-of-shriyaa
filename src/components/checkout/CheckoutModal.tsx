@@ -742,14 +742,14 @@ export default function CheckoutModal() {
                 )}
               </div>
 
-              {/* Special Atelier Customization Notes */}
+              {/* Special Order Notes */}
               <div>
                 <label className="block text-[11px] font-semibold text-[#5a544c] mb-1">
-                  Atelier Sizing / Customization Notes (Optional)
+                  Special Delivery / Order Notes (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Please tailor kurta length to 46 inches, or include extra fabric border."
+                  placeholder="e.g. Gift packaging requested, delivery before 5 PM, or landmark details."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full text-xs px-3 py-2 bg-white border border-[#d6ccc2] rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"

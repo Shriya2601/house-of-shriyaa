@@ -16,7 +16,7 @@ export const POOKIE_INITIAL_QUICK_REPLIES = [
   "💰 Suits under ₹3,000",
   "✨ Tell me about Alia Cut",
   "🌿 Pure Mulmul Cotton suits",
-  "📏 Custom sizing & tailoring",
+  "🧵 Unstitched Fabric & Quality",
 ];
 
 // Generates an intelligent, conversational response grounded in House of Shriya's actual catalog
@@ -182,7 +182,7 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
         suggestedProducts: anarkalis,
         quickReplies: [
           "🌸 Gul-e-Noor Emerald Anarkali details",
-          "📏 Can I get it custom tailored?",
+          "🧵 Fabric length & specifications",
           "🎨 Best colors for Sangeet",
         ],
       };
@@ -367,9 +367,9 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     return {
       text:
         "✨ **All Suits Are Premium Unstitched Suits**:\n\n" +
-        "• All pieces at House of Shriya are pure unstitched handloom suits.\n" +
-        "• High quality unstitched fabric ready for custom tailoring to your exact fit and style.\n" +
-        "• Because every suit is unstitched, you can have your preferred boutique craft your favorite silhouette, neckline, and length!\n\n" +
+        "• All pieces at House of Shriya are pure unstitched handloom suits with generous fabric lengths.\n" +
+        "• Generous fabric cuts allow easy stitching for any size from XS to 5XL.\n" +
+        "• Because every suit is unstitched, you can have your preferred tailor craft your favorite silhouette, neckline, and length!\n\n" +
         "Need styling advice or have questions? Click 'POOKIE NEED A HELP' to connect directly on WhatsApp!",
       quickReplies: [
         "🌸 Show Anarkali Collections",
@@ -470,13 +470,13 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
       "• **Occasions**: Haldi, Mehendi, Sangeet, Wedding Reception, Office chic\n" +
       "• **Styles**: Alia Cut Anarkalis, Co-ord Sets, Unstitched dress material\n" +
       "• **Budget**: Suits under ₹2,000, ₹3,000, or bridal luxury\n\n" +
-      "Or chat directly with our Master Stylist on WhatsApp for bespoke sizing!",
+      "Or chat directly with our Master Stylist on WhatsApp for fabric & styling guidance!",
     suggestedProducts: allProducts.slice(0, 2),
     quickReplies: [
       "🌸 Recommend a wedding suit",
       "🌿 Pure Mulmul Cotton suits",
       "💰 Suits under ₹3,000",
-      "📏 Custom sizing & tailoring",
+      "🧵 Unstitched Fabric & Quality",
     ],
   };
 }

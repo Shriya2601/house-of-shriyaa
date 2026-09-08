@@ -88,8 +88,8 @@ export const defaultSiteContent: SiteContent = {
       iconName: "ShieldCheck",
     },
     {
-      title: "Bespoke Lengths for Custom Tailoring",
-      text: "Generous fabric cuts designed for personalized tailoring from size XS to 5XL.",
+      title: "Generous Lengths for Easy Stitching",
+      text: "Generous fabric cuts designed for comfortable stitching from size XS to 5XL.",
       iconName: "Sparkles",
     },
     {

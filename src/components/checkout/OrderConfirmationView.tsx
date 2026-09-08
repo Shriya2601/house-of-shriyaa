@@ -74,7 +74,7 @@ ${itemsText}
 
 Our master couturiers are currently inspecting and packaging your pieces with signature tissue, authentic handloom tags, and organic lavender sachets.
 
-For any assistance or tailoring customization, you can directly reply to this message.
+For any assistance or order tracking, you can directly reply to this message.
 
 Warm regards,
 *House of Shriya Atelier*

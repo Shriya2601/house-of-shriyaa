@@ -992,7 +992,7 @@ export function InteractiveModal({
                   <span className="text-[10px] text-[#8c6d37] font-semibold uppercase tracking-wider">Bespoke Service</span>
                 </div>
                 <p className="text-[#706458] text-[11px]">
-                  Reserve a personalized drape, custom measurement, or bridal consultation with our master couturiers.
+                  Reserve a personalized drape, fabric selection, or bridal consultation with our master couturiers.
                 </p>
 
                 <div className="space-y-1">
@@ -1005,7 +1005,7 @@ export function InteractiveModal({
                     <option value="Atelier Fitting Session">Atelier Fitting Session (Flagship Boutique)</option>
                     <option value="Virtual Drape & Styling">Virtual Drape & Styling (Video Consultation)</option>
                     <option value="Bespoke Bridal Consultation">Bespoke Bridal Trousseau Consultation</option>
-                    <option value="Custom Tailoring Measurement">Custom Tailoring & Measurement Session</option>
+                    <option value="Fabric Selection & Sizing Guidance">Fabric Selection & Sizing Guidance</option>
                   </select>
                 </div>
 
