@@ -11,9 +11,11 @@ service cloud.firestore {
         request.auth.token.email == 'houseofshriya.in@gmail.com' ||
         request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
         request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
+        request.auth.token.email == 'hello.kohoo@gmail.com' ||
         request.auth.token.email.matches('(?i)houseofshriya\\.in@gmail\\.com') ||
         request.auth.token.email.matches('(?i)ethnicbyshriya@gmail\\.com') ||
-        request.auth.token.email.matches('(?i)crochetbyshriya01@gmail\\.com')
+        request.auth.token.email.matches('(?i)crochetbyshriya01@gmail\\.com') ||
+        request.auth.token.email.matches('(?i)hello\\.kohoo@gmail\\.com')
       );
     }
 
