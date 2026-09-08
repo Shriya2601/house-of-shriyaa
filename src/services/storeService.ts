@@ -218,11 +218,20 @@ export function cacheProductsLocally(prods: Product[]) {
   try {
     localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(prods));
   } catch (err) {
-    // If quota exceeded, try caching with essential fields to protect storage
     try {
+      // If local storage is full, strip massive base64 payloads to fallback image rather than corrupting the URL string
       const lightweight = prods.map((p) => ({
         ...p,
-        image: p.image?.startsWith("data:") ? p.image.slice(0, 80) : p.image,
+        image: p.image?.startsWith("data:")
+          ? "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80"
+          : p.image,
+        images: Array.isArray(p.images)
+          ? p.images.map((img) =>
+              img?.startsWith("data:")
+                ? "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80"
+                : img
+            )
+          : p.images,
       }));
       localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(lightweight));
     } catch {}
@@ -257,17 +266,41 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
     callback(defaultSiteContent);
   }
 
-  // Load static JSON
-  fetch(`/data/siteContent.json?v=${Date.now()}`)
+  // Real-time custom event listener for instantaneous UI updates
+  const handleContentUpdate = (e: Event) => {
+    const customEvt = e as CustomEvent;
+    if (customEvt.detail) {
+      callback(customEvt.detail);
+    }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("hos-content-updated", handleContentUpdate);
+  }
+
+  // Load from server API endpoint first with cache buster
+  fetch(`/api/site-content?v=${Date.now()}`)
     .then((r) => (r.ok ? r.json() : null))
-    .then((staticData) => {
-      if (staticData) {
-        const merged = { ...defaultSiteContent, ...staticData };
+    .then((serverData) => {
+      if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
+        const merged = { ...defaultSiteContent, ...serverData };
         try {
           localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
         } catch {}
         callback(merged);
+        return;
       }
+      // Fallback to static JSON file
+      return fetch(`/data/siteContent.json?v=${Date.now()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((staticData) => {
+          if (staticData) {
+            const merged = { ...defaultSiteContent, ...staticData };
+            try {
+              localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+            } catch {}
+            callback(merged);
+          }
+        });
     })
     .catch(() => {});
 
@@ -291,19 +324,46 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
   } catch {}
 
   return () => {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("hos-content-updated", handleContentUpdate);
+    }
     unsubFs();
   };
 }
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<void> {
-  const merged = { ...defaultSiteContent, ...content, updatedAt: new Date().toISOString() };
+  let existing: any = {};
+  try {
+    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+    if (raw) existing = JSON.parse(raw);
+  } catch {}
+
+  const merged = { ...defaultSiteContent, ...existing, ...content, updatedAt: new Date().toISOString() };
   try {
     localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
   } catch {}
+
+  // Sync to API backend for disk persistence
+  try {
+    await fetch("/api/site-content", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(merged),
+    });
+  } catch (apiErr) {
+    console.warn("API site content sync notice:", apiErr);
+  }
+
+  // Sync to Firestore
   try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     await setDoc(docRef, merged, { merge: true });
   } catch {}
+
+  // Dispatch custom event for 0ms reactive UI refresh across all tabs/components
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+  }
 }
 
 export function subscribeCategories(callback: (categories: CategoryItem[]) => void): () => void {

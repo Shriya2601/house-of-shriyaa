@@ -199,10 +199,13 @@ export default function AdminProductManager({
               </thead>
               <tbody className="divide-y divide-stone-100 text-stone-700">
                 {filteredProducts.map((p) => {
+                  const rawImg = p.image || p.images?.[0] || "";
                   const displayImg =
-                    p.image ||
-                    p.images?.[0] ||
-                    "/uploads/hos-001-main-1788707076761-551.webp";
+                    rawImg.startsWith("/") || rawImg.startsWith("http") || rawImg.startsWith("data:")
+                      ? rawImg
+                      : rawImg
+                      ? `/${rawImg}`
+                      : "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
 
                   return (
                     <tr
@@ -217,7 +220,11 @@ export default function AdminProductManager({
                             alt={p.name}
                             className="w-11 h-11 object-cover rounded-lg border border-stone-200 shrink-0 bg-stone-100"
                             onError={(e) => {
-                              (e.target as HTMLElement).style.display = "none";
+                              const target = e.currentTarget;
+                              if (!target.src.includes("unsplash")) {
+                                target.src =
+                                  "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+                              }
                             }}
                           />
                           <div>

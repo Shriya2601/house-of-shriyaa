@@ -35,6 +35,7 @@ import {
   ExternalLink,
   Navigation,
   Settings,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -62,6 +63,7 @@ import {
 import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Product } from "../types";
 import AdminProductManager from "../components/admin/AdminProductManager";
 import AddProductModal from "../components/admin/AddProductModal";
+import AdminBannerManager from "../components/admin/AdminBannerManager";
 import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
 import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
 
@@ -78,7 +80,7 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products">("products");
+  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners">("products");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -673,6 +675,8 @@ export default function AdminPortal() {
               onClick={() => {
                 if (activeTab === "products") {
                   setIsProductModalOpen(true);
+                } else if (activeTab === "banners") {
+                  setActiveTab("banners");
                 } else {
                   setAddType(activeTab === "orders" ? "order" : "booking");
                   setIsAddModalOpen(true);
@@ -684,6 +688,8 @@ export default function AdminPortal() {
               <span>
                 {activeTab === "products"
                   ? "Add New Product"
+                  : activeTab === "banners"
+                  ? "Manage Slideshow"
                   : activeTab === "orders"
                   ? "Add Customer Sale"
                   : "Add New Booking"}
@@ -832,57 +838,89 @@ export default function AdminPortal() {
                 {products.length}
               </span>
             </button>
+
+            <button
+              id="admin-tab-banners"
+              onClick={() => {
+                setActiveTab("banners");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "banners"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <ImageIcon size={14} />
+              <span>Hero Slideshow</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "banners" ? "bg-white/20 text-white" : "bg-stone-300 text-stone-700"
+                }`}
+              >
+                3 Banners
+              </span>
+            </button>
           </div>
 
           {/* Search & Filter Inputs */}
-          <div className="flex flex-wrap items-center gap-2.5 flex-1 md:justify-end">
-            <div className="relative flex-1 max-w-xs min-w-[200px]">
-              <Search size={14} className="absolute left-3 top-2.5 text-stone-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Search ${activeTab === "bookings" ? "patron, booking ref, phone..." : "order #, customer, item..."}`}
-                className="w-full bg-[#faf8f5] border border-[#d6ccc2] rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#0d4f3c]"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-600 text-xs"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-lg px-2.5 py-1 text-xs">
-              <Filter size={13} className="text-stone-500" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-transparent border-0 text-stone-700 text-xs font-medium focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Statuses</option>
-                {activeTab === "bookings" ? (
-                  <>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="pending">Pending</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="pending">Pending</option>
-                    <option value="shipped">Shipped</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="Paid">Paid Only</option>
-                    <option value="cancelled">Cancelled</option>
-                  </>
+          {activeTab !== "banners" ? (
+            <div className="flex flex-wrap items-center gap-2.5 flex-1 md:justify-end">
+              <div className="relative flex-1 max-w-xs min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-2.5 text-stone-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Search ${activeTab === "bookings" ? "patron, booking ref, phone..." : "order #, customer, item..."}`}
+                  className="w-full bg-[#faf8f5] border border-[#d6ccc2] rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#0d4f3c]"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-600 text-xs"
+                  >
+                    <X size={12} />
+                  </button>
                 )}
-              </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-[#faf8f5] border border-[#d6ccc2] rounded-lg px-2.5 py-1 text-xs">
+                <Filter size={13} className="text-stone-500" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="bg-transparent border-0 text-stone-700 text-xs font-medium focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  {activeTab === "bookings" ? (
+                    <>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="pending">Pending</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="pending">Pending</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="Paid">Paid Only</option>
+                      <option value="cancelled">Cancelled</option>
+                    </>
+                  )}
+                </select>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2 flex-1 md:justify-end text-xs text-stone-500">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+                <Sparkles size={12} />
+                <span>3 Rotating Slideshow Banners • Live Storefront Sync</span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* DATA TABLE VIEW */}
@@ -891,6 +929,8 @@ export default function AdminPortal() {
             <RefreshCw size={24} className="animate-spin mx-auto text-[#0d4f3c]" />
             <p className="text-xs font-medium">Fetching real-time records from atelier database...</p>
           </div>
+        ) : activeTab === "banners" ? (
+          <AdminBannerManager showToast={showToast} />
         ) : activeTab === "products" ? (
           <AdminProductManager
             products={products}
@@ -1515,6 +1555,28 @@ export default function AdminPortal() {
           setPickupInput={setShiprocketPickupInput}
           onSave={handleSaveShiprocketConfig}
           status={shiprocketStatus}
+        />
+      )}
+
+      {/* =========================================================================
+          MODAL: ADD NEW PRODUCT MODAL
+          ========================================================================= */}
+      {isProductModalOpen && (
+        <AddProductModal
+          isOpen={isProductModalOpen}
+          onClose={() => setIsProductModalOpen(false)}
+          onSuccess={(savedProduct) => {
+            setProducts((prev) => {
+              const idx = prev.findIndex((p) => p.id === savedProduct.id);
+              if (idx > -1) {
+                const next = [...prev];
+                next[idx] = savedProduct;
+                return next;
+              }
+              return [savedProduct, ...prev];
+            });
+            showToast(`Product "${savedProduct.name}" added to catalog successfully!`, "success");
+          }}
         />
       )}
     </div>

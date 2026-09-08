@@ -44,7 +44,7 @@ export default function CanvaEditable({
   const override = getOverride(id);
 
   const displayText = override?.text !== undefined ? override.text : text !== undefined ? text : undefined;
-  const displaySrc = override?.src !== undefined ? override.src : src;
+  const displaySrc = src || override?.src;
 
   const computedStyle: CSSProperties = {
     ...style,
@@ -62,10 +62,16 @@ export default function CanvaEditable({
     return createElement("img", {
       ...rest,
       id,
-      src: displaySrc,
+      src: displaySrc || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80",
       alt: alt || label || "",
       className,
       style: computedStyle,
+      onError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+        const target = e.currentTarget;
+        if (!target.src.includes("unsplash.com")) {
+          target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+        }
+      },
     });
   }
 

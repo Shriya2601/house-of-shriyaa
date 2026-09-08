@@ -2,6 +2,15 @@ import type { Connect, Plugin } from "vite";
 import fs from "fs";
 import path from "path";
 
+// In-memory cache for ultra-fast instant rendering of uploaded photos
+const memoryUploadsCache = new Map<string, { mime: string; buffer: Buffer }>();
+
+// 1x1 transparent PNG fallback buffer
+const TRANSPARENT_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64"
+);
+
 function getProductsFilePath(): string {
   const publicPath = path.resolve(process.cwd(), "public/data/products.json");
   return publicPath;
@@ -81,12 +90,75 @@ export function apiMiddlewarePlugin(): Plugin {
     const urlWithoutQuery = rawUrl.split("?")[0].replace(/\/+$/, "");
     const method = (req.method || "GET").toUpperCase();
 
-        // Check if request is under /api
-        if (!urlWithoutQuery.startsWith("/api")) {
-          return next();
-        }
+    // Direct Static Image Serving for /uploads/*
+    // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
+    if (urlWithoutQuery.startsWith("/uploads/")) {
+      const filename = path.basename(urlWithoutQuery);
 
-        setCorsHeaders(res);
+      setCorsHeaders(res);
+
+      if (method === "OPTIONS") {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      // 1. Check in-memory cache
+      if (memoryUploadsCache.has(filename)) {
+        const item = memoryUploadsCache.get(filename)!;
+        res.setHeader("Content-Type", item.mime);
+        res.setHeader("Content-Length", item.buffer.length);
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        res.statusCode = 200;
+        res.end(item.buffer);
+        return;
+      }
+
+      // 2. Check filesystem
+      const possiblePaths = [
+        path.resolve(process.cwd(), "public/uploads", filename),
+        path.resolve(process.cwd(), "dist/uploads", filename),
+      ];
+
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const data = fs.readFileSync(p);
+            let mime = "image/jpeg";
+            const ext = path.extname(filename).toLowerCase();
+            if (ext === ".png") mime = "image/png";
+            else if (ext === ".webp") mime = "image/webp";
+            else if (ext === ".svg") mime = "image/svg+xml";
+            else if (ext === ".gif") mime = "image/gif";
+
+            memoryUploadsCache.set(filename, { mime, buffer: data });
+
+            res.setHeader("Content-Type", mime);
+            res.setHeader("Content-Length", data.length);
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            res.statusCode = 200;
+            res.end(data);
+            return;
+          } catch (readErr) {
+            console.warn("[Uploads Server] Read error:", readErr);
+          }
+        }
+      }
+
+      // 3. Fallback: If not found, return image fallback (NEVER HTML)
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "no-cache");
+      res.statusCode = 404;
+      res.end(TRANSPARENT_PNG);
+      return;
+    }
+
+    // Check if request is under /api
+    if (!urlWithoutQuery.startsWith("/api")) {
+      return next();
+    }
+
+    setCorsHeaders(res);
 
         // Preflight OPTIONS requests
         if (method === "OPTIONS") {
@@ -276,21 +348,23 @@ export function apiMiddlewarePlugin(): Plugin {
 
             // Extract mime type and base64 buffer
             let ext = "jpg";
+            let mime = "image/jpeg";
             let base64Data = rawData;
             const matches = rawData.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
             if (matches) {
-              const mime = matches[1].toLowerCase();
-              if (mime.includes("png")) ext = "png";
-              else if (mime.includes("webp")) ext = "webp";
-              else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+              const detectedSub = matches[1].toLowerCase();
+              if (detectedSub.includes("png")) { ext = "png"; mime = "image/png"; }
+              else if (detectedSub.includes("webp")) { ext = "webp"; mime = "image/webp"; }
+              else if (detectedSub.includes("gif")) { ext = "gif"; mime = "image/gif"; }
+              else if (detectedSub.includes("jpeg") || detectedSub.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
               base64Data = matches[2];
             }
 
             const buffer = Buffer.from(base64Data, "base64");
-            const safePrefix = (body.filename || "suit")
+            const safePrefix = (body.filename || "upload")
               .toLowerCase()
               .replace(/[^a-z0-9_-]/g, "-")
-              .slice(0, 20) || "suit";
+              .slice(0, 24) || "upload";
             const generatedFilename = `${safePrefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
 
             const uploadsDir = path.resolve(process.cwd(), "public/uploads");
@@ -308,6 +382,9 @@ export function apiMiddlewarePlugin(): Plugin {
               } catch {}
             }
 
+            // Immediately prime the in-memory cache for 0ms latency
+            memoryUploadsCache.set(generatedFilename, { mime, buffer });
+
             const publicUrl = `/uploads/${generatedFilename}`;
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
@@ -319,6 +396,70 @@ export function apiMiddlewarePlugin(): Plugin {
             res.statusCode = 500;
             res.end(JSON.stringify({ error: err.message || "Failed to process photo upload" }));
             return;
+          }
+        }
+
+        // ============================================================
+        // 5B. SITE CONTENT (HERO BANNERS, SITE TEXT): /api/site-content
+        // ============================================================
+        if (urlWithoutQuery === "/api/site-content") {
+          const publicContentPath = path.resolve(process.cwd(), "public/data/siteContent.json");
+          const srcContentPath = path.resolve(process.cwd(), "src/data/siteContent.json");
+
+          if (method === "GET") {
+            try {
+              if (fs.existsSync(publicContentPath)) {
+                const data = fs.readFileSync(publicContentPath, "utf-8");
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(data);
+                return;
+              }
+            } catch {}
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({}));
+            return;
+          }
+
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
+            try {
+              const body = await parseJsonBody(req);
+              let existing: any = {};
+              if (fs.existsSync(publicContentPath)) {
+                try {
+                  existing = JSON.parse(fs.readFileSync(publicContentPath, "utf-8"));
+                } catch {}
+              }
+
+              const updated = {
+                ...existing,
+                ...body,
+                updatedAt: new Date().toISOString(),
+              };
+
+              const jsonFormatted = JSON.stringify(updated, null, 2);
+
+              const dir = path.dirname(publicContentPath);
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(publicContentPath, jsonFormatted, "utf-8");
+
+              if (fs.existsSync(path.dirname(srcContentPath))) {
+                try {
+                  fs.writeFileSync(srcContentPath, jsonFormatted, "utf-8");
+                } catch {}
+              }
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, siteContent: updated }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Failed to update site content" }));
+              return;
+            }
           }
         }
 
