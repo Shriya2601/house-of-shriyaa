@@ -1,5 +1,18 @@
-import React, { useState, useEffect } from "react";
-import { X, Sparkles, Plus, Image as ImageIcon, Check } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  X,
+  Sparkles,
+  Plus,
+  Image as ImageIcon,
+  Check,
+  Upload,
+  Camera,
+  Trash2,
+  RefreshCw,
+  Link as LinkIcon,
+  Layers,
+  AlertCircle,
+} from "lucide-react";
 import { Product } from "../../types";
 import { saveProduct } from "../../services/storeService";
 
@@ -30,6 +43,71 @@ const STANDARD_CATEGORIES = [
   "Festive Heirloom",
 ];
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Client-side image compression: optimizes raw camera/phone photos to ~60-120KB JPEG data URL
+async function compressImageFile(
+  file: File,
+  maxWidth = 1400,
+  quality = 0.85
+): Promise<{ dataUrl: string; sizeText: string }> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please choose a valid image file (JPG, PNG, or WebP)."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read photo from your device."));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Failed to process image format."));
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+
+          if (width > maxWidth || height > maxWidth) {
+            if (width > height) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            } else {
+              width = Math.round((width * maxWidth) / height);
+              height = maxWidth;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            const raw = e.target?.result as string;
+            resolve({ dataUrl: raw, sizeText: formatFileSize(file.size) });
+            return;
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          const approxBytes = Math.round((compressed.length * 3) / 4);
+          resolve({ dataUrl: compressed, sizeText: formatFileSize(approxBytes) });
+        } catch {
+          const raw = e.target?.result as string;
+          resolve({ dataUrl: raw, sizeText: formatFileSize(file.size) });
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AddProductModal({
   isOpen,
   onClose,
@@ -48,10 +126,24 @@ export default function AddProductModal({
   const [color, setColor] = useState("Royal Emerald");
   const [colorHex, setColorHex] = useState("#0d4f3c");
   const [description, setDescription] = useState(
-    "Handcrafted pure artisanal fabric with intricate zari border and bespoke heirloom finish."
+    "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish."
   );
-  const [image, setImage] = useState(SAMPLE_IMAGES[0]);
-  const [hoverImage, setHoverImage] = useState(SAMPLE_IMAGES[1] || SAMPLE_IMAGES[0]);
+
+  // Image Upload State
+  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
+  const [image, setImage] = useState("");
+  const [hoverImage, setHoverImage] = useState("");
+  const [mainImageDetails, setMainImageDetails] = useState<{ name: string; size: string } | null>(null);
+  const [hoverImageDetails, setHoverImageDetails] = useState<{ name: string; size: string } | null>(null);
+  const [isProcessingMain, setIsProcessingMain] = useState(false);
+  const [isProcessingHover, setIsProcessingHover] = useState(false);
+  const [isDragOverMain, setIsDragOverMain] = useState(false);
+  const [isDragOverHover, setIsDragOverHover] = useState(false);
+
+  // File Input References
+  const mainFileInputRef = useRef<HTMLInputElement>(null);
+  const hoverFileInputRef = useRef<HTMLInputElement>(null);
+
   const [inStock, setInStock] = useState(true);
   const [selectedBadge, setSelectedBadge] = useState("New Drop");
 
@@ -65,10 +157,12 @@ export default function AddProductModal({
       setColor(productToEdit.color || "Royal Emerald");
       setColorHex(productToEdit.colorHex || "#0d4f3c");
       setDescription(productToEdit.description || "");
-      setImage(productToEdit.image || SAMPLE_IMAGES[0]);
-      setHoverImage(productToEdit.hoverImage || productToEdit.image || SAMPLE_IMAGES[0]);
+      setImage(productToEdit.image || "");
+      setHoverImage(productToEdit.hoverImage || productToEdit.image || "");
       setInStock(productToEdit.inStock !== false);
       setSelectedBadge(productToEdit.badges?.[0] || "New Drop");
+      setMainImageDetails(productToEdit.image ? { name: "Current Product Photo", size: "Ready" } : null);
+      setHoverImageDetails(productToEdit.hoverImage ? { name: "Current Hover Photo", size: "Ready" } : null);
     } else {
       // Reset form
       setName("");
@@ -79,10 +173,12 @@ export default function AddProductModal({
       setColor("Royal Emerald");
       setColorHex("#0d4f3c");
       setDescription(
-        "Handcrafted pure artisanal fabric with intricate zari border and bespoke heirloom finish."
+        "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish."
       );
-      setImage(SAMPLE_IMAGES[0]);
-      setHoverImage(SAMPLE_IMAGES[1] || SAMPLE_IMAGES[0]);
+      setImage("");
+      setHoverImage("");
+      setMainImageDetails(null);
+      setHoverImageDetails(null);
       setInStock(true);
       setSelectedBadge("New Drop");
     }
@@ -102,10 +198,49 @@ export default function AddProductModal({
     return "Special Edition";
   };
 
+  // Handle Main Image File Select
+  const handleMainFileChange = async (file: File) => {
+    setIsProcessingMain(true);
+    setError(null);
+    try {
+      const { dataUrl, sizeText } = await compressImageFile(file);
+      setImage(dataUrl);
+      setMainImageDetails({ name: file.name, size: sizeText });
+      // If hover image isn't set yet, default it to main image
+      if (!hoverImage) {
+        setHoverImage(dataUrl);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to process photo from device.");
+    } finally {
+      setIsProcessingMain(false);
+    }
+  };
+
+  // Handle Hover Image File Select
+  const handleHoverFileChange = async (file: File) => {
+    setIsProcessingHover(true);
+    setError(null);
+    try {
+      const { dataUrl, sizeText } = await compressImageFile(file);
+      setHoverImage(dataUrl);
+      setHoverImageDetails({ name: file.name, size: sizeText });
+    } catch (err: any) {
+      setError(err?.message || "Failed to process secondary photo.");
+    } finally {
+      setIsProcessingHover(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError("Please enter a product title or name.");
+      return;
+    }
+
+    if (!image.trim()) {
+      setError("Please upload at least one photo of the suit from your device or choose an image.");
       return;
     }
 
@@ -114,6 +249,7 @@ export default function AddProductModal({
 
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     const savings = calculateSavings(price, originalPrice);
+    const finalHoverImage = hoverImage.trim() || image.trim();
 
     const productPayload: Product = {
       id: prodId,
@@ -127,8 +263,8 @@ export default function AddProductModal({
       colorHex: colorHex.trim(),
       description: description.trim(),
       image: image.trim(),
-      hoverImage: hoverImage.trim() || image.trim(),
-      images: [image.trim(), hoverImage.trim()].filter(Boolean),
+      hoverImage: finalHoverImage,
+      images: [image.trim(), finalHoverImage].filter(Boolean),
       inStock,
       badges: selectedBadge ? [selectedBadge] : ["New Drop"],
       tags: productToEdit?.tags || [category.trim(), fabricType.trim(), selectedBadge].filter(Boolean),
@@ -148,8 +284,8 @@ export default function AddProductModal({
           fabricType: fabricType.trim(),
           description: description.trim(),
           image: image.trim(),
-          hoverImage: hoverImage.trim() || image.trim(),
-          images: [image.trim(), hoverImage.trim()].filter(Boolean),
+          hoverImage: finalHoverImage,
+          images: [image.trim(), finalHoverImage].filter(Boolean),
           inStock,
         },
       ],
@@ -184,7 +320,7 @@ export default function AddProductModal({
                 {productToEdit ? "Edit Boutique Suit Piece" : "Add New Boutique Suit Piece"}
               </h3>
               <p className="text-[11px] text-white/70">
-                Syncs live to store catalog, database endpoints, and boutique collection
+                Direct device photo upload • Auto-optimized • Live updates on site
               </p>
             </div>
           </div>
@@ -201,9 +337,327 @@ export default function AddProductModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center gap-2">
-              <span className="font-bold">Error:</span> {error}
+              <AlertCircle size={15} className="shrink-0 text-red-600" />
+              <div>
+                <span className="font-bold">Error: </span>
+                {error}
+              </div>
             </div>
           )}
+
+          {/* Section: Direct Image Upload (Priority Section) */}
+          <div className="space-y-3 bg-[#faf8f5] p-4 rounded-xl border border-[#ebe2d8]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#0d4f3c] flex items-center gap-1.5">
+                  <Camera size={14} className="text-[#0d4f3c]" />
+                  <span>Product Photos (Upload from Device) *</span>
+                </h4>
+                <p className="text-[11px] text-stone-500">
+                  Select photos directly from your phone gallery or computer. No URL link required!
+                </p>
+              </div>
+
+              {/* Toggle upload mode */}
+              <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-stone-200 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setUploadMode("file")}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    uploadMode === "file"
+                      ? "bg-[#0d4f3c] text-white"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  Device Upload
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadMode("url")}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    uploadMode === "url"
+                      ? "bg-[#0d4f3c] text-white"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  Or Image URL
+                </button>
+              </div>
+            </div>
+
+            {uploadMode === "file" ? (
+              <div className="space-y-4 pt-1">
+                {/* 1. Primary Photo Dropzone */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
+                    <span>1. Main Suit Photo *</span>
+                    {image && (
+                      <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                        <Check size={12} />
+                        <span>Ready & Optimized</span>
+                      </span>
+                    )}
+                  </label>
+
+                  {/* Hidden Main File Input */}
+                  <input
+                    ref={mainFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleMainFileChange(f);
+                    }}
+                  />
+
+                  {image ? (
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                      <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
+                        <img src={image} alt="Main Suit" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-stone-900 truncate">
+                          {mainImageDetails?.name || "Suit Primary Photo"}
+                        </p>
+                        <p className="text-[11px] text-stone-500">
+                          {mainImageDetails?.size ? `Size: ${mainImageDetails.size}` : "Loaded from device"}
+                        </p>
+                        <p className="text-[10px] text-emerald-600 font-medium mt-0.5">
+                          ✓ Shown on boutique storefront and home grid
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => mainFileInputRef.current?.click()}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw size={11} />
+                          <span>Change</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImage("");
+                            setMainImageDetails(null);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 size={11} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragOverMain(true);
+                      }}
+                      onDragLeave={() => setIsDragOverMain(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOverMain(false);
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) handleMainFileChange(f);
+                      }}
+                      onClick={() => mainFileInputRef.current?.click()}
+                      className={`p-5 border-2 border-dashed rounded-xl text-center cursor-pointer transition-all ${
+                        isDragOverMain
+                          ? "border-[#0d4f3c] bg-[#0d4f3c]/10 scale-[1.01]"
+                          : "border-stone-300 bg-white hover:border-[#0d4f3c] hover:bg-[#faf8f5]"
+                      }`}
+                    >
+                      {isProcessingMain ? (
+                        <div className="py-2 flex flex-col items-center gap-2 text-stone-600">
+                          <RefreshCw size={20} className="animate-spin text-[#0d4f3c]" />
+                          <p className="text-xs font-medium">Optimizing photo for fast browsing...</p>
+                        </div>
+                      ) : (
+                        <div className="py-1 flex flex-col items-center gap-1.5">
+                          <div className="w-10 h-10 rounded-full bg-[#0d4f3c]/10 text-[#0d4f3c] flex items-center justify-center mb-1">
+                            <Upload size={18} />
+                          </div>
+                          <p className="text-xs font-bold text-stone-800">
+                            Click to upload or drag & drop Main Suit photo
+                          </p>
+                          <p className="text-[11px] text-stone-500">
+                            Phone photos, camera shots, JPG, PNG, WebP (auto-optimized)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Secondary / Hover / Close-Up Photo (Optional) */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
+                    <span>2. Hover / Close-Up Photo (Optional)</span>
+                    <span className="text-[11px] text-stone-400 font-normal">
+                      Shows on hover or in customer gallery
+                    </span>
+                  </label>
+
+                  {/* Hidden Hover File Input */}
+                  <input
+                    ref={hoverFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleHoverFileChange(f);
+                    }}
+                  />
+
+                  {hoverImage && hoverImage !== image ? (
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                      <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
+                        <img src={hoverImage} alt="Hover Detail" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-stone-900 truncate">
+                          {hoverImageDetails?.name || "Secondary Angle / Embroidery Detail"}
+                        </p>
+                        <p className="text-[11px] text-stone-500">
+                          {hoverImageDetails?.size ? `Size: ${hoverImageDetails.size}` : "Ready"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => hoverFileInputRef.current?.click()}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw size={11} />
+                          <span>Change</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHoverImage(image);
+                            setHoverImageDetails(null);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-100 rounded-md transition-colors cursor-pointer"
+                        >
+                          <span>Reset</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragOverHover(true);
+                      }}
+                      onDragLeave={() => setIsDragOverHover(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOverHover(false);
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) handleHoverFileChange(f);
+                      }}
+                      onClick={() => hoverFileInputRef.current?.click()}
+                      className={`p-3.5 border border-dashed rounded-xl text-center cursor-pointer transition-all ${
+                        isDragOverHover
+                          ? "border-[#0d4f3c] bg-[#0d4f3c]/5"
+                          : "border-stone-300 bg-white hover:border-[#0d4f3c] hover:bg-[#faf8f5]"
+                      }`}
+                    >
+                      {isProcessingHover ? (
+                        <div className="py-1 flex items-center justify-center gap-2 text-stone-600 text-xs">
+                          <RefreshCw size={14} className="animate-spin text-[#0d4f3c]" />
+                          <span>Optimizing secondary photo...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-stone-600 text-xs">
+                          <Plus size={14} className="text-[#0d4f3c]" />
+                          <span>Click to upload optional hover/embroidery detail photo</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* URL Mode */
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Main Image URL
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="product-input-image"
+                      type="text"
+                      value={image}
+                      onChange={(e) => setImage(e.target.value)}
+                      placeholder="https://... or /uploads/suit.jpg"
+                      className="flex-1 text-sm px-3 py-2 border border-stone-300 rounded-lg font-mono focus:outline-hidden focus:border-[#0d4f3c]"
+                    />
+                    {image && (
+                      <img
+                        src={image}
+                        alt="Preview"
+                        className="w-10 h-10 object-cover rounded-md border border-stone-200 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none";
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Hover Image URL (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={hoverImage}
+                    onChange={(e) => setHoverImage(e.target.value)}
+                    placeholder="https://... (falls back to main image if empty)"
+                    className="w-full text-sm px-3 py-2 border border-stone-300 rounded-lg font-mono focus:outline-hidden focus:border-[#0d4f3c]"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Quick Sample Selector */}
+            <div className="pt-2 border-t border-[#ebe2d8]">
+              <p className="text-[11px] text-stone-500 mb-1.5 flex items-center gap-1">
+                <ImageIcon size={12} />
+                <span>Or pick from House of Shriya curated atelier photography:</span>
+              </p>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {SAMPLE_IMAGES.map((imgUrl, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setImage(imgUrl);
+                      if (SAMPLE_IMAGES[i + 1]) setHoverImage(SAMPLE_IMAGES[i + 1]);
+                      setMainImageDetails({ name: `Atelier Preset 0${i + 1}`, size: "Verified" });
+                    }}
+                    className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
+                      image === imgUrl
+                        ? "border-[#0d4f3c] scale-105 shadow-xs"
+                        : "border-stone-200 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <img src={imgUrl} alt={`Sample ${i}`} className="w-full h-full object-cover" />
+                    {image === imgUrl && (
+                      <div className="absolute inset-0 bg-[#0d4f3c]/40 flex items-center justify-center text-white">
+                        <Check size={14} />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           {/* Section: Basic Information */}
           <div className="space-y-4">
@@ -357,69 +811,6 @@ export default function AddProductModal({
             </div>
           </div>
 
-          {/* Section: Imagery */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-stone-500 border-b border-stone-200 pb-1">
-              Imagery & Visuals
-            </h4>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Main Image URL or Local Path
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="product-input-image"
-                  type="text"
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="/uploads/hos-001-main-1788707076761-551.webp"
-                  className="flex-1 text-sm px-3 py-2 border border-stone-300 rounded-lg font-mono focus:outline-hidden focus:border-[#0d4f3c]"
-                />
-                {image && (
-                  <img
-                    src={image}
-                    alt="Preview"
-                    className="w-10 h-10 object-cover rounded-md border border-stone-200"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Quick Sample Image Selector */}
-            <div>
-              <p className="text-[11px] text-stone-500 mb-1.5 flex items-center gap-1">
-                <ImageIcon size={12} />
-                <span>Or select from curated atelier assets:</span>
-              </p>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {SAMPLE_IMAGES.map((imgUrl, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => {
-                      setImage(imgUrl);
-                      if (SAMPLE_IMAGES[i + 1]) setHoverImage(SAMPLE_IMAGES[i + 1]);
-                    }}
-                    className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
-                      image === imgUrl ? "border-[#0d4f3c] scale-105" : "border-stone-200 opacity-70 hover:opacity-100"
-                    }`}
-                  >
-                    <img src={imgUrl} alt={`Sample ${i}`} className="w-full h-full object-cover" />
-                    {image === imgUrl && (
-                      <div className="absolute inset-0 bg-[#0d4f3c]/40 flex items-center justify-center text-white">
-                        <Check size={14} />
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
           {/* Section: Description & Stock */}
           <div className="space-y-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-stone-500 border-b border-stone-200 pb-1">
@@ -472,11 +863,17 @@ export default function AddProductModal({
             <button
               id="btn-submit-add-product"
               type="submit"
-              disabled={submitting}
+              disabled={submitting || isProcessingMain || isProcessingHover}
               className="px-5 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#09382b] text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
             >
               <Plus size={15} />
-              <span>{submitting ? "Saving Product..." : productToEdit ? "Update Product" : "Save & Add Product"}</span>
+              <span>
+                {submitting
+                  ? "Saving to Boutique..."
+                  : productToEdit
+                  ? "Update Product"
+                  : "Save & Add Product"}
+              </span>
             </button>
           </div>
         </form>

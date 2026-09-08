@@ -638,25 +638,6 @@ export default function ProductDetails() {
             {/* Editorial Description */}
             <div className="text-sm text-[#5a544c] leading-relaxed border-b border-[#e8dfd5] pb-4">
               <p>{displayDescription}</p>
-              <p className="text-xs text-[#8c827a] mt-2 italic">
-                Woven on traditional Surat handlooms with heirloom finesse, this {displayColor} suit drapes with effortless regal poise for festive soirees and celebration dinners.
-              </p>
-            </div>
-
-            {/* Format & Material Specifications */}
-            <div className="p-3.5 bg-[#faf8f5] rounded-xl border border-[#ebe2d8] space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#2a241e] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Sparkles size={13} className="text-[#c5a059]" />
-                  <span>Format: Unstitched 3-Piece Luxury Suit</span>
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#0d4f3c]/10 text-[#0d4f3c] border border-[#0d4f3c]/20">
-                  Unstitched Suit
-                </span>
-              </div>
-              <p className="text-[#6b6257] leading-relaxed text-[11px]">
-                Complete 3-piece pure handloom unstitched set in <strong>{displayFabric}</strong>: Kurta, Bottom, and artisan Dupatta. Pure heirloom weave crafted with authentic Surat zari artistry.
-              </p>
             </div>
 
             {/* Quantity Selector */}
