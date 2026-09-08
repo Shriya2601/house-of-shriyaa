@@ -579,6 +579,7 @@ export function apiMiddlewarePlugin(): Plugin {
         if (urlWithoutQuery.startsWith("/api/shipping/shiprocket")) {
           const {
             testShiprocketAuth,
+            testCustomShiprocketCredentials,
             createShiprocketOrder,
             trackShiprocketShipment,
             checkCourierServiceability,
@@ -593,6 +594,23 @@ export function apiMiddlewarePlugin(): Plugin {
             res.statusCode = 200;
             res.end(JSON.stringify(statusResult));
             return;
+          }
+
+          // A2. Test Provided Credentials: POST /api/shipping/shiprocket/test-credentials
+          if (urlWithoutQuery === "/api/shipping/shiprocket/test-credentials" && method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const testResult = await testCustomShiprocketCredentials(body.email, body.password);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify(testResult));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: err.message }));
+              return;
+            }
           }
 
           // B. Update Config / Credentials: POST /api/shipping/shiprocket/config

@@ -1,5 +1,25 @@
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, ShieldCheck, Truck, CreditCard, Banknote, Sparkles, MessageCircle, ArrowRight, Loader2, Gift, Tag, Copy, Check, ExternalLink } from "lucide-react";
+import {
+  X,
+  CheckCircle2,
+  ShieldCheck,
+  Truck,
+  CreditCard,
+  Banknote,
+  Sparkles,
+  MessageCircle,
+  ArrowRight,
+  Loader2,
+  Gift,
+  Tag,
+  Copy,
+  Check,
+  ExternalLink,
+  Smartphone,
+  QrCode,
+  Lock,
+  AlertCircle,
+} from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { Order, PaymentMethod } from "../../types";
 import { validateReferralCode } from "../../services/storeService";
@@ -24,7 +44,12 @@ export default function CheckoutModal() {
   const [city, setCity] = useState("Surat");
   const [state, setState] = useState("Gujarat");
   const [pincode, setPincode] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Instant UPI / NetBanking");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Cash on Delivery (COD)");
+  const [upiOption, setUpiOption] = useState<"apps" | "id" | "qr">("apps");
+  const [upiId, setUpiId] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
   const [notes, setNotes] = useState("");
 
   // Referral code state

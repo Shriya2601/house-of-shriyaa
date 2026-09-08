@@ -27,13 +27,14 @@ function loadEnvFallback() {
           if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
             v = v.slice(1, -1);
           }
-          if (!process.env[k]) {
-            process.env[k] = v;
-          }
+          // Dynamically override so updates to .env take immediate effect
+          process.env[k] = v;
         }
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn("[Shiprocket] Notice loading .env fallback:", err);
+  }
 }
 
 loadEnvFallback();
@@ -112,8 +113,9 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
   const { email, password, isConfigured } = getShiprocketConfig();
 
   if (!isConfigured) {
+    const missing = !email && !password ? "email & password" : !email ? "email" : "password";
     throw new Error(
-      "Shiprocket credentials not configured. Please ensure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD are set in your environment."
+      `Shiprocket credentials missing (${missing}). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.`
     );
   }
 
@@ -121,6 +123,8 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
   if (!forceRefresh && authCache.token && authCache.expiresAt > now) {
     return authCache.token;
   }
+
+  console.log(`[Shiprocket API] Initiating authentication request for API user: ${email}...`);
 
   try {
     const res = await fetch(`${SHIPROCKET_BASE_URL}/auth/login`, {
@@ -134,23 +138,26 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
       }),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    console.log(`[Shiprocket API] Auth Login response status: ${res.status}`);
 
     if (!res.ok || !data.token) {
       const errMsg =
         data.message ||
         data.error ||
-        (data.errors ? JSON.stringify(data.errors) : `Authentication failed with status ${res.status}`);
+        (data.errors ? JSON.stringify(data.errors) : `Authentication failed with HTTP ${res.status}`);
+      console.error(`[Shiprocket API] Login failed for ${email}:`, errMsg);
       throw new Error(`Shiprocket Login Failed: ${errMsg}`);
     }
 
+    console.log(`[Shiprocket API] Successfully authenticated! Token cached for 7 days.`);
     authCache.token = data.token;
     // Cache for 7 days (Shiprocket tokens expire in 10 days / 240 hours)
     authCache.expiresAt = now + 7 * 24 * 60 * 60 * 1000;
 
     return data.token;
   } catch (err: any) {
-    console.error("[Shiprocket API] Auth error:", err.message);
+    console.error("[Shiprocket API] Authentication exception:", err.message);
     throw err;
   }
 }
@@ -218,6 +225,70 @@ export async function testShiprocketAuth(): Promise<{
 }
 
 /**
+ * Test custom user credentials directly (e.g. from Admin settings modal before saving)
+ */
+export async function testCustomShiprocketCredentials(
+  email: string,
+  password: string
+): Promise<{
+  success: boolean;
+  message: string;
+  locations?: Array<{ pickup_location: string; address: string; city: string; state: string }>;
+}> {
+  if (!email?.trim() || !password?.trim()) {
+    return {
+      success: false,
+      message: "Both Shiprocket API User Email and Password are required.",
+    };
+  }
+
+  try {
+    console.log(`[Shiprocket API] Testing credentials for: ${email.trim()}...`);
+    const res = await fetch(`${SHIPROCKET_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password: password.trim() }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) {
+      const errMsg =
+        data.message ||
+        data.error ||
+        (data.errors ? JSON.stringify(data.errors) : `Authentication failed with status ${res.status}`);
+      return {
+        success: false,
+        message: errMsg,
+      };
+    }
+
+    // Verify token by retrieving company pickup locations
+    const pickupRes = await fetch(`${SHIPROCKET_BASE_URL}/settings/company/pickup`, {
+      headers: { Authorization: `Bearer ${data.token}` },
+    });
+    const pickupData = await pickupRes.json().catch(() => ({}));
+    const rawLocations = pickupData?.data?.shipping_address || [];
+    const locations = rawLocations.map((loc: any) => ({
+      pickup_location: loc.pickup_location || loc.name,
+      address: loc.address || loc.address_2 || "",
+      city: loc.city,
+      state: loc.state,
+    }));
+
+    return {
+      success: true,
+      message: `Authentication verified! Found ${locations.length} pickup location(s).`,
+      locations,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || "Network error while contacting Shiprocket API",
+    };
+  }
+}
+
+/**
  * Format order into Shiprocket's expected order/create/adhoc schema
  */
 export function formatOrderForShiprocket(order: any, pickupLocationOverride?: string) {
@@ -276,20 +347,26 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
 
   const isCOD =
     order.paymentMethod?.toLowerCase().includes("cash") ||
-    order.paymentMethod?.toLowerCase().includes("cod");
+    order.paymentMethod?.toLowerCase().includes("cod") ||
+    (order.paymentStatus?.toLowerCase() === "pending" && !order.paymentMethod?.toLowerCase().includes("upi"));
+
+  const calculatedItemsSubtotal = orderItems.reduce(
+    (acc: number, it: any) => acc + (Number(it.selling_price) || 0) * (Number(it.units) || 1),
+    0
+  );
 
   return {
     order_id: String(order.orderNumber || order.id),
     order_date: orderDateStr,
     pickup_location: pickup,
     channel_id: "",
-    comment: `House of Shriya Atelier Order - ${order.orderNumber || ""}`,
+    comment: `House of Shriya Atelier Order - ${order.orderNumber || ""} (${isCOD ? "COD" : "Prepaid"})`,
     billing_customer_name: firstName,
     billing_last_name: lastName,
     billing_address: addr.addressLine1 || "Atelier Street",
     billing_address_2: addr.addressLine2 || "",
     billing_city: addr.city || "Surat",
-    billing_pincode: String(addr.pincode || "395003").slice(0, 6),
+    billing_pincode: String(addr.pincode || "395003").replace(/\D/g, "").slice(0, 6) || "395003",
     billing_state: addr.state || "Gujarat",
     billing_country: "India",
     billing_email: order.customer?.email || "customer@houseofshriya.com",
@@ -301,7 +378,7 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
     giftwrap_charges: 0,
     transaction_charges: 0,
     total_discount: Number(order.referralDiscount || 0),
-    sub_total: Math.max(Number(order.total || 0), 1),
+    sub_total: calculatedItemsSubtotal > 0 ? calculatedItemsSubtotal : Math.max(Number(order.total || 0), 1),
     length: 30, // cm - luxury suit box
     breadth: 24, // cm
     height: 6, // cm
@@ -317,17 +394,20 @@ export async function createShiprocketOrder(
   pickupLocationOverride?: string
 ): Promise<{
   success: boolean;
-  shiprocketOrderId?: number | string;
-  shipmentId?: number | string;
-  awbCode?: string;
-  courierName?: string;
+  shiprocketOrderId?: number | string | null;
+  shipmentId?: number | string | null;
+  awbCode?: string | null;
+  courierName?: string | null;
   status?: string;
   statusCode?: number;
-  trackingUrl?: string;
+  trackingUrl?: string | null;
   rawResponse?: any;
   error?: string;
-  isMockPendingAuth?: boolean;
+  requestPayload?: any;
 }> {
+  console.log(`[Shiprocket API] ==========================================`);
+  console.log(`[Shiprocket API] Processing automated dispatch for Order: ${order.orderNumber || order.id}`);
+  
   try {
     let token: string | null = null;
     let authError: string | null = null;
@@ -338,31 +418,28 @@ export async function createShiprocketOrder(
       authError = err.message || "Shiprocket Authentication Error";
     }
 
-    // If live authentication failed, provide clear diagnostic feedback while generating a provisional shipment tracking ID
+    // If live authentication failed, clearly report failure rather than generating misleading mock IDs
     if (!token) {
       console.warn(
-        `[Shiprocket API] Live login failed (${authError}). Creating provisional atelier shipment so customer order is not blocked.`
+        `[Shiprocket API] Sync halted - Authentication failed: "${authError}". Order saved locally with pending status.`
       );
 
-      const provisionalAwb = `SR-HOS-${order.orderNumber?.replace(/[^a-zA-Z0-9]/g, "") || Date.now()}`;
       return {
         success: false,
-        isMockPendingAuth: true,
-        error: `Shiprocket API Notice: ${authError}. Please ensure your registered Shiprocket API User Email matches your Shiprocket dashboard user.`,
-        shiprocketOrderId: `PENDING-${order.orderNumber || order.id}`,
-        shipmentId: `SHP-${Date.now()}`,
-        awbCode: provisionalAwb,
-        courierName: "Shiprocket Express (Pending Email Confirmation)",
-        status: "READY_FOR_DISPATCH",
-        trackingUrl: `https://shiprocket.co/tracking/${provisionalAwb}`,
+        error: authError || "Shiprocket API authentication failed. Please verify API credentials in Admin Settings.",
+        status: "FAILED_AUTH",
+        shiprocketOrderId: null,
+        shipmentId: null,
+        awbCode: null,
+        courierName: null,
+        trackingUrl: null,
       };
     }
 
     const payload = formatOrderForShiprocket(order, pickupLocationOverride);
 
-    console.log(
-      `[Shiprocket API] Pushing order ${payload.order_id} to Shiprocket (Pickup: ${payload.pickup_location})...`
-    );
+    console.log(`[Shiprocket API] Outgoing POST: ${SHIPROCKET_BASE_URL}/orders/create/adhoc`);
+    console.log(`[Shiprocket API] Order Payload:`, JSON.stringify(payload, null, 2));
 
     const res = await fetch(`${SHIPROCKET_BASE_URL}/orders/create/adhoc`, {
       method: "POST",
@@ -373,24 +450,32 @@ export async function createShiprocketOrder(
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    console.log(`[Shiprocket API] Response HTTP status: ${res.status}`);
+    console.log(`[Shiprocket API] Response body:`, JSON.stringify(data, null, 2));
 
-    if (!res.ok) {
+    if (!res.ok || (data.status_code && data.status_code >= 400) || !data.order_id) {
       const errMsg =
         data.message ||
-        (data.errors ? JSON.stringify(data.errors) : `Order creation failed with status ${res.status}`);
-      console.warn(`[Shiprocket API] Order creation returned error:`, errMsg);
+        (data.errors ? (typeof data.errors === "object" ? JSON.stringify(data.errors) : String(data.errors)) : `Shiprocket order creation failed with status ${res.status}`);
+      console.warn(`[Shiprocket API] Order creation returned failure:`, errMsg);
       return {
         success: false,
         error: errMsg,
+        status: "FAILED_SYNC",
+        statusCode: res.status,
         rawResponse: data,
+        requestPayload: payload,
+        shiprocketOrderId: null,
+        shipmentId: null,
+        awbCode: null,
       };
     }
 
     const shiprocketOrderId = data.order_id;
     const shipmentId = data.shipment_id;
     const awbCode = data.awb_code || undefined;
-    const courierName = data.courier_name || "Shiprocket Express";
+    const courierName = data.courier_name || "Shiprocket Courier Partner";
     const status = data.status || "NEW";
 
     const trackingUrl = awbCode
@@ -398,8 +483,9 @@ export async function createShiprocketOrder(
       : undefined;
 
     console.log(
-      `[Shiprocket API] Order ${order.orderNumber || order.id} synced successfully! Shiprocket Order ID: ${shiprocketOrderId}, Shipment ID: ${shipmentId}`
+      `[Shiprocket API] SUCCESS: Order #${order.orderNumber || order.id} created on Shiprocket! (Shiprocket Order ID: ${shiprocketOrderId}, Shipment ID: ${shipmentId}, AWB: ${awbCode || "Awaiting allocation"})`
     );
+    console.log(`[Shiprocket API] ==========================================`);
 
     return {
       success: true,
@@ -408,15 +494,20 @@ export async function createShiprocketOrder(
       awbCode,
       courierName,
       status,
-      statusCode: data.status_code,
+      statusCode: data.status_code || res.status,
       trackingUrl,
       rawResponse: data,
+      requestPayload: payload,
     };
   } catch (err: any) {
-    console.error("[Shiprocket API] Error in createShiprocketOrder:", err.message);
+    console.error("[Shiprocket API] Critical exception in createShiprocketOrder:", err.message);
     return {
       success: false,
       error: err.message || "Failed to create order on Shiprocket",
+      status: "FAILED_EXCEPTION",
+      shiprocketOrderId: null,
+      shipmentId: null,
+      awbCode: null,
     };
   }
 }
