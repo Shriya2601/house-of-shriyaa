@@ -9,7 +9,9 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'houseofshriya.in@gmail.com' ||
-        request.auth.token.email.matches('(?i)houseofshriya\\.in@gmail\\.com')
+        request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
+        request.auth.token.email.matches('(?i)houseofshriya\\.in@gmail\\.com') ||
+        request.auth.token.email.matches('(?i)ethnicbyshriya@gmail\\.com')
       );
     }
 

@@ -606,9 +606,39 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          const fsList = snapshot.docs.map((d) => ensureProductVariants({ id: d.id, ...d.data() }));
-          cacheProductsLocally(fsList);
-          callback(fsList);
+          const current = getCachedProducts();
+          const currentMap = new Map<string, Product>();
+          current.forEach((p) => currentMap.set(p.id, p));
+
+          const merged: Product[] = [];
+          for (const d of snapshot.docs) {
+            const fsProd = ensureProductVariants({ id: d.id, ...d.data() });
+            const localProd = currentMap.get(fsProd.id);
+
+            // If local product exists and has newer or matching updatedAt, preserve local!
+            if (localProd) {
+              const localTime = localProd.updatedAt ? new Date(localProd.updatedAt).getTime() : 0;
+              const fsTime = fsProd.updatedAt ? new Date(fsProd.updatedAt).getTime() : 0;
+              if (localTime >= fsTime) {
+                merged.push(localProd);
+                currentMap.delete(fsProd.id);
+                continue;
+              }
+            }
+
+            merged.push(fsProd);
+            currentMap.delete(fsProd.id);
+          }
+
+          // Retain any locally saved or server products that aren't in Firestore
+          for (const remaining of currentMap.values()) {
+            merged.push(remaining);
+          }
+
+          if (merged.length > 0) {
+            cacheProductsLocally(merged);
+            callback(merged);
+          }
         }
       },
       () => {}

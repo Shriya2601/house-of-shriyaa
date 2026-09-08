@@ -1687,28 +1687,6 @@ export default function AdminPortal() {
           status={shiprocketStatus}
         />
       )}
-
-      {/* =========================================================================
-          MODAL: ADD NEW PRODUCT MODAL
-          ========================================================================= */}
-      {isProductModalOpen && (
-        <AddProductModal
-          isOpen={isProductModalOpen}
-          onClose={() => setIsProductModalOpen(false)}
-          onSuccess={(savedProduct) => {
-            setProducts((prev) => {
-              const idx = prev.findIndex((p) => p.id === savedProduct.id);
-              if (idx > -1) {
-                const next = [...prev];
-                next[idx] = savedProduct;
-                return next;
-              }
-              return [savedProduct, ...prev];
-            });
-            showToast(`Product "${savedProduct.name}" added to catalog successfully!`, "success");
-          }}
-        />
-      )}
     </div>
   );
 }

@@ -44,7 +44,21 @@ export default function CanvaEditable({
   const override = getOverride(id);
 
   const displayText = override?.text !== undefined ? override.text : text !== undefined ? text : undefined;
-  const displaySrc = src || override?.src;
+  
+  // Prefer direct product src, normalize relative URLs
+  let displaySrc = (src || override?.src || "").trim();
+  if (displaySrc) {
+    if (displaySrc.startsWith("/public/")) {
+      displaySrc = displaySrc.replace("/public", "");
+    } else if (
+      !displaySrc.startsWith("http://") &&
+      !displaySrc.startsWith("https://") &&
+      !displaySrc.startsWith("data:") &&
+      !displaySrc.startsWith("/")
+    ) {
+      displaySrc = `/${displaySrc}`;
+    }
+  }
 
   const computedStyle: CSSProperties = {
     ...style,

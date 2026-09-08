@@ -245,9 +245,10 @@ export default function AddProductModal({
 
       setImage(finalUrl);
       setMainImageDetails({ name: file.name, size: sizeText });
-      // If hover image isn't set yet, default it to main image
-      if (!hoverImage) {
+      // If hover image isn't set yet, or was matching previous/original image, update it to the new image
+      if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
         setHoverImage(finalUrl);
+        setHoverImageDetails({ name: file.name, size: sizeText });
       }
     } catch (err: any) {
       setError(err?.message || "Failed to process photo from device.");
