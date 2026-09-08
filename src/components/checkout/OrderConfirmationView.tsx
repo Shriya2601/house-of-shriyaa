@@ -11,12 +11,16 @@ import {
   ShieldCheck,
   Gift,
   Building2,
-  Share2,
   CreditCard,
   QrCode,
   Banknote,
+  AlertCircle,
+  Clock,
+  ArrowRight,
+  Smartphone,
 } from "lucide-react";
-import { Order } from "../../types";
+import { Order, PaymentStatus } from "../../types";
+import { confirmOrderPayment } from "../../services/storeService";
 
 interface OrderConfirmationViewProps {
   order: Order;
@@ -24,16 +28,27 @@ interface OrderConfirmationViewProps {
 }
 
 export default function OrderConfirmationView({
-  order,
+  order: initialOrder,
   onClose,
 }: OrderConfirmationViewProps) {
+  const [order, setOrder] = useState<Order>(initialOrder);
   const [copiedAwb, setCopiedAwb] = useState(false);
   const [copiedOrderNo, setCopiedOrderNo] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
   const [autoNotified, setAutoNotified] = useState(false);
+
+  // Payment Confirmation State
+  const [utrInput, setUtrInput] = useState("");
+  const [submittingUtr, setSubmittingUtr] = useState(false);
+  const [utrSuccessMsg, setUtrSuccessMsg] = useState<string | null>(null);
+  const [utrErrorMsg, setUtrErrorMsg] = useState<string | null>(null);
 
   const cleanPhone = (order.customer.phone || "").replace(/\D/g, "");
   const customerName = order.customer.fullName || "Valued Patron";
+  const storePhone = "9501698356";
+  const storePhoneDisplay = "+91 95016 98356";
+  const storeUpiId = "9501698356@upi";
 
   // Build the WhatsApp message
   const itemsText = order.items
@@ -46,7 +61,7 @@ export default function OrderConfirmationView({
 
   const paymentText =
     order.paymentDetails?.methodType === "upi"
-      ? `UPI / QR Code${order.paymentDetails.utrNumber ? ` (Ref: ${order.paymentDetails.utrNumber})` : ""}`
+      ? `UPI / QR Code${order.paymentDetails.utrNumber ? ` (Ref/UTR: ${order.paymentDetails.utrNumber})` : ""}`
       : order.paymentDetails?.methodType === "card"
       ? `Card (${order.paymentDetails.cardBrand || "Debit/Credit"} **** ${order.paymentDetails.cardLast4 || "Card"})`
       : order.paymentDetails?.methodType === "bank"
@@ -70,19 +85,27 @@ ${itemsText}
 
 💰 *Total Amount:* ₹${order.total.toLocaleString("en-IN")}
 💳 *Payment Mode:* ${paymentText}
+📊 *Payment Status:* ${order.paymentStatus}
 📍 *Delivery Address:* ${order.shippingAddress.addressLine1}, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}${courierText}
 
 Our master couturiers are currently inspecting and packaging your pieces with signature tissue, authentic handloom tags, and organic lavender sachets.
 
-For any assistance or order tracking, you can directly reply to this message.
-
-Warm regards,
-*House of Shriya Atelier*
-Surat, Gujarat & Patiala, Punjab
-✨ www.houseofshriya.com`;
+Atelier WhatsApp: ${storePhoneDisplay}
+Website: www.houseofshriya.com`;
 
   // Dynamic WhatsApp URLs
-  // 1. Direct link to customer's own phone with the receipt pre-filled
+  // 1. Direct message to Atelier support (Store owner at 9501698356)
+  const storeOwnerWhatsAppUrl = `https://wa.me/91${storePhone}?text=${encodeURIComponent(
+    `Namaste House of Shriya! I just placed order ${order.orderNumber} for ₹${order.total.toLocaleString("en-IN")}.
+Customer: ${customerName} (${order.customer.phone})
+Delivery: ${order.shippingAddress.city}, ${order.shippingAddress.state} (${order.shippingAddress.pincode})
+Payment: ${order.paymentMethod} (${order.paymentStatus})
+${order.paymentDetails?.utrNumber ? `UTR / Ref: ${order.paymentDetails.utrNumber}` : ""}
+
+Please confirm my order dispatch!`
+  )}`;
+
+  // 2. Direct link to customer's own phone with the receipt pre-filled
   const customerWhatsAppUrl =
     cleanPhone.length >= 10
       ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(
@@ -90,13 +113,11 @@ Surat, Gujarat & Patiala, Punjab
         )}`
       : `https://wa.me/?text=${encodeURIComponent(fullWhatsAppMessage)}`;
 
-  // 2. Direct message to Atelier support
-  const atelierSupportWhatsAppUrl = `https://wa.me/919501698356?text=${encodeURIComponent(
-    `Namaste House of Shriya! I just placed order ${order.orderNumber} for ₹${order.total}. Please confirm my order dispatch.`
-  )}`;
+  // Dynamic UPI Payment Link & QR Code
+  const upiPayUrl = `upi://pay?pa=${storeUpiId}&pn=House%20of%20Shriya&am=${order.total}&cu=INR&tn=Order%20${encodeURIComponent(order.orderNumber)}`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(upiPayUrl)}`;
 
   useEffect(() => {
-    // Simulate automated confirmation message dispatch
     const timer = setTimeout(() => {
       setAutoNotified(true);
     }, 600);
@@ -120,6 +141,34 @@ Surat, Gujarat & Patiala, Punjab
 
     return () => clearTimeout(timer);
   }, [order.orderNumber]);
+
+  // Handle Customer Payment UTR Submission directly on website
+  const handleConfirmPaymentOnWebsite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUtrErrorMsg(null);
+    setUtrSuccessMsg(null);
+
+    const cleanUtr = utrInput.trim();
+    if (!cleanUtr || cleanUtr.length < 6) {
+      setUtrErrorMsg("Please enter a valid 6 to 16 digit UPI UTR / Transaction Reference Number.");
+      return;
+    }
+
+    setSubmittingUtr(true);
+    try {
+      const res = await confirmOrderPayment(order.id, cleanUtr, order.paymentMethod);
+      if (res.success && res.order) {
+        setOrder(res.order);
+        setUtrSuccessMsg(`Payment reference ${cleanUtr} submitted successfully! Our Surat atelier team will verify and dispatch your parcel.`);
+      } else {
+        setUtrErrorMsg(res.message || "Failed to confirm payment. Please try again.");
+      }
+    } catch (err: any) {
+      setUtrErrorMsg(err.message || "Network error. Please try again.");
+    } finally {
+      setSubmittingUtr(false);
+    }
+  };
 
   // Handle Printable Invoice
   const handlePrintInvoice = () => {
@@ -148,7 +197,7 @@ Surat, Gujarat & Patiala, Punjab
           <div class="header">
             <div class="brand">HOUSE OF SHRIYA</div>
             <div class="tagline">Luxury Handcrafted Unstitched Suits & Couture Fabrics</div>
-            <p style="font-size: 12px; margin-top: 5px;">Surat Atelier, Gujarat · Patiala, Punjab</p>
+            <p style="font-size: 12px; margin-top: 5px;">Surat Atelier, Gujarat · Patiala, Punjab · WhatsApp: ${storePhoneDisplay}</p>
           </div>
           <div class="details-grid">
             <div>
@@ -212,7 +261,7 @@ Surat, Gujarat & Patiala, Punjab
             </tbody>
           </table>
           <div class="footer">
-            Thank you for choosing House of Shriya. For inquiries: +91 95016 98356 | support@houseofshriya.com
+            Thank you for choosing House of Shriya. For inquiries: ${storePhoneDisplay} | care@houseofshriya.com
           </div>
         </body>
       </html>
@@ -224,81 +273,267 @@ Surat, Gujarat & Patiala, Punjab
     }, 500);
   };
 
+  const isPaymentPending = order.paymentStatus === "Pending";
+  const isPaymentVerifying = order.paymentStatus === "Payment Verification Pending";
+  const isPaymentPaid = order.paymentStatus === "Paid";
+
   return (
-    <div className="text-center py-4 space-y-4 animate-fadeIn">
+    <div className="text-center py-2 space-y-4 animate-fadeIn">
       {/* Celebration Icon */}
-      <div className="relative w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center shadow-md">
-        <CheckCircle2 size={36} />
+      <div className="relative w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center shadow-xs">
+        <CheckCircle2 size={32} />
         <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#d4af37] text-white flex items-center justify-center text-[10px]">
           <Sparkles size={11} />
         </span>
       </div>
 
       <div>
-        <span className="text-xs uppercase tracking-widest font-bold text-[#0d4f3c] block">
-          Order Placed & Confirmed
+        <span className="text-[11px] uppercase tracking-widest font-bold text-[#0d4f3c] block">
+          Order Registered & Confirmed
         </span>
-        <h3 className="font-serif font-bold text-2xl text-[#1e1b18] mt-1">
+        <h3 className="font-serif font-bold text-2xl text-[#1e1b18] mt-0.5">
           Thank You, {customerName}!
         </h3>
         <p className="text-xs text-[#6b6257] mt-1 max-w-md mx-auto">
-          Your order has been registered with our Surat atelier. We are preparing your handloom pieces with bespoke care.
+          Your order reference is <strong className="font-mono text-[#0d4f3c]">{order.orderNumber}</strong>. Our Surat atelier has scheduled your handcrafted unstitched pieces.
         </p>
       </div>
 
       {/* =========================================================================
-          AUTOMATED CONFIRMATION MESSAGE NOTIFICATION BANNER
+          PRIMARY WHATSAPP NOTIFICATION STRIP - Direct to 9501698356
       ========================================================================== */}
-      <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 max-w-md mx-auto text-left shadow-xs">
-        <div className="flex items-start gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-xs">
-            <MessageCircle size={18} />
+      <div className="bg-[#f2faf5] border-2 border-[#25D366]/40 rounded-2xl p-4 max-w-md mx-auto text-left shadow-sm space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-sm">
+            <MessageCircle size={22} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1">
-                <span>Confirmation Message Sent</span>
-                <span className="text-[10px] text-emerald-700 font-normal">✓✓</span>
+              <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <span>WhatsApp Order Confirmation</span>
+                <span className="text-[11px] text-emerald-600">✓✓</span>
               </span>
-              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-200/60 px-2 py-0.5 rounded-full">
-                WhatsApp & SMS
+              <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">
+                Live Support
               </span>
             </div>
-            <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
-              Order invoice and delivery receipt dispatched to{" "}
-              <strong className="font-mono">{order.customer.phone}</strong>.
+            <p className="text-[11px] text-emerald-800 mt-1 leading-relaxed">
+              Order invoice dispatched. Click below to share your order directly to our atelier WhatsApp (<strong className="font-mono">{storePhoneDisplay}</strong>) for priority tracking.
             </p>
-
-            {/* Quick WhatsApp Link Buttons */}
-            <div className="flex flex-wrap gap-2 mt-2.5">
-              <a
-                href={customerWhatsAppUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-[#25D366] text-white px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 hover:bg-[#1faa53] transition-colors shadow-xs"
-              >
-                <MessageCircle size={14} />
-                <span>Open Confirmation on WhatsApp</span>
-              </a>
-
-              <a
-                href={atelierSupportWhatsAppUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-white text-emerald-900 border border-emerald-300 px-3 py-1.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 hover:bg-emerald-100/50 transition-colors"
-              >
-                <span>Atelier Support</span>
-                <ExternalLink size={11} />
-              </a>
-            </div>
           </div>
         </div>
+
+        {/* Action Buttons for WhatsApp */}
+        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+          <a
+            href={storeOwnerWhatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 bg-[#25D366] text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#1faa53] transition-all shadow-sm active:scale-98"
+          >
+            <MessageCircle size={16} />
+            <span>Send Order to WhatsApp ({storePhoneDisplay})</span>
+          </a>
+
+          {cleanPhone.length >= 10 && (
+            <a
+              href={customerWhatsAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white text-emerald-900 border border-emerald-300 px-3 py-2 rounded-xl font-semibold text-[11px] flex items-center justify-center gap-1 hover:bg-emerald-50 transition-colors"
+              title="Save invoice copy to my own WhatsApp"
+            >
+              <span>Send to My Phone</span>
+              <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* =========================================================================
+          PAYMENT STATUS & ON-WEBSITE PAYMENT CONFIRMATION CARD
+      ========================================================================== */}
+      <div className={`border rounded-2xl p-4 max-w-md mx-auto text-left shadow-sm space-y-3.5 transition-all ${
+        isPaymentPaid
+          ? "bg-emerald-50/70 border-emerald-300"
+          : isPaymentVerifying
+          ? "bg-amber-50/70 border-amber-300"
+          : "bg-[#fffdfa] border-[#d4af37]/60"
+      }`}>
+        {/* Status Header */}
+        <div className="flex items-center justify-between border-b pb-2.5 border-stone-200">
+          <div className="flex items-center gap-2">
+            {isPaymentPaid ? (
+              <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <Check size={16} />
+              </div>
+            ) : isPaymentVerifying ? (
+              <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
+                <Clock size={16} />
+              </div>
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-[#d4af37]/20 text-[#0d4f3c] flex items-center justify-center">
+                <AlertCircle size={16} />
+              </div>
+            )}
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[#6b6257] block">
+                Payment Status
+              </span>
+              <span className={`text-xs font-bold ${
+                isPaymentPaid
+                  ? "text-emerald-800"
+                  : isPaymentVerifying
+                  ? "text-amber-800"
+                  : "text-[#b45309]"
+              }`}>
+                {isPaymentPaid
+                  ? "Payment Confirmed & Verified"
+                  : isPaymentVerifying
+                  ? "Payment Verification in Progress"
+                  : "Payment Pending - Complete on Website"}
+              </span>
+            </div>
+          </div>
+
+          <span className="font-serif font-bold text-base text-[#0d4f3c]">
+            ₹{order.total.toLocaleString("en-IN")}
+          </span>
+        </div>
+
+        {/* Verification Success Toast */}
+        {utrSuccessMsg && (
+          <div className="bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs px-3 py-2.5 rounded-xl flex items-start gap-2">
+            <Check size={15} className="text-emerald-700 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold">Confirmation Received!</span>
+              <p className="text-[11px] mt-0.5">{utrSuccessMsg}</p>
+            </div>
+          </div>
+        )}
+
+        {/* If Payment is Pending or Verification Pending: Provide Instant UPI & Bank Transfer Options */}
+        {!isPaymentPaid && (
+          <div className="space-y-3 pt-1">
+            <div className="bg-[#f7f4ee] p-3 rounded-xl border border-[#e8dfd8] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#1e1b18] flex items-center gap-1.5">
+                  <QrCode size={14} className="text-[#0d4f3c]" />
+                  <span>Scan & Pay via any UPI App</span>
+                </span>
+                <span className="text-[10px] bg-[#0d4f3c] text-white px-2 py-0.5 rounded-full font-semibold">
+                  Zero Extra Fee
+                </span>
+              </div>
+
+              {/* QR Code and Quick Links */}
+              <div className="flex items-center gap-3">
+                <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs">
+                  <img
+                    src={qrCodeUrl}
+                    alt="House of Shriya UPI QR Code"
+                    className="w-24 h-24 object-contain"
+                  />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-stone-200">
+                    <span className="font-mono text-[11px] font-bold text-[#0d4f3c] truncate">
+                      {storeUpiId}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(storeUpiId);
+                        setCopiedUpi(true);
+                        setTimeout(() => setCopiedUpi(false), 2000);
+                      }}
+                      className="text-stone-500 hover:text-black p-1 cursor-pointer"
+                      title="Copy UPI ID"
+                    >
+                      {copiedUpi ? (
+                        <Check size={13} className="text-emerald-600" />
+                      ) : (
+                        <Copy size={13} />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* UPI App Quick Intent Links */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <a
+                      href={upiPayUrl}
+                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block"
+                    >
+                      ⚡ Open GPay / PhonePe
+                    </a>
+                    <a
+                      href={upiPayUrl}
+                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block"
+                    >
+                      ⚡ Paytm / BHIM
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bank Transfer Details Accordion */}
+              <details className="text-[11px] text-[#5a544c] cursor-pointer">
+                <summary className="font-semibold text-[#0d4f3c] hover:underline flex items-center gap-1">
+                  <Building2 size={12} />
+                  <span>View Atelier Bank Account (NEFT / IMPS)</span>
+                </summary>
+                <div className="mt-2 p-2.5 bg-white rounded-lg border border-stone-200 space-y-1 font-mono text-[10px]">
+                  <div><strong>Account Name:</strong> House of Shriya Atelier</div>
+                  <div><strong>Account Number:</strong> 50200088916244</div>
+                  <div><strong>IFSC Code:</strong> HDFC0000240</div>
+                  <div><strong>Bank:</strong> HDFC Bank, Surat Ring Road</div>
+                </div>
+              </details>
+            </div>
+
+            {/* Customer Payment Confirmation / UTR Submission Form */}
+            <form onSubmit={handleConfirmPaymentOnWebsite} className="space-y-2 pt-1">
+              <label className="block text-[11px] font-bold text-[#1e1b18]">
+                Already Paid? Confirm Payment on Website
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter 12-digit UPI UTR / Reference No."
+                  value={utrInput}
+                  onChange={(e) => setUtrInput(e.target.value)}
+                  className="flex-1 text-xs px-3 py-2 bg-white border border-[#d6ccc2] rounded-xl focus:outline-hidden focus:border-[#0d4f3c] font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={submittingUtr}
+                  className="bg-[#0d4f3c] text-white px-3.5 py-2 rounded-xl font-bold text-xs hover:bg-[#083528] transition-colors disabled:opacity-50 shrink-0 cursor-pointer shadow-xs"
+                >
+                  {submittingUtr ? "Submitting..." : "Confirm Payment"}
+                </button>
+              </div>
+
+              {utrErrorMsg && (
+                <p className="text-[11px] text-red-600 font-medium">{utrErrorMsg}</p>
+              )}
+
+              {order.paymentDetails?.utrNumber && (
+                <div className="flex items-center justify-between text-[11px] text-stone-600 bg-stone-100 px-2.5 py-1.5 rounded-lg">
+                  <span>Recorded UTR / Reference:</span>
+                  <span className="font-mono font-bold text-[#0d4f3c]">
+                    {order.paymentDetails.utrNumber}
+                  </span>
+                </div>
+              )}
+            </form>
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
           ORDER DETAILS SUMMARY CARD
       ========================================================================== */}
-      <div className="bg-[#f2ece4] border border-[#d4af37]/40 rounded-xl p-4 max-w-md mx-auto text-left space-y-2.5">
+      <div className="bg-[#f2ece4] border border-[#d4af37]/40 rounded-2xl p-4 max-w-md mx-auto text-left space-y-2.5 shadow-xs">
         <div className="flex justify-between items-center border-b border-[#e0d7cb] pb-2">
           <div>
             <span className="text-[10px] uppercase font-bold tracking-wider text-[#6b6257] block">
@@ -333,7 +568,7 @@ Surat, Gujarat & Patiala, Punjab
 
         {/* Ordered Items List */}
         <div className="space-y-1.5 text-xs">
-          <span className="text-[11px] font-bold text-[#6b6257]">Items Ordered:</span>
+          <span className="text-[11px] font-bold text-[#6b6257]">Items Ordered ({order.items.length}):</span>
           {order.items.map((item, idx) => (
             <div
               key={idx}
@@ -381,7 +616,7 @@ Surat, Gujarat & Patiala, Punjab
           )}
 
           <div className="flex justify-between items-center text-xs pt-1.5 border-t border-[#e0d7cb]">
-            <span className="font-bold text-[#1e1b18]">Total Paid / Payable</span>
+            <span className="font-bold text-[#1e1b18]">Total Payable</span>
             <span className="font-serif font-bold text-base text-[#0d4f3c]">
               ₹{order.total.toLocaleString("en-IN")}
             </span>
@@ -393,7 +628,7 @@ Surat, Gujarat & Patiala, Punjab
           SHIPROCKET DISPATCH & TRACKING STRIP
       ========================================================================== */}
       {(order.trackingNumber || order.shiprocketOrderId) && (
-        <div className="bg-[#0d4f3c]/5 border border-[#0d4f3c]/20 rounded-xl p-3.5 max-w-md mx-auto text-left space-y-2">
+        <div className="bg-[#0d4f3c]/5 border border-[#0d4f3c]/20 rounded-2xl p-3.5 max-w-md mx-auto text-left space-y-2 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="font-serif font-bold text-xs text-[#0d4f3c] flex items-center gap-1.5">
               <Truck size={15} />
@@ -449,61 +684,16 @@ Surat, Gujarat & Patiala, Punjab
       )}
 
       {/* =========================================================================
-          EXPANDABLE WHATSAPP MESSAGE PREVIEW
-      ========================================================================== */}
-      <div className="max-w-md mx-auto text-left">
-        <details className="bg-white border border-[#d6ccc2] rounded-xl overflow-hidden group">
-          <summary className="px-3.5 py-2.5 text-xs font-semibold text-[#5a544c] cursor-pointer flex items-center justify-between hover:bg-[#faf8f5]">
-            <span className="flex items-center gap-1.5">
-              <MessageCircle size={14} className="text-[#25D366]" />
-              <span>View Formatted WhatsApp Message Preview</span>
-            </span>
-            <span className="text-[10px] text-[#0d4f3c] font-bold group-open:rotate-180 transition-transform">
-              ▼
-            </span>
-          </summary>
-          <div className="p-3 bg-[#e5ddd5]/30 border-t border-[#ebe2d8]">
-            <div className="bg-white p-3 rounded-xl rounded-tl-none border border-emerald-200/80 shadow-xs text-xs font-sans whitespace-pre-line text-[#1e1b18] leading-relaxed">
-              {fullWhatsAppMessage}
-            </div>
-            <div className="flex justify-end gap-2 mt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(fullWhatsAppMessage);
-                  setCopiedMsg(true);
-                  setTimeout(() => setCopiedMsg(false), 2000);
-                }}
-                className="px-3 py-1 bg-white border border-[#d6ccc2] rounded text-[11px] font-semibold text-[#5a544c] hover:text-black flex items-center gap-1 cursor-pointer"
-              >
-                {copiedMsg ? (
-                  <>
-                    <Check size={11} className="text-emerald-600" />
-                    <span>Copied Message</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy size={11} />
-                    <span>Copy Message Text</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </details>
-      </div>
-
-      {/* =========================================================================
           ACTION BUTTONS
       ========================================================================== */}
-      <div className="flex flex-col sm:flex-row gap-2.5 justify-center pt-2 max-w-md mx-auto">
+      <div className="flex flex-col sm:flex-row gap-2.5 justify-center pt-1 max-w-md mx-auto">
         <button
           type="button"
           onClick={handlePrintInvoice}
           className="bg-white border border-[#d6ccc2] text-[#1e1b18] px-4 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-[#faf8f5] transition-colors cursor-pointer"
         >
           <Printer size={15} />
-          <span>Print / Tax Invoice</span>
+          <span>Print Tax Invoice</span>
         </button>
 
         <button
@@ -520,7 +710,7 @@ Surat, Gujarat & Patiala, Punjab
           <ShieldCheck size={12} className="text-[#0d4f3c]" /> 100% Authentic Handloom
         </span>
         <span>·</span>
-        <span>Signature Lavender Packaging</span>
+        <span>Surat Atelier Dispatch</span>
         <span>·</span>
         <span>Insured Express Transit</span>
       </div>

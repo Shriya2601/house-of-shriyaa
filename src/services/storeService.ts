@@ -27,6 +27,7 @@ import {
   ColorVariant,
   Order,
   OrderStatus,
+  PaymentStatus,
   SiteContent,
   CategoryItem,
   HeroSlide,
@@ -45,10 +46,10 @@ export const defaultSiteContent: SiteContent = {
   brandTagline: "Heirloom Indian Couture, Reimagined for the Modern Connoisseur",
   brandDescription:
     "Rooted in centuries-old artisanal traditions of Varanasi, Chanderi, and Bengal. Every yard of silk tells an untold tale of heritage weaving, resham zari hand embroidery, and regal silhouette artistry.",
-  contactPhone: "+91 98765 43210",
+  contactPhone: "+91 95016 98356",
   contactEmail: "care@houseofshriya.com",
-  whatsappNumber: "+91 98765 43210",
-  atelierCity: "New Delhi & Varanasi",
+  whatsappNumber: "+919501698356",
+  atelierCity: "Surat, Gujarat, India",
   heroSlides: [
     {
       eyebrow: "Autumn / Winter 2026",
@@ -1188,19 +1189,166 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
   };
 }
 
-export async function findOrderByOrderNumber(orderNum: string): Promise<Order | null> {
-  const clean = orderNum.trim().toUpperCase();
-  const local = getCachedOrders().find((o) => o.orderNumber.toUpperCase() === clean || o.id === clean);
+export async function findOrderByOrderNumber(queryStr: string): Promise<Order | null> {
+  const clean = queryStr.trim();
+  if (!clean) return null;
+  const cleanUpper = clean.toUpperCase();
+  const digitsOnly = clean.replace(/\D/g, "");
+
+  // 1. Check local cache first
+  const localList = getCachedOrders();
+  const local = localList.find(
+    (o) =>
+      o.orderNumber?.toUpperCase() === cleanUpper ||
+      o.id === clean ||
+      (digitsOnly.length >= 4 && o.orderNumber?.includes(digitsOnly)) ||
+      (digitsOnly.length === 10 && (o.customer?.phone?.replace(/\D/g, "").endsWith(digitsOnly)))
+  );
   if (local) return local;
 
+  // 2. Fetch latest live orders from backend API for cross-device support (mobile / friend's device)
   try {
-    const q = query(collection(db, "orders"), where("orderNumber", "==", clean), limit(1));
+    const res = await fetch(`/api/orders?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
+    if (res.ok) {
+      const serverOrders: Order[] = await res.json();
+      if (Array.isArray(serverOrders)) {
+        cacheOrdersLocally(serverOrders);
+        const match = serverOrders.find(
+          (o) =>
+            o.orderNumber?.toUpperCase() === cleanUpper ||
+            o.id === clean ||
+            (digitsOnly.length >= 4 && o.orderNumber?.includes(digitsOnly)) ||
+            (digitsOnly.length === 10 && (o.customer?.phone?.replace(/\D/g, "").endsWith(digitsOnly)))
+        );
+        if (match) return match;
+      }
+    }
+  } catch {}
+
+  // 3. Query single order endpoint from backend API
+  try {
+    const singleRes = await fetch(`/api/orders/${encodeURIComponent(cleanUpper)}?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (singleRes.ok) {
+      const singleOrder: Order = await singleRes.json();
+      if (singleOrder && singleOrder.orderNumber) {
+        return singleOrder;
+      }
+    }
+  } catch {}
+
+  // 4. Query Firestore
+  try {
+    const q = query(collection(db, "orders"), where("orderNumber", "==", cleanUpper), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty) {
       return { id: snap.docs[0].id, ...snap.docs[0].data() } as Order;
     }
   } catch {}
+
+  // 5. Try phone query on Firestore
+  if (digitsOnly.length === 10) {
+    try {
+      const qPhone = query(collection(db, "orders"), where("customer.phone", "==", clean), limit(1));
+      const snapPhone = await getDocs(qPhone);
+      if (!snapPhone.empty) {
+        return { id: snapPhone.docs[0].id, ...snapPhone.docs[0].data() } as Order;
+      }
+    } catch {}
+  }
+
   return null;
+}
+
+export async function confirmOrderPayment(
+  orderIdOrNumber: string,
+  utrNumber: string,
+  paymentMethod: string = "UPI / QR Code"
+): Promise<{ success: boolean; order?: Order; message?: string }> {
+  const cleanUtr = utrNumber.trim();
+  if (!cleanUtr) {
+    return { success: false, message: "Please provide a valid UTR or Transaction Reference number" };
+  }
+
+  const now = new Date().toISOString();
+  const currentOrders = getCachedOrders();
+  const targetIdx = currentOrders.findIndex(
+    (o) => o.id === orderIdOrNumber || o.orderNumber === orderIdOrNumber
+  );
+
+  const existing = targetIdx > -1 ? currentOrders[targetIdx] : null;
+  const realOrderId = existing?.id || orderIdOrNumber;
+
+  const paymentPayload = {
+    paymentStatus: "Payment Verification Pending" as PaymentStatus,
+    paymentMethod: paymentMethod as any,
+    paymentDetails: {
+      methodType: "upi" as const,
+      utrNumber: cleanUtr,
+      transactionReference: cleanUtr,
+      paidAt: now,
+    },
+    updatedAt: now,
+  };
+
+  let updatedOrder: Order | null = existing
+    ? {
+        ...existing,
+        ...paymentPayload,
+      }
+    : null;
+
+  // 1. Sync to central backend API
+  try {
+    const apiRes = await fetch(`/api/orders/${encodeURIComponent(realOrderId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(paymentPayload),
+    });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data?.order) {
+        updatedOrder = data.order;
+      }
+    }
+  } catch (err) {
+    console.warn("API payment confirmation notice:", err);
+  }
+
+  // 2. Sync to Firestore
+  try {
+    const docRef = doc(db, "orders", realOrderId);
+    await updateDoc(docRef, paymentPayload);
+  } catch (fsErr) {
+    console.warn("Firestore payment confirmation notice:", fsErr);
+  }
+
+  // 3. Update local cache
+  if (updatedOrder) {
+    const nextList = [...currentOrders];
+    if (targetIdx > -1) {
+      nextList[targetIdx] = updatedOrder;
+    } else {
+      nextList.unshift(updatedOrder);
+    }
+    cacheOrdersLocally(nextList);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updatedOrder }));
+      window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextList }));
+    }
+    broadcastCrossDeviceSync("orders", updatedOrder);
+  }
+
+  return {
+    success: true,
+    order: updatedOrder || undefined,
+    message: "Payment confirmation submitted successfully. Verification in progress.",
+  };
 }
 
 /* ============================================================

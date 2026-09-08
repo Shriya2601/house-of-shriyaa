@@ -127,7 +127,7 @@ export type PaymentMethod =
   | "Debit Card / Credit Card"
   | "Net Banking"
   | "Direct Bank Transfer (NEFT/IMPS)";
-export type PaymentStatus = "Pending" | "Paid" | "Refunded";
+export type PaymentStatus = "Pending" | "Payment Verification Pending" | "Paid" | "Refunded";
 
 export interface OrderPaymentDetails {
   methodType: "upi" | "card" | "bank" | "cod";

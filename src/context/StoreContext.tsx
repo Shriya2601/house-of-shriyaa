@@ -9,6 +9,7 @@ import {
   ShippingAddress,
   CustomerInfo,
   PaymentMethod,
+  PaymentStatus,
   OrderPaymentDetails,
   CustomerProfile,
   AtelierBooking,
@@ -66,6 +67,7 @@ interface StoreContextType {
     shippingAddress: ShippingAddress;
     paymentMethod: PaymentMethod;
     paymentDetails?: OrderPaymentDetails;
+    paymentStatus?: PaymentStatus;
     notes?: string;
     referralCode?: string;
     referralDiscount?: number;
@@ -536,6 +538,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     shippingAddress: ShippingAddress;
     paymentMethod: PaymentMethod;
     paymentDetails?: OrderPaymentDetails;
+    paymentStatus?: PaymentStatus;
     notes?: string;
     referralCode?: string;
     referralDiscount?: number;
@@ -609,7 +612,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       referralCode: details.referralCode,
       paymentMethod: details.paymentMethod,
       paymentDetails: details.paymentDetails,
-      paymentStatus: details.paymentMethod === "Cash on Delivery (COD)" ? "Pending" : "Paid",
+      paymentStatus: (details.paymentStatus || (details.paymentDetails?.utrNumber ? "Payment Verification Pending" : "Pending")) as PaymentStatus,
       confirmationMessageDispatched: true,
       confirmationMessageChannel: "Both",
       orderStatus: "pending",

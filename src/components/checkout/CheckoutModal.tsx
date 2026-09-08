@@ -23,6 +23,8 @@ import {
 import { useStore } from "../../context/StoreContext";
 import { Order, PaymentMethod } from "../../types";
 import { validateReferralCode } from "../../services/storeService";
+import OrderConfirmationView from "./OrderConfirmationView";
+import { lookupPincode } from "../../utils/pincodeLookup";
 
 export default function CheckoutModal() {
   const {
@@ -44,6 +46,8 @@ export default function CheckoutModal() {
   const [city, setCity] = useState("Surat");
   const [state, setState] = useState("Gujarat");
   const [pincode, setPincode] = useState("");
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeFeedback, setPincodeFeedback] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Cash on Delivery (COD)");
   const [upiOption, setUpiOption] = useState<"apps" | "id" | "qr">("apps");
   const [upiId, setUpiId] = useState("");
@@ -65,6 +69,30 @@ export default function CheckoutModal() {
     message: string;
   } | null>(null);
   const [copiedAwb, setCopiedAwb] = useState(false);
+
+  const handlePincodeChange = async (val: string) => {
+    const clean = val.replace(/\D/g, "").slice(0, 6);
+    setPincode(clean);
+    if (clean.length === 6) {
+      setPincodeLoading(true);
+      try {
+        const info = await lookupPincode(clean);
+        if (info) {
+          if (info.city) setCity(info.city);
+          if (info.state) setState(info.state);
+          setPincodeFeedback(`Auto-detected: ${info.city ? info.city + ", " : ""}${info.state}`);
+        } else {
+          setPincodeFeedback(null);
+        }
+      } catch {
+        setPincodeFeedback(null);
+      } finally {
+        setPincodeLoading(false);
+      }
+    } else {
+      setPincodeFeedback(null);
+    }
+  };
 
   // Auto-fill from logged in profile if available & auto-check referral
   useEffect(() => {
@@ -306,143 +334,7 @@ export default function CheckoutModal() {
         {/* Content Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
           {placedOrder ? (
-            /* Order Placed Success View */
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center animate-bounce">
-                <CheckCircle2 size={36} />
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-widest font-bold text-[#0d4f3c] block">
-                  Thank You For Patronizing House of Shriya
-                </span>
-                <h3 className="font-serif font-bold text-2xl text-[#1e1b18] mt-1">
-                  Order Successfully Placed!
-                </h3>
-              </div>
-
-              {/* Order Reference Box */}
-              <div className="bg-[#f2ece4] border border-[#d4af37]/40 rounded-xl p-4 max-w-md mx-auto text-left space-y-2">
-                <div className="flex justify-between items-center border-b border-[#e0d7cb] pb-2">
-                  <span className="text-xs text-[#6b6257]">Order Reference Number</span>
-                  <span className="font-mono font-bold text-sm text-[#0d4f3c]">{placedOrder.orderNumber}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#6b6257]">Customer</span>
-                  <span className="font-semibold text-[#1e1b18]">{placedOrder.customer.fullName}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#6b6257]">Delivery To</span>
-                  <span className="font-medium text-[#1e1b18] text-right truncate max-w-[200px]">
-                    {placedOrder.shippingAddress.city}, {placedOrder.shippingAddress.state} ({placedOrder.shippingAddress.pincode})
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#6b6257]">Payment Mode</span>
-                  <span className="font-semibold text-[#0d4f3c]">{placedOrder.paymentMethod}</span>
-                </div>
-                {Boolean(placedOrder.referralDiscount && placedOrder.referralDiscount > 0) && (
-                  <div className="flex justify-between items-center text-xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-200">
-                    <span className="flex items-center gap-1">
-                      <Gift size={12} />
-                      Referral Code ({placedOrder.referralCode})
-                    </span>
-                    <span>-₹{placedOrder.referralDiscount}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center text-xs pt-1 border-t border-[#e0d7cb]">
-                  <span className="font-bold text-[#1e1b18]">Total Amount</span>
-                  <span className="font-serif font-bold text-base text-[#0d4f3c]">₹{placedOrder.total.toLocaleString("en-IN")}</span>
-                </div>
-              </div>
-
-              {/* Shiprocket Automated Fulfillment & Tracking Details */}
-              {(placedOrder.trackingNumber || placedOrder.shiprocketOrderId) && (
-                <div className="bg-[#0d4f3c]/5 border border-[#0d4f3c]/20 rounded-xl p-4 max-w-md mx-auto text-left space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-serif font-bold text-xs text-[#0d4f3c] flex items-center gap-1.5">
-                      <Truck size={15} />
-                      <span>Shiprocket Express Dispatch</span>
-                    </span>
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                      {placedOrder.shiprocketStatus || "Manifest Created"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-[#6b6257]">Courier Partner</span>
-                    <span className="font-semibold text-[#1e1b18]">
-                      {placedOrder.trackingCourier || "Shiprocket Express"}
-                    </span>
-                  </div>
-
-                  {placedOrder.trackingNumber && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-[#6b6257]">Air Waybill (AWB)</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-[#0d4f3c]">
-                          {placedOrder.trackingNumber}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(placedOrder.trackingNumber!);
-                            setCopiedAwb(true);
-                            setTimeout(() => setCopiedAwb(false), 2000);
-                          }}
-                          className="text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
-                          title="Copy AWB"
-                        >
-                          {copiedAwb ? (
-                            <Check size={12} className="text-emerald-600" />
-                          ) : (
-                            <Copy size={12} />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {placedOrder.trackingUrl && (
-                    <div className="pt-1.5 border-t border-[#0d4f3c]/10 flex items-center justify-between text-[11px]">
-                      <span className="text-stone-500">Live Courier Updates:</span>
-                      <a
-                        href={placedOrder.trackingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-bold text-[#0d4f3c] hover:underline inline-flex items-center gap-1"
-                      >
-                        <span>Track on Shiprocket</span>
-                        <ExternalLink size={11} />
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <p className="text-xs text-[#6b6257] max-w-md mx-auto leading-relaxed">
-                Our Surat atelier has registered your order and will package your pieces with signature tissue, lavender sachets, and authentic handloom certification.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2 max-w-md mx-auto">
-                <a
-                  href={`https://wa.me/919501698356?text=${encodeURIComponent(
-                    `Namaste House of Shriya! I just placed order ${placedOrder.orderNumber} for ₹${placedOrder.total}. Please confirm my order dispatch.`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-[#25D366] text-white px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-[#1faa53] transition-colors"
-                >
-                  <MessageCircle size={16} />
-                  <span>WhatsApp Atelier Support</span>
-                </a>
-                <button
-                  onClick={handleClose}
-                  className="bg-[#0d4f3c] text-white px-6 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider hover:bg-[#083528] transition-colors"
-                >
-                  Return to Boutique
-                </button>
-              </div>
-            </div>
+            <OrderConfirmationView order={placedOrder} onClose={handleClose} />
           ) : (
             /* Checkout Form View */
             <form onSubmit={handleSubmitOrder} className="space-y-6">
@@ -577,6 +469,22 @@ export default function CheckoutModal() {
                   </div>
 
                   <div>
+                    <label className="block text-[11px] font-semibold text-[#5a544c] mb-1 flex items-center justify-between">
+                      <span>Pincode (PIN) *</span>
+                      {pincodeLoading && <Loader2 size={12} className="animate-spin text-[#0d4f3c]" />}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="e.g. 395007"
+                      value={pincode}
+                      onChange={(e) => handlePincodeChange(e.target.value)}
+                      className="w-full text-xs px-3 py-2.5 bg-white border border-[#d6ccc2] rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-[11px] font-semibold text-[#5a544c] mb-1">
                       City *
                     </label>
@@ -602,19 +510,12 @@ export default function CheckoutModal() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#5a544c] mb-1">
-                      Pincode *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 395007"
-                      value={pincode}
-                      onChange={(e) => setPincode(e.target.value)}
-                      className="w-full text-xs px-3 py-2.5 bg-white border border-[#d6ccc2] rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"
-                    />
-                  </div>
+                  {pincodeFeedback && (
+                    <div className="sm:col-span-3 text-[11px] text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium">
+                      <CheckCircle2 size={13} className="shrink-0 text-emerald-600" />
+                      <span>{pincodeFeedback}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

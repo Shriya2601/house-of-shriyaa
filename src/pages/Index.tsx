@@ -8,9 +8,11 @@ import { useEditMode, CanvaEditable } from "../components/editmode";
 import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
-import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode } from "../services/storeService";
+import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment } from "../services/storeService";
+import { lookupPincode } from "../utils/pincodeLookup";
 import { SavedAddress, Order, AtelierBooking } from "../types";
 import {
+  AlertCircle,
   ArrowRight,
   Bell,
   Bookmark,
@@ -23,6 +25,7 @@ import {
   CreditCard,
   Crown,
   Edit3,
+  ExternalLink,
   Gift,
   GraduationCap,
   Heart,
@@ -30,6 +33,7 @@ import {
   Home,
   Info,
   Layers,
+  Loader2,
   Lock,
   LogOut,
   Mail,
@@ -721,6 +725,13 @@ export function InteractiveModal({
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
 
+  const [addrPincodeLoading, setAddrPincodeLoading] = useState(false);
+  const [addrPincodeFeedback, setAddrPincodeFeedback] = useState<string | null>(null);
+  const [trackUtrInput, setTrackUtrInput] = useState("");
+  const [trackUtrSubmitting, setTrackUtrSubmitting] = useState(false);
+  const [trackUtrSuccess, setTrackUtrSuccess] = useState(false);
+  const [copiedTrackAwb, setCopiedTrackAwb] = useState(false);
+
   const [newAddr, setNewAddr] = useState<Omit<SavedAddress, "id">>({
     label: "Home",
     fullName: customerProfile?.fullName || "",
@@ -736,6 +747,33 @@ export function InteractiveModal({
 
   if (!type) return null;
 
+  const handleAddrPincodeChange = async (val: string) => {
+    const clean = val.replace(/\D/g, "").slice(0, 6);
+    setNewAddr((prev) => ({ ...prev, pincode: clean }));
+    if (clean.length === 6) {
+      setAddrPincodeLoading(true);
+      try {
+        const info = await lookupPincode(clean);
+        if (info) {
+          setNewAddr((prev) => ({
+            ...prev,
+            city: info.city || prev.city,
+            state: info.state || prev.state,
+          }));
+          setAddrPincodeFeedback(`Auto-detected: ${info.city ? info.city + ", " : ""}${info.state}`);
+        } else {
+          setAddrPincodeFeedback(null);
+        }
+      } catch {
+        setAddrPincodeFeedback(null);
+      } finally {
+        setAddrPincodeLoading(false);
+      }
+    } else {
+      setAddrPincodeFeedback(null);
+    }
+  };
+
   const handleTrackSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackSearchQuery.trim()) return;
@@ -746,10 +784,31 @@ export function InteractiveModal({
         setSearchedOrder(found);
       } else {
         setSearchedOrder(null);
-        setTrackError(`No order found matching "${trackSearchQuery.trim()}". Please verify your order number.`);
+        setTrackError(`No order found matching "${trackSearchQuery.trim()}". Please verify your order number or phone number.`);
       }
     } catch {
-      setTrackError("Unable to locate order. Please check order number.");
+      setTrackError("Unable to locate order. Please check order number or phone.");
+    }
+  };
+
+  const handleTrackSubmitUtr = async (e: React.FormEvent, orderId: string, orderNumber: string) => {
+    e.preventDefault();
+    if (!trackUtrInput.trim()) return;
+    setTrackUtrSubmitting(true);
+    try {
+      await confirmOrderPayment(orderId, trackUtrInput.trim(), orderNumber);
+      setTrackUtrSuccess(true);
+      if (searchedOrder) {
+        setSearchedOrder({
+          ...searchedOrder,
+          paymentStatus: "Payment Verification Pending",
+          utrNumber: trackUtrInput.trim(),
+        });
+      }
+    } catch (err) {
+      console.error("UTR submission error:", err);
+    } finally {
+      setTrackUtrSubmitting(false);
     }
   };
 
@@ -806,6 +865,9 @@ export function InteractiveModal({
         const orderStatusText = orderToDisplay ? (orderToDisplay.status || orderToDisplay.orderStatus || "pending").replace("_", " ") : "";
         const city = orderToDisplay?.customerAddress?.city || orderToDisplay?.shippingAddress?.city || "New Delhi";
         const pincode = orderToDisplay?.customerAddress?.pincode || orderToDisplay?.shippingAddress?.pincode || "110001";
+        const isPaid = orderToDisplay?.paymentStatus === "Paid";
+        const isVerifying = orderToDisplay?.paymentStatus === "Payment Verification Pending";
+        const isPending = !isPaid && !isVerifying;
 
         return (
           <div className="space-y-4">
@@ -814,7 +876,7 @@ export function InteractiveModal({
                 type="text"
                 value={trackSearchQuery}
                 onChange={(e) => setTrackSearchQuery(e.target.value)}
-                placeholder="Enter Order # (e.g. HOS-XXXXXX)"
+                placeholder="Enter Order # (e.g. HOS-XXXXXX) or Mobile No."
                 className="flex-1 px-3 py-2 text-xs border border-[#ebe2d8] rounded-lg bg-white text-[#1e1b18] focus:outline-none focus:border-[#0d4f3c]"
               />
               <button
@@ -833,6 +895,7 @@ export function InteractiveModal({
 
             {orderToDisplay ? (
               <div className="space-y-3 pt-1">
+                {/* Order Summary Header */}
                 <div className="bg-[#f7f2eb] p-3.5 rounded-xl border border-[#e8dfd5] flex items-center justify-between">
                   <div>
                     <span className="text-xs text-[#8c6d37] font-bold block">ORDER #{orderToDisplay.orderNumber}</span>
@@ -848,19 +911,150 @@ export function InteractiveModal({
                   </span>
                 </div>
 
+                {/* PAYMENT STATUS & CONFIRMATION BOX */}
+                <div className="rounded-xl border p-3.5 text-xs space-y-2.5 bg-white border-[#ebe2d8]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#1e1b18] flex items-center gap-1.5">
+                      <CreditCard size={14} className="text-[#0d4f3c]" />
+                      <span>Payment Status:</span>
+                    </span>
+                    {isPaid ? (
+                      <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 size={11} /> Paid & Confirmed
+                      </span>
+                    ) : isVerifying ? (
+                      <span className="bg-amber-100 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                        <Clock size={11} /> Verification In Progress
+                      </span>
+                    ) : (
+                      <span className="bg-rose-100 text-rose-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-rose-200 flex items-center gap-1">
+                        <AlertCircle size={11} /> Payment Pending
+                      </span>
+                    )}
+                  </div>
+
+                  {orderToDisplay.utrNumber && (
+                    <div className="text-[11px] text-[#63594e] bg-[#f8f5ee] px-2.5 py-1.5 rounded-lg border border-[#e8dfd5] flex items-center justify-between">
+                      <span>Submitted UTR / Ref:</span>
+                      <strong className="font-mono text-[#0d4f3c]">{orderToDisplay.utrNumber}</strong>
+                    </div>
+                  )}
+
+                  {/* If payment is pending or customer wants to submit UTR */}
+                  {isPending && (
+                    <div className="space-y-2 pt-1 border-t border-[#f0e8dc]">
+                      <p className="text-[11px] text-[#706458]">
+                        Complete your payment via UPI to <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong> or submit your 12-digit UTR below for instant verification:
+                      </p>
+                      {trackUtrSuccess ? (
+                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2.5 rounded-lg text-xs flex items-center gap-2">
+                          <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                          <span>Thank you! Your UTR has been submitted and atelier staff will verify within 15 minutes.</span>
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={(e) => handleTrackSubmitUtr(e, orderToDisplay.id, orderToDisplay.orderNumber)}
+                          className="flex gap-2"
+                        >
+                          <input
+                            type="text"
+                            placeholder="Enter 12-digit UPI UTR / Ref #"
+                            value={trackUtrInput}
+                            onChange={(e) => setTrackUtrInput(e.target.value)}
+                            required
+                            className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-[#d6ccc2] rounded-lg focus:outline-none focus:border-[#0d4f3c]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={trackUtrSubmitting}
+                            className="px-3 py-1.5 bg-[#0d4f3c] text-white font-bold rounded-lg hover:bg-[#083528] transition-colors shrink-0 disabled:opacity-50"
+                          >
+                            {trackUtrSubmitting ? "Submitting..." : "Confirm Payment"}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* COURIER & SHIPROCKET TRACKING */}
+                {(orderToDisplay.trackingNumber || orderToDisplay.shiprocketOrderId) && (
+                  <div className="bg-[#0d4f3c]/5 border border-[#0d4f3c]/20 rounded-xl p-3.5 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-serif font-bold text-xs text-[#0d4f3c] flex items-center gap-1.5">
+                        <Truck size={15} />
+                        <span>Shiprocket Express Courier</span>
+                      </span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                        {orderToDisplay.shiprocketStatus || "Manifest Dispatched"}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-[#6b6257]">Courier Partner</span>
+                      <span className="font-semibold text-[#1e1b18]">
+                        {orderToDisplay.trackingCourier || "Shiprocket Express"}
+                      </span>
+                    </div>
+
+                    {orderToDisplay.trackingNumber && (
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-[#6b6257]">Air Waybill (AWB)</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-[#0d4f3c]">
+                            {orderToDisplay.trackingNumber}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(orderToDisplay.trackingNumber!);
+                              setCopiedTrackAwb(true);
+                              setTimeout(() => setCopiedTrackAwb(false), 2000);
+                            }}
+                            className="text-stone-400 hover:text-stone-700 p-0.5"
+                            title="Copy AWB"
+                          >
+                            {copiedTrackAwb ? (
+                              <Check size={12} className="text-emerald-600" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(orderToDisplay.trackingUrl || orderToDisplay.trackingNumber) && (
+                      <div className="pt-1.5 border-t border-[#0d4f3c]/10 flex items-center justify-between text-[11px]">
+                        <span className="text-stone-500">Live Courier Tracking:</span>
+                        <a
+                          href={orderToDisplay.trackingUrl || `https://shiprocket.co/tracking/${orderToDisplay.trackingNumber}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-bold text-[#0d4f3c] hover:underline inline-flex items-center gap-1"
+                        >
+                          <span>Track on Shiprocket</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Progress Steps */}
                 <div className="space-y-3 pt-2">
                   <div className="flex items-start gap-3">
                     <div className="w-7 h-7 rounded-full bg-[#0d4f3c] text-white flex items-center justify-center shrink-0 text-xs">
                       ✓
                     </div>
                     <div>
-                      <strong className="text-xs text-[#1e1b18] block">Order Placed & Confirmed</strong>
+                      <strong className="text-xs text-[#1e1b18] block">Order Placed & Registered</strong>
                       <span className="text-[0.7rem] text-[#706458]">
                         {new Date(orderToDisplay.createdAt).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",
-                        })} · Atelier Verification
+                        })} · Surat Atelier Registry
                       </span>
                     </div>
                   </div>
@@ -869,8 +1063,8 @@ export function InteractiveModal({
                       ✓
                     </div>
                     <div>
-                      <strong className="text-xs text-[#1e1b18] block">Handloom Artisan Inspection Passed</strong>
-                      <span className="text-[0.7rem] text-[#706458]">Surat Atelier Flagship Quality Check</span>
+                      <strong className="text-xs text-[#1e1b18] block">Handloom Artisan Quality Check</strong>
+                      <span className="text-[0.7rem] text-[#706458]">Surat Atelier Flagship Inspection</span>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -885,10 +1079,25 @@ export function InteractiveModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Direct WhatsApp Concierge Link */}
+                <div className="pt-2">
+                  <a
+                    href={`https://wa.me/919501698356?text=${encodeURIComponent(
+                      `Namaste House of Shriya! I am tracking my order ${orderToDisplay.orderNumber} (Total: ₹${orderTotal}). Please share the latest courier status.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 bg-[#25D366] hover:bg-[#1faa53] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
+                  >
+                    <MessageCircle size={15} />
+                    <span>WhatsApp Atelier Support (9501698356)</span>
+                  </a>
+                </div>
               </div>
             ) : (
               <div className="text-center py-6 text-xs text-[#706458] space-y-2">
-                <p>No active shipments found. Enter an order number above or sign in to track your bookings.</p>
+                <p>No active shipments found. Enter an order number or mobile number above, or sign in to track your bookings.</p>
                 {!currentUser && onOpenAuth && (
                   <button
                     type="button"
@@ -1569,6 +1778,20 @@ export function InteractiveModal({
                   className="w-full p-2 border border-[#ebe2d8] rounded bg-white"
                 />
                 <div className="grid grid-cols-3 gap-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="PIN Code"
+                      required
+                      maxLength={6}
+                      value={newAddr.pincode}
+                      onChange={(e) => handleAddrPincodeChange(e.target.value)}
+                      className="w-full p-2 border border-[#ebe2d8] rounded bg-white"
+                    />
+                    {addrPincodeLoading && (
+                      <Loader2 size={12} className="absolute right-2 top-3 animate-spin text-[#0d4f3c]" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     placeholder="City"
@@ -1585,15 +1808,13 @@ export function InteractiveModal({
                     onChange={(e) => setNewAddr({ ...newAddr, state: e.target.value })}
                     className="p-2 border border-[#ebe2d8] rounded bg-white"
                   />
-                  <input
-                    type="text"
-                    placeholder="PIN Code"
-                    required
-                    value={newAddr.pincode}
-                    onChange={(e) => setNewAddr({ ...newAddr, pincode: e.target.value })}
-                    className="p-2 border border-[#ebe2d8] rounded bg-white"
-                  />
                 </div>
+                {addrPincodeFeedback && (
+                  <div className="text-[11px] text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                    <span>{addrPincodeFeedback}</span>
+                  </div>
+                )}
                 <div className="flex gap-2 pt-2">
                   <button
                     type="submit"
