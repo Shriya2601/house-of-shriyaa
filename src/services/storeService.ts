@@ -274,77 +274,93 @@ export function getCachedCategories(): CategoryItem[] {
   return defaultCategories;
 }
 
+export function cacheCategoriesLocally(cats: CategoryItem[]): void {
+  try {
+    localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(cats));
+  } catch {}
+}
+
+export function getCachedSiteContent(): SiteContent {
+  try {
+    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return { ...defaultSiteContent, ...parsed };
+      }
+    }
+  } catch {}
+  return defaultSiteContent;
+}
+
+export function cacheSiteContentLocally(content: SiteContent): void {
+  try {
+    localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(content));
+  } catch {}
+}
+
 /* ============================================================
    CONTENT & CATALOG SUBSCRIPTIONS (CLIENT-SIDE)
 ============================================================ */
 
 export function subscribeSiteContent(callback: (content: SiteContent) => void): () => void {
-  try {
-    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed) callback({ ...defaultSiteContent, ...parsed });
-    } else {
-      callback(defaultSiteContent);
-    }
-  } catch {
-    callback(defaultSiteContent);
-  }
+  // 1. Immediately provide cached/default content for zero-delay paint
+  let currentContent = getCachedSiteContent();
+  callback(currentContent);
 
-  // Real-time custom event listener for instantaneous UI updates
-  const handleContentUpdate = (e: Event) => {
-    const customEvt = e as CustomEvent;
-    if (customEvt.detail) {
-      callback(customEvt.detail);
+  let active = true;
+
+  // Active sync function: fetches live site content from backend API
+  const fetchLiveSiteContent = async () => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/site-content?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (res.ok) {
+        const serverData = await res.json();
+        if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
+          const merged = { ...defaultSiteContent, ...serverData };
+          currentContent = merged;
+          cacheSiteContentLocally(merged);
+          callback(merged);
+          return;
+        }
+      }
+    } catch {}
+
+    // Fallback to static JSON file only if nothing in local cache
+    try {
+      const staticRes = await fetch(`/data/siteContent.json?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (staticData && (staticData.heroSlides || Object.keys(staticData).length > 0)) {
+          const merged = { ...defaultSiteContent, ...staticData };
+          currentContent = merged;
+          cacheSiteContentLocally(merged);
+          callback(merged);
+        }
+      }
+    } catch {}
+  };
+
+  // Immediate live fetch
+  fetchLiveSiteContent();
+
+  // Active background polling interval (every 5s) for instant sync on mobile phones & tablets
+  const pollTimer = setInterval(fetchLiveSiteContent, 5000);
+
+  // Focus & mobile visibility change (crucial for phones when resuming screen)
+  const handleWakeup = () => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      fetchLiveSiteContent();
     }
   };
-  if (typeof window !== "undefined") {
-    window.addEventListener("hos-content-updated", handleContentUpdate);
-  }
 
-  // Load from server API endpoint first with cache buster
-  fetch(`/api/site-content?v=${Date.now()}`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((serverData) => {
-      if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
-        // Prevent stale server overwrites if local is newer
-        const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
-        let localTime = 0;
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            localTime = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
-          } catch {}
-        }
-        const serverTime = serverData.updatedAt ? new Date(serverData.updatedAt).getTime() : 0;
-        if (serverTime < localTime) return;
-
-        const merged = { ...defaultSiteContent, ...serverData };
-        try {
-          localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-        } catch {}
-        callback(merged);
-        return;
-      }
-      // Fallback to static JSON file only if nothing in localStorage
-      const localCurrent = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
-      if (!localCurrent) {
-        return fetch(`/data/siteContent.json?v=${Date.now()}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((staticData) => {
-            if (staticData) {
-              const merged = { ...defaultSiteContent, ...staticData };
-              try {
-                localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-              } catch {}
-              callback(merged);
-            }
-          });
-      }
-    })
-    .catch(() => {});
-
-  // Firestore real-time listener if available
+  // Firestore real-time listener (the instant cloud sync engine across devices)
   let unsubFs = () => {};
   try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
@@ -353,87 +369,157 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       (snap) => {
         if (snap.exists()) {
           const fsData = snap.data() as SiteContent;
-          const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
-          let localTime = 0;
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              localTime = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
-            } catch {}
+          if (fsData) {
+            const merged = { ...defaultSiteContent, ...fsData };
+            currentContent = merged;
+            cacheSiteContentLocally(merged);
+            callback(merged);
           }
-          const fsTime = fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0;
-          if (fsTime < localTime) return;
-
-          const merged = { ...defaultSiteContent, ...fsData };
-          try {
-            localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-          } catch {}
-          callback(merged);
         }
       },
-      () => {}
+      (err) => {
+        console.warn("Firestore site_content listener notice:", err);
+      }
     );
   } catch {}
 
+  // Event & BroadcastChannel listeners
+  const handleContentUpdate = (e: Event) => {
+    const customEvt = e as CustomEvent;
+    if (customEvt.detail) {
+      currentContent = customEvt.detail;
+      cacheSiteContentLocally(customEvt.detail);
+      callback(customEvt.detail);
+    }
+  };
+
+  const handleBroadcastMessage = (event: MessageEvent) => {
+    if (event.data?.type === "site_content") {
+      fetchLiveSiteContent();
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("hos-content-updated", handleContentUpdate);
+    window.addEventListener("focus", handleWakeup);
+    window.addEventListener("pageshow", handleWakeup);
+    window.addEventListener("online", handleWakeup);
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleWakeup);
+  }
+  if (syncChannel) {
+    syncChannel.addEventListener("message", handleBroadcastMessage);
+  }
+
   return () => {
+    active = false;
+    clearInterval(pollTimer);
+    unsubFs();
     if (typeof window !== "undefined") {
       window.removeEventListener("hos-content-updated", handleContentUpdate);
+      window.removeEventListener("focus", handleWakeup);
+      window.removeEventListener("pageshow", handleWakeup);
+      window.removeEventListener("online", handleWakeup);
     }
-    unsubFs();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleWakeup);
+    }
+    if (syncChannel) {
+      syncChannel.removeEventListener("message", handleBroadcastMessage);
+    }
   };
 }
 
-export async function saveSiteContent(content: Partial<SiteContent>): Promise<void> {
-  pausePolling(15);
-  let existing: any = {};
-  try {
-    const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
-    if (raw) existing = JSON.parse(raw);
-  } catch {}
+export async function saveSiteContent(content: Partial<SiteContent>): Promise<SiteContent> {
+  pausePolling(8);
+  const existing = getCachedSiteContent();
+  const updated: SiteContent = {
+    ...defaultSiteContent,
+    ...existing,
+    ...content,
+    updatedAt: new Date().toISOString(),
+  };
 
-  const merged = { ...defaultSiteContent, ...existing, ...content, updatedAt: new Date().toISOString() };
-  try {
-    localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-  } catch {}
+  // 1. Immediately cache locally
+  cacheSiteContentLocally(updated);
 
-  // Sync to API backend for disk persistence
+  // 2. Sync to API backend for disk persistence
   try {
     await fetch("/api/site-content", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(merged),
+      body: JSON.stringify(updated),
     });
   } catch (apiErr) {
     console.warn("API site content sync notice:", apiErr);
   }
 
-  // Sync to Firestore
+  // 3. Sync to Firestore (single source of truth across all devices)
   try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
-    await setDoc(docRef, merged, { merge: true });
-  } catch {}
-
-  // Dispatch custom event for 0ms reactive UI refresh across all tabs/components
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+    await setDoc(docRef, updated, { merge: true });
+  } catch (fsErr) {
+    console.warn("Firestore saveSiteContent notice:", fsErr);
   }
+
+  // 4. Dispatch events for 0ms reactive UI refresh across all tabs/components
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: updated }));
+  }
+  broadcastCrossDeviceSync("site_content" as any, updated);
+
+  return updated;
 }
 
 export function subscribeCategories(callback: (categories: CategoryItem[]) => void): () => void {
   callback(getCachedCategories());
 
-  fetch(`/data/categories.json?v=${Date.now()}`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        try {
-          localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(data));
-        } catch {}
-        callback(data);
-      }
-    })
-    .catch(() => {});
+  let active = true;
 
+  const fetchLiveCategories = async () => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/categories?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          cacheCategoriesLocally(data);
+          callback(data);
+          return;
+        }
+      }
+    } catch {}
+
+    // Fallback to static JSON file if server endpoint temporarily unavailable
+    try {
+      const staticRes = await fetch(`/data/categories.json?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (staticRes.ok) {
+        const data = await staticRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          cacheCategoriesLocally(data);
+          callback(data);
+        }
+      }
+    } catch {}
+  };
+
+  fetchLiveCategories();
+  const pollTimer = setInterval(fetchLiveCategories, 6000);
+
+  // Mobile wakeups
+  const handleWakeup = () => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      fetchLiveCategories();
+    }
+  };
+
+  // Firestore real-time listener
   let unsubFs = () => {};
   try {
     const colRef = collection(db, "categories");
@@ -443,9 +529,7 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         if (!snapshot.empty) {
           const fsList = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CategoryItem));
           fsList.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          try {
-            localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(fsList));
-          } catch {}
+          cacheCategoriesLocally(fsList);
           callback(fsList);
         }
       },
@@ -453,8 +537,48 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
     );
   } catch {}
 
+  const handleBroadcastMessage = (event: MessageEvent) => {
+    if (event.data?.type === "categories") {
+      fetchLiveCategories();
+    }
+  };
+
+  const handleCategoriesUpdated = (e: any) => {
+    if (Array.isArray(e.detail) && e.detail.length > 0) {
+      cacheCategoriesLocally(e.detail);
+      callback(e.detail);
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", handleWakeup);
+    window.addEventListener("pageshow", handleWakeup);
+    window.addEventListener("online", handleWakeup);
+    window.addEventListener("hos-categories-updated", handleCategoriesUpdated);
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleWakeup);
+  }
+  if (syncChannel) {
+    syncChannel.addEventListener("message", handleBroadcastMessage);
+  }
+
   return () => {
+    active = false;
+    clearInterval(pollTimer);
     unsubFs();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", handleWakeup);
+      window.removeEventListener("pageshow", handleWakeup);
+      window.removeEventListener("online", handleWakeup);
+      window.removeEventListener("hos-categories-updated", handleCategoriesUpdated);
+    }
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleWakeup);
+    }
+    if (syncChannel) {
+      syncChannel.removeEventListener("message", handleBroadcastMessage);
+    }
   };
 }
 
@@ -463,9 +587,7 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
   const idx = current.findIndex((c) => c.id === category.id);
   const updated = idx > -1 ? [...current] : [category, ...current];
   if (idx > -1) updated[idx] = category;
-  try {
-    localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(updated));
-  } catch {}
+  cacheCategoriesLocally(updated);
 
   // Sync with central backend API
   try {
@@ -481,14 +603,15 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
     await setDoc(docRef, category, { merge: true });
   } catch {}
 
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: updated }));
+  }
   broadcastCrossDeviceSync("categories", updated);
 }
 
 export async function deleteCategory(id: string): Promise<void> {
   const current = getCachedCategories().filter((c) => c.id !== id);
-  try {
-    localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(current));
-  } catch {}
+  cacheCategoriesLocally(current);
 
   // Sync with central backend API
   try {
@@ -504,6 +627,9 @@ export async function deleteCategory(id: string): Promise<void> {
     await deleteDoc(docRef);
   } catch {}
 
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: current }));
+  }
   broadcastCrossDeviceSync("categories", current);
 }
 
