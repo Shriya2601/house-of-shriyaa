@@ -278,7 +278,7 @@ const slides = [
     number: "02",
     collection: "Kashmir to Kashi",
     title: "Pure Banarasi Booti & Kashmiri Tilla Embroidered Lengths",
-    description: "Unstitched 3-piece regal fabric lengths tailored for custom sizing from XS to 5XL with soft butter silk lining.",
+    description: "Unstitched regal handloom fabric lengths ready for your preferred tailor with soft butter silk lining.",
     image: imageUrls.luxury,
     season: "ROYAL HERITAGE 2026",
     caption: "Kashmiri Tilla Saffron Katan Weave",

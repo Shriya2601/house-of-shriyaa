@@ -142,9 +142,13 @@ export function ensureProductVariants(product: any): Product {
   let variants: ColorVariant[] = [];
   if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
     variants = product.colorVariants.map((v: any, idx: number) => {
-      const vImages = Array.isArray(v.images) && v.images.length > 0
-        ? v.images.filter(Boolean)
-        : [v.image || primaryImg, v.hoverImage || hoverImg].filter(Boolean);
+      // If idx === 0 (the primary variant), ensure it strictly matches product.image & hoverImage
+      const vImages = idx === 0 && product.image
+        ? [product.image, product.hoverImage || product.image].filter(Boolean)
+        : (Array.isArray(v.images) && v.images.length > 0
+            ? v.images.filter(Boolean)
+            : [v.image || primaryImg, v.hoverImage || hoverImg].filter(Boolean));
+
       return {
         id: v.id || `var-${product.id || "prod"}-${idx + 1}`,
         colorName: v.colorName || product.color || "Royal Emerald",
@@ -155,8 +159,8 @@ export function ensureProductVariants(product: any): Product {
         description: v.description || product.description || "",
         fabricType: v.fabricType || product.fabricType || "Pure Silk",
         images: vImages,
-        image: vImages[0] || primaryImg,
-        hoverImage: vImages[1] || vImages[0] || hoverImg,
+        image: vImages[0] || (idx === 0 ? primaryImg : v.image || primaryImg),
+        hoverImage: vImages[1] || vImages[0] || (idx === 0 ? hoverImg : v.hoverImage || hoverImg),
         inStock: v.inStock !== false,
       };
     });
@@ -182,10 +186,15 @@ export function ensureProductVariants(product: any): Product {
     ];
   }
 
+  const cleanImages = Array.isArray(product.images) && product.images.length > 0 && product.images[0] === primaryImg
+    ? product.images.filter(Boolean)
+    : [primaryImg, hoverImg].filter(Boolean);
+
   return {
     ...product,
     image: primaryImg,
     hoverImage: hoverImg,
+    images: cleanImages,
     colorVariants: variants,
     sizes: product.sizes || ["Unstitched Fabric (5.5m + 1m Blouse Piece)"],
     inStock: product.inStock !== false,
@@ -208,7 +217,16 @@ export function getCachedProducts(): Product[] {
 export function cacheProductsLocally(prods: Product[]) {
   try {
     localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(prods));
-  } catch {}
+  } catch (err) {
+    // If quota exceeded, try caching with essential fields to protect storage
+    try {
+      const lightweight = prods.map((p) => ({
+        ...p,
+        image: p.image?.startsWith("data:") ? p.image.slice(0, 80) : p.image,
+      }));
+      localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(lightweight));
+    } catch {}
+  }
 }
 
 export function getCachedCategories(): CategoryItem[] {
@@ -355,14 +373,49 @@ export async function deleteCategory(id: string): Promise<void> {
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
   callback(getCachedProducts());
 
-  fetch(`/data/products.json?v=${Date.now()}`)
+  // Listen to immediate custom window events dispatched during admin operations
+  const handleCatalogUpdate = (e: any) => {
+    if (Array.isArray(e.detail) && e.detail.length > 0) {
+      callback(e.detail.map(ensureProductVariants));
+    }
+  };
+  const handleSingleProductSaved = (e: any) => {
+    if (e.detail && e.detail.id) {
+      const current = getCachedProducts();
+      const idx = current.findIndex((p) => p.id === e.detail.id);
+      const normalized = ensureProductVariants(e.detail);
+      const next = idx > -1 ? [...current] : [normalized, ...current];
+      if (idx > -1) next[idx] = normalized;
+      cacheProductsLocally(next);
+      callback(next);
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("hos-catalog-updated", handleCatalogUpdate);
+    window.addEventListener("hos-product-saved", handleSingleProductSaved);
+  }
+
+  // Fetch freshest live products from API endpoint first
+  fetch(`/api/products?v=${Date.now()}`)
     .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        const normalized = data.map(ensureProductVariants);
+    .then((apiData) => {
+      if (Array.isArray(apiData) && apiData.length > 0) {
+        const normalized = apiData.map(ensureProductVariants);
         cacheProductsLocally(normalized);
         callback(normalized);
+        return;
       }
+      // Fallback to static JSON file if API not reachable
+      return fetch(`/data/products.json?v=${Date.now()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((staticData) => {
+          if (Array.isArray(staticData) && staticData.length > 0) {
+            const normalized = staticData.map(ensureProductVariants);
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
+        });
     })
     .catch(() => {});
 
@@ -384,6 +437,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
   return () => {
     unsubFs();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("hos-catalog-updated", handleCatalogUpdate);
+      window.removeEventListener("hos-product-saved", handleSingleProductSaved);
+    }
   };
 }
 

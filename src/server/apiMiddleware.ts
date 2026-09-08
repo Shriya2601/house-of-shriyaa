@@ -265,6 +265,66 @@ export function apiMiddlewarePlugin(): Plugin {
           }
         }
 
+        // 5. DIRECT PHOTO UPLOAD: /api/upload
+        if (urlWithoutQuery === "/api/upload" && method === "POST") {
+          try {
+            const body = await parseJsonBody(req);
+            const rawData = body.dataUrl || body.image || body.base64;
+            if (!rawData || typeof rawData !== "string") {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: "Missing image dataUrl in request payload" }));
+              return;
+            }
+
+            // Extract mime type and base64 buffer
+            let ext = "jpg";
+            let base64Data = rawData;
+            const matches = rawData.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+            if (matches) {
+              const mime = matches[1].toLowerCase();
+              if (mime.includes("png")) ext = "png";
+              else if (mime.includes("webp")) ext = "webp";
+              else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+              base64Data = matches[2];
+            }
+
+            const buffer = Buffer.from(base64Data, "base64");
+            const safePrefix = (body.filename || "suit")
+              .toLowerCase()
+              .replace(/[^a-z0-9_-]/g, "-")
+              .slice(0, 20) || "suit";
+            const generatedFilename = `${safePrefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
+
+            const uploadsDir = path.resolve(process.cwd(), "public/uploads");
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            const filePath = path.join(uploadsDir, generatedFilename);
+            fs.writeFileSync(filePath, buffer);
+
+            // Also copy to dist/uploads if dist exists
+            const distUploadsDir = path.resolve(process.cwd(), "dist/uploads");
+            if (fs.existsSync(distUploadsDir)) {
+              try {
+                fs.writeFileSync(path.join(distUploadsDir, generatedFilename), buffer);
+              } catch {}
+            }
+
+            const publicUrl = `/uploads/${generatedFilename}`;
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, url: publicUrl, filename: generatedFilename }));
+            return;
+          } catch (err: any) {
+            console.error("[API Middleware] Photo upload error:", err);
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: err.message || "Failed to process photo upload" }));
+            return;
+          }
+        }
+
         next();
       });
     },

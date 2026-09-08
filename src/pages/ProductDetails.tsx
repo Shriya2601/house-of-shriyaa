@@ -166,7 +166,18 @@ export default function ProductDetails() {
   const displayPrice = currentColorVariant?.price || product?.price || "₹2,999";
   const displayOriginalPrice = currentColorVariant?.originalPrice || product?.originalPrice;
   const displaySavings = currentColorVariant?.savings || product?.savings;
-  const displayDescription = currentColorVariant?.description || product?.description;
+  const rawDescription = currentColorVariant?.description || product?.description || "";
+  const displayDescription = useMemo(() => {
+    return rawDescription
+      .replace(/Format:\s*Unstitched[^\n.]*(?:\.|\n|$)/gi, "")
+      .replace(/Complete 3-piece pure handloom unstitched set[^\n.]*(?:\.|\n|$)/gi, "")
+      .replace(/Complete 3-piece pure handloom[^\n.]*(?:\.|\n|$)/gi, "")
+      .replace(/Pure heirloom weave crafted with authentic Surat zari artistry\.?/gi, "")
+      .replace(/\bComplete 3-piece\b/gi, "")
+      .replace(/\n\s*\n+/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .trim();
+  }, [rawDescription]);
   const displayFabric = currentColorVariant?.fabricType || product?.fabricType || "Pure Chanderi Silk";
   const displayColor = currentColorVariant?.colorName || product?.color || "Artisan Craft";
   const isCurrentlyInStock = (currentColorVariant?.inStock !== false) && (product?.inStock !== false);
@@ -758,8 +769,8 @@ export default function ProductDetails() {
                   <span className="font-medium text-[#2a241e]">{product?.color || "Royal Emerald & Zari"}</span>
                 </div>
                 <div>
-                  <span className="text-[#8c827a] block text-[10px] uppercase font-bold">Cut / Silhouette</span>
-                  <span className="font-medium text-[#2a241e]">{product?.cut || "Classic Anarkali / Straight Suit"}</span>
+                  <span className="text-[#8c827a] block text-[10px] uppercase font-bold">Suit Format</span>
+                  <span className="font-medium text-[#2a241e]">Premium Unstitched Suit</span>
                 </div>
                 <div>
                   <span className="text-[#8c827a] block text-[10px] uppercase font-bold">Dupatta Style</span>

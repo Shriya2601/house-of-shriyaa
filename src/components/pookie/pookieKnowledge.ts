@@ -367,9 +367,9 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
     return {
       text:
         "✨ **All Suits Are Premium Unstitched Suits**:\n\n" +
-        "• Every piece at House of Shriya is an **Unstitched 3-Piece Luxury Suit Set**.\n" +
-        "• Each suit includes complete fabric: Kurta fabric, Bottom fabric, and full-width artisan Dupatta.\n" +
-        "• Because all suits are unstitched, you can have your preferred tailor craft your exact silhouette, neckline, and sleeves!\n\n" +
+        "• All pieces at House of Shriya are pure unstitched handloom suits.\n" +
+        "• High quality unstitched fabric ready for custom tailoring to your exact fit and style.\n" +
+        "• Because every suit is unstitched, you can have your preferred boutique craft your favorite silhouette, neckline, and length!\n\n" +
         "Need styling advice or have questions? Click 'POOKIE NEED A HELP' to connect directly on WhatsApp!",
       quickReplies: [
         "🌸 Show Anarkali Collections",

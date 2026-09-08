@@ -204,11 +204,29 @@ export default function AddProductModal({
     setError(null);
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      setImage(dataUrl);
+      let finalUrl = dataUrl;
+      // Immediately upload file to server to obtain clean web URL /uploads/...
+      try {
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl, filename: file.name }),
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.url) {
+            finalUrl = uploadJson.url;
+          }
+        }
+      } catch (uploadErr) {
+        console.warn("Direct upload fallback to dataUrl", uploadErr);
+      }
+
+      setImage(finalUrl);
       setMainImageDetails({ name: file.name, size: sizeText });
       // If hover image isn't set yet, default it to main image
       if (!hoverImage) {
-        setHoverImage(dataUrl);
+        setHoverImage(finalUrl);
       }
     } catch (err: any) {
       setError(err?.message || "Failed to process photo from device.");
@@ -223,7 +241,24 @@ export default function AddProductModal({
     setError(null);
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      setHoverImage(dataUrl);
+      let finalUrl = dataUrl;
+      try {
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl, filename: file.name }),
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.url) {
+            finalUrl = uploadJson.url;
+          }
+        }
+      } catch (uploadErr) {
+        console.warn("Direct hover upload fallback to dataUrl", uploadErr);
+      }
+
+      setHoverImage(finalUrl);
       setHoverImageDetails({ name: file.name, size: sizeText });
     } catch (err: any) {
       setError(err?.message || "Failed to process secondary photo.");
@@ -249,7 +284,39 @@ export default function AddProductModal({
 
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     const savings = calculateSavings(price, originalPrice);
-    const finalHoverImage = hoverImage.trim() || image.trim();
+
+    // If images are still raw data URLs, attempt saving to /api/upload as well
+    let finalMainImg = image.trim();
+    if (finalMainImg.startsWith("data:")) {
+      try {
+        const upRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl: finalMainImg, filename: `main-${prodId}` }),
+        });
+        if (upRes.ok) {
+          const upJson = await upRes.json();
+          if (upJson.url) finalMainImg = upJson.url;
+        }
+      } catch {}
+    }
+
+    let finalHoverImage = hoverImage.trim() || finalMainImg;
+    if (finalHoverImage.startsWith("data:")) {
+      try {
+        const upRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl: finalHoverImage, filename: `hover-${prodId}` }),
+        });
+        if (upRes.ok) {
+          const upJson = await upRes.json();
+          if (upJson.url) finalHoverImage = upJson.url;
+        }
+      } catch {}
+    }
+
+    const finalImages = [finalMainImg, finalHoverImage].filter(Boolean);
 
     const productPayload: Product = {
       id: prodId,
@@ -262,9 +329,9 @@ export default function AddProductModal({
       color: color.trim(),
       colorHex: colorHex.trim(),
       description: description.trim(),
-      image: image.trim(),
+      image: finalMainImg,
       hoverImage: finalHoverImage,
-      images: [image.trim(), finalHoverImage].filter(Boolean),
+      images: finalImages,
       inStock,
       badges: selectedBadge ? [selectedBadge] : ["New Drop"],
       tags: productToEdit?.tags || [category.trim(), fabricType.trim(), selectedBadge].filter(Boolean),
@@ -283,9 +350,9 @@ export default function AddProductModal({
           savings,
           fabricType: fabricType.trim(),
           description: description.trim(),
-          image: image.trim(),
+          image: finalMainImg,
           hoverImage: finalHoverImage,
-          images: [image.trim(), finalHoverImage].filter(Boolean),
+          images: finalImages,
           inStock,
         },
       ],
@@ -306,20 +373,20 @@ export default function AddProductModal({
   return (
     <div
       id="modal-add-product"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs overflow-hidden"
     >
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-[#e5ddd3] overflow-hidden my-8">
-        {/* Modal Header */}
-        <div className="bg-[#0d4f3c] text-white px-6 py-4 flex items-center justify-between">
+      <div className="bg-white w-full h-[94vh] sm:h-auto sm:max-h-[90vh] sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[#e5ddd3] flex flex-col overflow-hidden animate-in fade-in duration-200">
+        {/* Modal Header (Sticky) */}
+        <div className="shrink-0 bg-[#0d4f3c] text-white px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#d4af37]/20 flex items-center justify-center text-[#d4af37]">
+            <div className="w-8 h-8 rounded-lg bg-[#d4af37]/20 flex items-center justify-center text-[#d4af37] shrink-0">
               <Sparkles size={18} />
             </div>
             <div>
-              <h3 className="font-serif font-bold text-lg leading-snug">
+              <h3 className="font-serif font-bold text-base sm:text-lg leading-snug">
                 {productToEdit ? "Edit Boutique Suit Piece" : "Add New Boutique Suit Piece"}
               </h3>
-              <p className="text-[11px] text-white/70">
+              <p className="text-[10px] sm:text-[11px] text-white/70">
                 Direct device photo upload • Auto-optimized • Live updates on site
               </p>
             </div>
@@ -334,7 +401,8 @@ export default function AddProductModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center gap-2">
               <AlertCircle size={15} className="shrink-0 text-red-600" />
@@ -850,13 +918,14 @@ export default function AddProductModal({
               </label>
             </div>
           </div>
+          </div>
 
-          {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-200">
+          {/* Modal Footer (Sticky) */}
+          <div className="shrink-0 bg-[#faf8f5] border-t border-[#e5ddd3] px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-end gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900 border border-stone-300 rounded-lg transition-colors cursor-pointer"
+              className="px-3.5 sm:px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900 border border-stone-300 rounded-lg transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -864,7 +933,7 @@ export default function AddProductModal({
               id="btn-submit-add-product"
               type="submit"
               disabled={submitting || isProcessingMain || isProcessingHover}
-              className="px-5 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#09382b] text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+              className="px-4 sm:px-5 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#09382b] text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
             >
               <Plus size={15} />
               <span>
