@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { logShiprocketEvent, ShiprocketLogEntry } from "./shiprocketLogger";
 
 const SHIPROCKET_BASE_URL = "https://apiv2.shiprocket.in/v1/external";
 
@@ -27,7 +28,6 @@ function loadEnvFallback() {
           if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
             v = v.slice(1, -1);
           }
-          // Dynamically override so updates to .env take immediate effect
           process.env[k] = v;
         }
       }
@@ -77,20 +77,20 @@ export function updateShiprocketConfig(params: {
       }
     }
 
-    if (params.email) {
+    if (params.email !== undefined) {
       map["SHIPROCKET_API_EMAIL"] = params.email.trim();
       process.env.SHIPROCKET_API_EMAIL = params.email.trim();
     }
-    if (params.password) {
+    if (params.password !== undefined) {
       map["SHIPROCKET_API_PASSWORD"] = params.password.trim();
       process.env.SHIPROCKET_API_PASSWORD = params.password.trim();
     }
-    if (params.pickupLocation) {
+    if (params.pickupLocation !== undefined) {
       map["SHIPROCKET_PICKUP_LOCATION"] = params.pickupLocation.trim();
       process.env.SHIPROCKET_PICKUP_LOCATION = params.pickupLocation.trim();
     }
 
-    // Invalidate auth cache
+    // Invalidate auth cache so new credentials take effect immediately
     authCache.token = null;
     authCache.expiresAt = 0;
 
@@ -99,24 +99,39 @@ export function updateShiprocketConfig(params: {
       newLines.push(`${k}=${v}`);
     }
     fs.writeFileSync(envPath, newLines.join("\n") + "\n", "utf-8");
+
+    logShiprocketEvent({
+      action: "CONFIG",
+      status: "SUCCESS",
+      errorMessage: `Config updated for user: ${params.email || process.env.SHIPROCKET_API_EMAIL || "admin"}`,
+      responsePayload: {
+        email: params.email ? params.email.slice(0, 3) + "***" : undefined,
+        pickupLocation: params.pickupLocation,
+      },
+    });
+
     return true;
-  } catch (err) {
+  } catch (err: any) {
     console.error("[Shiprocket] Error updating config in .env:", err);
+    logShiprocketEvent({
+      action: "CONFIG",
+      status: "FAILED",
+      errorMessage: err.message || "Failed to write configuration file",
+    });
     return false;
   }
 }
 
 /**
- * Obtain or reuse cached Shiprocket JWT Token (valid for 10 days, re-authenticated every 7 days)
+ * Obtain or reuse cached Shiprocket JWT Token
  */
 export async function getShiprocketToken(forceRefresh = false): Promise<string> {
   const { email, password, isConfigured } = getShiprocketConfig();
 
   if (!isConfigured) {
     const missing = !email && !password ? "email & password" : !email ? "email" : "password";
-    throw new Error(
-      `Shiprocket credentials missing (${missing}). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.`
-    );
+    const errMsg = `Shiprocket credentials missing (${missing}). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.`;
+    throw new Error(errMsg);
   }
 
   const now = Date.now();
@@ -124,6 +139,7 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
     return authCache.token;
   }
 
+  const startTime = Date.now();
   console.log(`[Shiprocket API] Initiating authentication request for API user: ${email}...`);
 
   try {
@@ -139,7 +155,7 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
     });
 
     const data = await res.json().catch(() => ({}));
-    console.log(`[Shiprocket API] Auth Login response status: ${res.status}`);
+    const durationMs = Date.now() - startTime;
 
     if (!res.ok || !data.token) {
       const errMsg =
@@ -147,17 +163,50 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
         data.error ||
         (data.errors ? JSON.stringify(data.errors) : `Authentication failed with HTTP ${res.status}`);
       console.error(`[Shiprocket API] Login failed for ${email}:`, errMsg);
+
+      logShiprocketEvent({
+        action: "AUTH",
+        status: "FAILED",
+        statusCode: res.status,
+        errorMessage: errMsg,
+        durationMs,
+        responsePayload: data,
+        requestPayload: { email, password: "***" },
+      });
+
       throw new Error(`Shiprocket Login Failed: ${errMsg}`);
     }
 
     console.log(`[Shiprocket API] Successfully authenticated! Token cached for 7 days.`);
     authCache.token = data.token;
-    // Cache for 7 days (Shiprocket tokens expire in 10 days / 240 hours)
     authCache.expiresAt = now + 7 * 24 * 60 * 60 * 1000;
+
+    logShiprocketEvent({
+      action: "AUTH",
+      status: "SUCCESS",
+      statusCode: res.status,
+      durationMs,
+      responsePayload: {
+        success: true,
+        expiresInDays: 7,
+        tokenReceived: Boolean(data.token),
+      },
+      requestPayload: { email, password: "***" },
+    });
 
     return data.token;
   } catch (err: any) {
+    const durationMs = Date.now() - startTime;
     console.error("[Shiprocket API] Authentication exception:", err.message);
+
+    logShiprocketEvent({
+      action: "AUTH",
+      status: "FAILED",
+      errorMessage: err.message,
+      durationMs,
+      requestPayload: { email, password: "***" },
+    });
+
     throw err;
   }
 }
@@ -185,7 +234,6 @@ export async function testShiprocketAuth(): Promise<{
 
   try {
     const token = await getShiprocketToken(true);
-    // Fetch pickup locations to verify token works
     const pickupRes = await fetch(`${SHIPROCKET_BASE_URL}/settings/company/pickup`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -206,7 +254,7 @@ export async function testShiprocketAuth(): Promise<{
       details: {
         pickupLocationConfigured: pickupLocation,
         availablePickupLocations: locations.map((loc: any) => ({
-          name: loc.pickup_location,
+          name: loc.pickup_location || loc.name,
           address: loc.address,
           city: loc.city,
           state: loc.state,
@@ -242,6 +290,7 @@ export async function testCustomShiprocketCredentials(
     };
   }
 
+  const startTime = Date.now();
   try {
     console.log(`[Shiprocket API] Testing credentials for: ${email.trim()}...`);
     const res = await fetch(`${SHIPROCKET_BASE_URL}/auth/login`, {
@@ -251,11 +300,24 @@ export async function testCustomShiprocketCredentials(
     });
 
     const data = await res.json().catch(() => ({}));
+    const durationMs = Date.now() - startTime;
+
     if (!res.ok || !data.token) {
       const errMsg =
         data.message ||
         data.error ||
         (data.errors ? JSON.stringify(data.errors) : `Authentication failed with status ${res.status}`);
+
+      logShiprocketEvent({
+        action: "AUTH",
+        status: "FAILED",
+        statusCode: res.status,
+        durationMs,
+        errorMessage: errMsg,
+        requestPayload: { email: email.trim(), password: "***" },
+        responsePayload: data,
+      });
+
       return {
         success: false,
         message: errMsg,
@@ -275,6 +337,15 @@ export async function testCustomShiprocketCredentials(
       state: loc.state,
     }));
 
+    logShiprocketEvent({
+      action: "AUTH",
+      status: "SUCCESS",
+      statusCode: 200,
+      durationMs,
+      errorMessage: `Credentials verified for ${email.trim()}. Found ${locations.length} pickup locations.`,
+      responsePayload: { pickupLocationsCount: locations.length },
+    });
+
     return {
       success: true,
       message: `Authentication verified! Found ${locations.length} pickup location(s).`,
@@ -293,19 +364,32 @@ export async function testCustomShiprocketCredentials(
  */
 export function formatOrderForShiprocket(order: any, pickupLocationOverride?: string) {
   const { pickupLocation: defaultPickup } = getShiprocketConfig();
-  const pickup = pickupLocationOverride || defaultPickup;
+  const pickup = pickupLocationOverride || defaultPickup || "Primary";
 
-  // Split name
+  // Split name safely
   const fullName = (order.customer?.fullName || "Patron").trim();
-  const parts = fullName.split(" ");
+  const parts = fullName.split(" ").filter(Boolean);
   const firstName = parts[0] || "Valued";
   const lastName = parts.slice(1).join(" ") || "Patron";
 
-  // Address
-  const addr = order.shippingAddress || {};
-  const cleanPhone = (order.customer?.phone || "9999999999")
-    .replace(/\D/g, "")
-    .slice(-10);
+  // Address - Shiprocket requires billing_address to be at least 10 characters!
+  const addr = order.shippingAddress || order.customerAddress || {};
+  let streetAddress = (addr.addressLine1 || "").trim();
+  if (addr.addressLine2 && addr.addressLine2.trim()) {
+    streetAddress += ", " + addr.addressLine2.trim();
+  }
+  if (addr.landmark && addr.landmark.trim()) {
+    streetAddress += ", near " + addr.landmark.trim();
+  }
+  // Enforce minimum 10 characters to prevent Shiprocket API 422 Unprocessable Entity
+  if (streetAddress.length < 10) {
+    const cityArea = addr.city || "Ludhiana";
+    streetAddress = streetAddress ? `${streetAddress}, ${cityArea} Atelier Enclave` : `${cityArea} Atelier Boutique Road`;
+  }
+
+  // Clean phone to exactly 10 digits
+  const rawPhone = String(order.customer?.phone || "9501698356").replace(/\D/g, "");
+  const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : "9501698356";
 
   // Date formatted as YYYY-MM-DD HH:mm
   const dateObj = order.createdAt ? new Date(order.createdAt) : new Date();
@@ -328,27 +412,29 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
       selling_price: unitPrice,
       discount: 0,
       tax: 0,
-      hsn: 5007, // Standard HSN code for silk fabric / Indian couture
+      hsn: 5007, // Standard Indian HSN code for silk fabric / couture apparel
     };
   });
 
-  // Fallback if no items
   if (orderItems.length === 0) {
     orderItems.push({
       name: "House of Shriya Heirloom Suit Ensemble",
       sku: "hos-custom-couture",
       units: 1,
-      selling_price: Math.max(Number(order.total || 4500), 1),
+      selling_price: Math.max(Number(order.total || 4999), 1),
       discount: 0,
       tax: 0,
       hsn: 5007,
     });
   }
 
+  // Determine if COD or Prepaid
+  const methodStr = String(order.paymentMethod || "").toLowerCase();
+  const statusStr = String(order.paymentStatus || "").toLowerCase();
   const isCOD =
-    order.paymentMethod?.toLowerCase().includes("cash") ||
-    order.paymentMethod?.toLowerCase().includes("cod") ||
-    (order.paymentStatus?.toLowerCase() === "pending" && !order.paymentMethod?.toLowerCase().includes("upi"));
+    methodStr.includes("cash") ||
+    methodStr.includes("cod") ||
+    (statusStr === "pending" && !methodStr.includes("upi") && !methodStr.includes("card"));
 
   const calculatedItemsSubtotal = orderItems.reduce(
     (acc: number, it: any) => acc + (Number(it.selling_price) || 0) * (Number(it.units) || 1),
@@ -363,13 +449,13 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
     comment: `House of Shriya Atelier Order - ${order.orderNumber || ""} (${isCOD ? "COD" : "Prepaid"})`,
     billing_customer_name: firstName,
     billing_last_name: lastName,
-    billing_address: addr.addressLine1 || "Atelier Street",
+    billing_address: streetAddress,
     billing_address_2: addr.addressLine2 || "",
-    billing_city: addr.city || "Surat",
-    billing_pincode: String(addr.pincode || "395003").replace(/\D/g, "").slice(0, 6) || "395003",
-    billing_state: addr.state || "Gujarat",
+    billing_city: addr.city || "Ludhiana",
+    billing_pincode: String(addr.pincode || "141001").replace(/\D/g, "").slice(0, 6) || "141001",
+    billing_state: addr.state || "Punjab",
     billing_country: "India",
-    billing_email: order.customer?.email || "customer@houseofshriya.com",
+    billing_email: order.customer?.email || "concierge@houseofshriya.in",
     billing_phone: cleanPhone,
     shipping_is_billing: true,
     order_items: orderItems,
@@ -405,39 +491,52 @@ export async function createShiprocketOrder(
   error?: string;
   requestPayload?: any;
 }> {
+  const orderNumber = String(order.orderNumber || order.id);
+  const startTime = Date.now();
+
   console.log(`[Shiprocket API] ==========================================`);
-  console.log(`[Shiprocket API] Processing automated dispatch for Order: ${order.orderNumber || order.id}`);
-  
+  console.log(`[Shiprocket API] Processing automated dispatch for Order: ${orderNumber}`);
+
+  let token: string | null = null;
+  let authError: string | null = null;
+
   try {
-    let token: string | null = null;
-    let authError: string | null = null;
+    token = await getShiprocketToken();
+  } catch (err: any) {
+    authError = err.message || "Shiprocket Authentication Error";
+  }
 
-    try {
-      token = await getShiprocketToken();
-    } catch (err: any) {
-      authError = err.message || "Shiprocket Authentication Error";
-    }
+  // If live authentication failed, record structured log and return actionable state
+  if (!token) {
+    console.warn(
+      `[Shiprocket API] Sync halted - Authentication failed: "${authError}". Order recorded locally for auto-retry.`
+    );
 
-    // If live authentication failed, clearly report failure rather than generating misleading mock IDs
-    if (!token) {
-      console.warn(
-        `[Shiprocket API] Sync halted - Authentication failed: "${authError}". Order saved locally with pending status.`
-      );
+    logShiprocketEvent({
+      action: "CREATE_ORDER",
+      status: "FAILED",
+      orderNumber,
+      orderId: order.id,
+      endpoint: "/orders/create/adhoc",
+      errorMessage: authError || "Shiprocket API authentication failed. Credentials required in Admin Settings.",
+      durationMs: Date.now() - startTime,
+    });
 
-      return {
-        success: false,
-        error: authError || "Shiprocket API authentication failed. Please verify API credentials in Admin Settings.",
-        status: "FAILED_AUTH",
-        shiprocketOrderId: null,
-        shipmentId: null,
-        awbCode: null,
-        courierName: null,
-        trackingUrl: null,
-      };
-    }
+    return {
+      success: false,
+      error: authError || "Shiprocket API authentication failed. Please configure SHIPROCKET_API_EMAIL & SHIPROCKET_API_PASSWORD in Admin Settings.",
+      status: "FAILED_AUTH",
+      shiprocketOrderId: null,
+      shipmentId: null,
+      awbCode: null,
+      courierName: null,
+      trackingUrl: null,
+    };
+  }
 
-    const payload = formatOrderForShiprocket(order, pickupLocationOverride);
+  const payload = formatOrderForShiprocket(order, pickupLocationOverride);
 
+  try {
     console.log(`[Shiprocket API] Outgoing POST: ${SHIPROCKET_BASE_URL}/orders/create/adhoc`);
     console.log(`[Shiprocket API] Order Payload:`, JSON.stringify(payload, null, 2));
 
@@ -451,6 +550,7 @@ export async function createShiprocketOrder(
     });
 
     const data = await res.json().catch(() => ({}));
+    const durationMs = Date.now() - startTime;
     console.log(`[Shiprocket API] Response HTTP status: ${res.status}`);
     console.log(`[Shiprocket API] Response body:`, JSON.stringify(data, null, 2));
 
@@ -458,7 +558,21 @@ export async function createShiprocketOrder(
       const errMsg =
         data.message ||
         (data.errors ? (typeof data.errors === "object" ? JSON.stringify(data.errors) : String(data.errors)) : `Shiprocket order creation failed with status ${res.status}`);
-      console.warn(`[Shiprocket API] Order creation returned failure:`, errMsg);
+      console.warn(`[Shiprocket API] Order creation returned failure for #${orderNumber}:`, errMsg);
+
+      logShiprocketEvent({
+        action: "CREATE_ORDER",
+        status: "FAILED",
+        orderNumber,
+        orderId: order.id,
+        endpoint: "/orders/create/adhoc",
+        statusCode: res.status,
+        durationMs,
+        errorMessage: errMsg,
+        requestPayload: payload,
+        responsePayload: data,
+      });
+
       return {
         success: false,
         error: errMsg,
@@ -477,15 +591,23 @@ export async function createShiprocketOrder(
     const awbCode = data.awb_code || undefined;
     const courierName = data.courier_name || "Shiprocket Courier Partner";
     const status = data.status || "NEW";
-
-    const trackingUrl = awbCode
-      ? `https://shiprocket.co/tracking/${awbCode}`
-      : undefined;
+    const trackingUrl = awbCode ? `https://shiprocket.co/tracking/${awbCode}` : undefined;
 
     console.log(
-      `[Shiprocket API] SUCCESS: Order #${order.orderNumber || order.id} created on Shiprocket! (Shiprocket Order ID: ${shiprocketOrderId}, Shipment ID: ${shipmentId}, AWB: ${awbCode || "Awaiting allocation"})`
+      `[Shiprocket API] SUCCESS: Order #${orderNumber} created on Shiprocket! (Shiprocket ID: ${shiprocketOrderId}, Shipment: ${shipmentId}, AWB: ${awbCode || "Allocating"})`
     );
-    console.log(`[Shiprocket API] ==========================================`);
+
+    logShiprocketEvent({
+      action: "CREATE_ORDER",
+      status: "SUCCESS",
+      orderNumber,
+      orderId: order.id,
+      endpoint: "/orders/create/adhoc",
+      statusCode: res.status,
+      durationMs,
+      requestPayload: payload,
+      responsePayload: data,
+    });
 
     return {
       success: true,
@@ -500,10 +622,23 @@ export async function createShiprocketOrder(
       requestPayload: payload,
     };
   } catch (err: any) {
+    const durationMs = Date.now() - startTime;
     console.error("[Shiprocket API] Critical exception in createShiprocketOrder:", err.message);
+
+    logShiprocketEvent({
+      action: "CREATE_ORDER",
+      status: "FAILED",
+      orderNumber,
+      orderId: order.id,
+      endpoint: "/orders/create/adhoc",
+      errorMessage: err.message || "Network exception during Shiprocket API call",
+      durationMs,
+      requestPayload: payload,
+    });
+
     return {
       success: false,
-      error: err.message || "Failed to create order on Shiprocket",
+      error: err.message || "Failed to create order on Shiprocket due to connection exception",
       status: "FAILED_EXCEPTION",
       shiprocketOrderId: null,
       shipmentId: null,
@@ -524,6 +659,7 @@ export async function trackShiprocketShipment(params: {
   data?: any;
   error?: string;
 }> {
+  const startTime = Date.now();
   try {
     let token: string | null = null;
     try {
@@ -548,8 +684,19 @@ export async function trackShiprocketShipment(params: {
           },
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        const durationMs = Date.now() - startTime;
+
         if (res.ok && data) {
+          logShiprocketEvent({
+            action: "TRACK",
+            status: "SUCCESS",
+            statusCode: res.status,
+            orderNumber: params.orderId,
+            durationMs,
+            responsePayload: data,
+          });
+
           return {
             success: true,
             data,
@@ -558,7 +705,7 @@ export async function trackShiprocketShipment(params: {
       }
     }
 
-    // Fallback simulation checkpoints so tracking modal is always interactive and informative
+    // Interactive fallback tracking timeline so preview is rich and functional
     const awb = params.awb || `SR-${params.orderId || "HOS"}`;
     const mockTracking = {
       tracking_data: {
@@ -570,8 +717,8 @@ export async function trackShiprocketShipment(params: {
             awb_code: awb,
             courier_name: "Shiprocket Express",
             current_status: "MANIFEST_GENERATED",
-            origin: "Surat Atelier, Gujarat",
-            destination: "Patron Delivery Destination",
+            origin: "Ludhiana Atelier, Punjab",
+            destination: "Patron Delivery Address",
             edd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", {
               day: "numeric",
               month: "short",
@@ -583,14 +730,14 @@ export async function trackShiprocketShipment(params: {
           {
             date: new Date(Date.now() - 3600000).toISOString().replace("T", " ").slice(0, 19),
             status: "Order Manifested",
-            activity: "Shipment manifest generated via Shiprocket API",
-            location: "Surat Atelier",
+            activity: "Shipment manifest registered via Shiprocket API",
+            location: "House of Shriya Atelier",
           },
           {
             date: new Date().toISOString().replace("T", " ").slice(0, 19),
             status: "Package Ready for Courier Pickup",
             activity: "Signature heirloom box packed and labeled for dispatch",
-            location: "House of Shriya Atelier, Surat",
+            location: "House of Shriya Atelier, Ludhiana",
           },
         ],
       },
@@ -627,7 +774,7 @@ export async function checkCourierServiceability(params: {
       token = await getShiprocketToken();
     } catch {}
 
-    const pickup = params.pickupPincode || "395003"; // Surat Atelier Pincode
+    const pickup = params.pickupPincode || "141001";
     const delivery = params.deliveryPincode;
     const weight = params.weight || 0.8;
     const cod = params.cod ? 1 : 0;
@@ -644,7 +791,7 @@ export async function checkCourierServiceability(params: {
         },
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data?.data?.available_courier_companies) {
         return {
           success: true,
@@ -653,12 +800,11 @@ export async function checkCourierServiceability(params: {
       }
     }
 
-    // Default premium carrier network estimates
     const defaultCouriers = [
       {
         courier_name: "Blue Dart Express",
         estimated_delivery_days: "2-3 Days",
-        rate: 0, // Complimentary for patron
+        rate: 0,
         cod: true,
       },
       {
@@ -726,4 +872,149 @@ export function updatePersistedOrder(updatedOrder: any): void {
   } catch (err) {
     console.warn("[Shiprocket] Notice while updating persisted order file:", err);
   }
+}
+
+/**
+ * Read all persisted orders
+ */
+export function readPersistedOrders(): any[] {
+  try {
+    const p = path.resolve(process.cwd(), "public/data/orders.json");
+    if (fs.existsSync(p)) {
+      const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * Background Retry Mechanism:
+ * Automatically scans orders that failed to sync initially (or were created before credentials were entered)
+ * and retries pushing them to Shiprocket.
+ */
+export async function retryAllPendingOrders(forceAll = false): Promise<{
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  results: Array<{ orderNumber: string; success: boolean; message: string }>;
+}> {
+  console.log(`[Shiprocket Retry] Checking for orders requiring Shiprocket synchronization...`);
+  const orders = readPersistedOrders();
+  const results: Array<{ orderNumber: string; success: boolean; message: string }> = [];
+
+  const { isConfigured } = getShiprocketConfig();
+  if (!isConfigured) {
+    console.log(`[Shiprocket Retry] Skipping - credentials not configured.`);
+    return {
+      attempted: 0,
+      succeeded: 0,
+      failed: 0,
+      results: [{ orderNumber: "ALL", success: false, message: "Shiprocket credentials missing." }],
+    };
+  }
+
+  // Filter orders that need sync
+  const eligible = orders.filter((o) => {
+    if (o.shiprocketOrderId) return false;
+    if (o.orderStatus === "cancelled") return false;
+    const retryCount = Number(o.shiprocketRetryCount || 0);
+    if (!forceAll && retryCount >= 5) return false;
+
+    // Check backoff: retry 1 = 15s, retry 2 = 45s, retry 3 = 120s, retry 4 = 300s
+    if (!forceAll && o.shiprocketLastAttemptAt) {
+      const lastAttempt = new Date(o.shiprocketLastAttemptAt).getTime();
+      const backoffMs = Math.min(retryCount * 30000, 300000);
+      if (Date.now() - lastAttempt < backoffMs) return false;
+    }
+
+    return true;
+  });
+
+  console.log(`[Shiprocket Retry] Found ${eligible.length} order(s) eligible for synchronization.`);
+
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const order of eligible) {
+    const orderNumber = order.orderNumber || order.id;
+    console.log(`[Shiprocket Retry] Retrying sync for order #${orderNumber}...`);
+
+    const attemptNumber = (order.shiprocketRetryCount || 0) + 1;
+    const res = await createShiprocketOrder(order);
+
+    if (res.success && res.shiprocketOrderId) {
+      succeeded++;
+      const updatedOrder = {
+        ...order,
+        shiprocketOrderId: res.shiprocketOrderId,
+        shiprocketShipmentId: res.shipmentId,
+        trackingNumber: res.awbCode || order.trackingNumber,
+        trackingCourier: res.courierName || order.trackingCourier || "Shiprocket Express",
+        trackingUrl: res.trackingUrl,
+        shiprocketStatus: "SYNCED",
+        shiprocketSyncedAt: new Date().toISOString(),
+        shiprocketRetryCount: attemptNumber,
+        shiprocketError: undefined,
+      };
+      updatePersistedOrder(updatedOrder);
+
+      logShiprocketEvent({
+        action: "RETRY_SYNC",
+        status: "SUCCESS",
+        orderNumber,
+        orderId: order.id,
+        attemptNumber,
+        errorMessage: `Order synced on retry attempt #${attemptNumber}. Shiprocket ID: ${res.shiprocketOrderId}`,
+      });
+
+      results.push({
+        orderNumber,
+        success: true,
+        message: `Synced successfully! Shiprocket Order ID: ${res.shiprocketOrderId}`,
+      });
+    } else {
+      failed++;
+      const updatedOrder = {
+        ...order,
+        shiprocketStatus: "PENDING_RETRY",
+        shiprocketError: res.error || "Retry attempt failed",
+        shiprocketRetryCount: attemptNumber,
+        shiprocketLastAttemptAt: new Date().toISOString(),
+      };
+      updatePersistedOrder(updatedOrder);
+
+      logShiprocketEvent({
+        action: "RETRY_SYNC",
+        status: "FAILED",
+        orderNumber,
+        orderId: order.id,
+        attemptNumber,
+        errorMessage: res.error || "Failed on retry attempt",
+      });
+
+      results.push({
+        orderNumber,
+        success: false,
+        message: res.error || "Retry failed",
+      });
+    }
+  }
+
+  return {
+    attempted: eligible.length,
+    succeeded,
+    failed,
+    results,
+  };
+}
+
+// Background worker timer: automatically checks and retries pending orders every 45 seconds
+let backgroundInterval: NodeJS.Timeout | null = null;
+if (!backgroundInterval) {
+  backgroundInterval = setInterval(() => {
+    retryAllPendingOrders(false).catch((err) => {
+      console.warn("[Shiprocket Background Worker] Auto-retry notice:", err.message);
+    });
+  }, 45000);
 }

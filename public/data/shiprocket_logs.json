@@ -1,0 +1,19 @@
+[
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "statusCode": 403,
+    "durationMs": 237,
+    "errorMessage": "Invalid email and password combination",
+    "requestPayload": {
+      "email": "test@houseofshriya.in",
+      "password": "***"
+    },
+    "responsePayload": {
+      "message": "Invalid email and password combination",
+      "status_code": 403
+    },
+    "id": "log_1788865738812_u5nw6",
+    "timestamp": "2026-09-08T11:08:58.812Z"
+  }
+]

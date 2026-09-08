@@ -526,22 +526,28 @@ export function apiMiddlewarePlugin(): Plugin {
                 const { createShiprocketOrder } = await import("./shiprocketService");
                 shiprocketResult = await createShiprocketOrder(order);
 
-                if (shiprocketResult) {
+                if (shiprocketResult && shiprocketResult.success) {
                   order.shiprocketOrderId = shiprocketResult.shiprocketOrderId;
                   order.shiprocketShipmentId = shiprocketResult.shipmentId;
-                  order.shiprocketStatus = shiprocketResult.status;
+                  order.shiprocketStatus = "SYNCED";
                   order.trackingNumber = shiprocketResult.awbCode || order.trackingNumber;
                   order.trackingCourier = shiprocketResult.courierName || order.trackingCourier || "Shiprocket Express";
                   order.trackingUrl = shiprocketResult.trackingUrl || (order.trackingNumber ? `https://shiprocket.co/tracking/${order.trackingNumber}` : undefined);
                   order.shiprocketSyncedAt = new Date().toISOString();
-
-                  if (shiprocketResult.error) {
-                    order.shiprocketError = shiprocketResult.error;
-                  }
+                  order.shiprocketRetryCount = 0;
+                  order.shiprocketError = undefined;
+                } else {
+                  order.shiprocketStatus = "PENDING_RETRY";
+                  order.shiprocketError = shiprocketResult?.error || "Initial Shiprocket dispatch pending credential verification";
+                  order.shiprocketRetryCount = 1;
+                  order.shiprocketLastAttemptAt = new Date().toISOString();
                 }
               } catch (srErr: any) {
                 console.error("[API Middleware] Shiprocket auto-dispatch error:", srErr.message);
+                order.shiprocketStatus = "PENDING_RETRY";
                 order.shiprocketError = srErr.message;
+                order.shiprocketRetryCount = 1;
+                order.shiprocketLastAttemptAt = new Date().toISOString();
               }
 
               // Persist order
@@ -761,36 +767,133 @@ export function apiMiddlewarePlugin(): Plugin {
               const body = await parseJsonBody(req);
               console.log("[Shiprocket Webhook] Received event:", JSON.stringify(body));
 
+              const { logShiprocketEvent } = await import("./shiprocketLogger");
               const awb = body.awb || body.awb_code;
               const orderId = body.order_id;
               const currentStatus = (body.current_status || body.status || "").toLowerCase();
 
-              if (orderId || awb) {
-                const { updatePersistedOrder } = await import("./shiprocketService");
-                let mappedOrderStatus = "confirmed";
-                if (currentStatus.includes("delivered")) mappedOrderStatus = "delivered";
-                else if (currentStatus.includes("out for delivery") || currentStatus.includes("in transit") || currentStatus.includes("shipped") || currentStatus.includes("pickup")) mappedOrderStatus = "shipped";
-                else if (currentStatus.includes("cancel") || currentStatus.includes("rto")) mappedOrderStatus = "cancelled";
+              logShiprocketEvent({
+                action: "WEBHOOK",
+                status: "SUCCESS",
+                statusCode: 200,
+                orderNumber: String(orderId || ""),
+                errorMessage: `Webhook received for ${orderId || awb || "shipment"}: Status = ${body.current_status || body.status || "Update"}`,
+                responsePayload: body,
+              });
 
-                updatePersistedOrder({
-                  id: orderId,
-                  orderNumber: orderId,
-                  trackingNumber: awb,
-                  trackingCourier: body.courier_name || "Shiprocket Express",
-                  shiprocketStatus: body.current_status || body.status,
+              if (orderId || awb) {
+                const { updatePersistedOrder, readPersistedOrders } = await import("./shiprocketService");
+                const existingOrders = readPersistedOrders();
+                const matchedOrder = existingOrders.find(
+                  (o) =>
+                    String(o.shiprocketOrderId) === String(orderId) ||
+                    String(o.orderNumber) === String(orderId) ||
+                    String(o.id) === String(orderId) ||
+                    (awb && (o.trackingNumber === awb || o.shiprocketAwb === awb))
+                );
+
+                let mappedOrderStatus = matchedOrder?.orderStatus || "confirmed";
+                if (currentStatus.includes("delivered")) {
+                  mappedOrderStatus = "delivered";
+                } else if (
+                  currentStatus.includes("out for delivery") ||
+                  currentStatus.includes("in transit") ||
+                  currentStatus.includes("shipped") ||
+                  currentStatus.includes("pickup") ||
+                  currentStatus.includes("reached")
+                ) {
+                  mappedOrderStatus = "shipped";
+                } else if (currentStatus.includes("cancel") || currentStatus.includes("rto")) {
+                  mappedOrderStatus = "cancelled";
+                }
+
+                const updatedData = {
+                  ...(matchedOrder || {}),
+                  id: matchedOrder?.id || orderId,
+                  orderNumber: matchedOrder?.orderNumber || orderId,
+                  shiprocketOrderId: orderId || matchedOrder?.shiprocketOrderId,
+                  trackingNumber: awb || matchedOrder?.trackingNumber,
+                  trackingCourier: body.courier_name || matchedOrder?.trackingCourier || "Shiprocket Express",
+                  shiprocketStatus: body.current_status || body.status || "In Transit",
                   orderStatus: mappedOrderStatus,
                   updatedAt: new Date().toISOString(),
-                });
+                };
+
+                updatePersistedOrder(updatedData);
               }
 
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
-              res.end(JSON.stringify({ success: true, message: "Webhook acknowledged" }));
+              res.end(JSON.stringify({ success: true, message: "Webhook acknowledged and processed successfully" }));
               return;
             } catch (err: any) {
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 400;
               res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
+          // G. Shiprocket Logs: GET /api/shipping/shiprocket/logs
+          if (urlWithoutQuery === "/api/shipping/shiprocket/logs" && method === "GET") {
+            try {
+              const { getShiprocketLogs } = await import("./shiprocketLogger");
+              const urlObj = new URL(rawUrl, "http://localhost:3000");
+              const action = urlObj.searchParams.get("action") || undefined;
+              const status = urlObj.searchParams.get("status") || undefined;
+              const search = urlObj.searchParams.get("search") || undefined;
+              const limit = parseInt(urlObj.searchParams.get("limit") || "100", 10);
+
+              const logs = getShiprocketLogs({
+                action,
+                status,
+                search,
+                limit,
+              });
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, logs, total: logs.length }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ success: false, error: err.message, logs: [] }));
+              return;
+            }
+          }
+
+          // H. Clear Shiprocket Logs: DELETE /api/shipping/shiprocket/logs
+          if (urlWithoutQuery === "/api/shipping/shiprocket/logs" && method === "DELETE") {
+            try {
+              const { clearShiprocketLogs } = await import("./shiprocketLogger");
+              clearShiprocketLogs();
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, message: "Shiprocket API logs cleared." }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ success: false, error: err.message }));
+              return;
+            }
+          }
+
+          // I. Manual / Background Retry Trigger: POST /api/shipping/shiprocket/retry
+          if (urlWithoutQuery === "/api/shipping/shiprocket/retry" && method === "POST") {
+            try {
+              const { retryAllPendingOrders } = await import("./shiprocketService");
+              const retryResults = await retryAllPendingOrders(true);
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, ...retryResults }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ success: false, error: err.message }));
               return;
             }
           }

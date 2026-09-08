@@ -153,6 +153,7 @@ export interface Order {
   shiprocketShipmentId?: string | number;
   shiprocketStatus?: string;
   shiprocketSyncedAt?: string;
+  shiprocketRetryCount?: number;
   shiprocketError?: string;
   notes?: string;
   referralCode?: string;
