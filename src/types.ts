@@ -119,8 +119,29 @@ export interface ShippingAddress {
 }
 
 export type OrderStatus = "pending" | "confirmed" | "shipped" | "delivered" | "refunded" | "cancelled";
-export type PaymentMethod = "Cash on Delivery (COD)" | "Instant UPI / NetBanking" | "Credit/Debit Card";
+export type PaymentMethod =
+  | "Cash on Delivery (COD)"
+  | "Instant UPI / NetBanking"
+  | "Credit/Debit Card"
+  | "UPI / QR Code"
+  | "Debit Card / Credit Card"
+  | "Net Banking"
+  | "Direct Bank Transfer (NEFT/IMPS)";
 export type PaymentStatus = "Pending" | "Paid" | "Refunded";
+
+export interface OrderPaymentDetails {
+  methodType: "upi" | "card" | "bank" | "cod";
+  upiId?: string;
+  utrNumber?: string;
+  upiApp?: string;
+  cardLast4?: string;
+  cardBrand?: string;
+  cardHolderName?: string;
+  bankName?: string;
+  accountNumberMasked?: string;
+  transactionReference?: string;
+  paidAt?: string;
+}
 
 export interface OrderItem {
   productId: string;
@@ -145,6 +166,9 @@ export interface Order {
   total: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  paymentDetails?: OrderPaymentDetails;
+  confirmationMessageDispatched?: boolean;
+  confirmationMessageChannel?: "WhatsApp" | "SMS" | "Both";
   orderStatus: OrderStatus;
   trackingCourier?: string;
   trackingNumber?: string;
@@ -178,6 +202,8 @@ export interface AtelierBooking {
   preferredDate: string;
   preferredTime: string;
   notes?: string;
+  paymentMethod?: string;
+  advancePaid?: number;
   status: "confirmed" | "pending" | "completed" | "cancelled";
   createdAt: string;
   updatedAt: string;

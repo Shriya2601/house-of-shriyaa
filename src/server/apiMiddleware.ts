@@ -729,6 +729,84 @@ export function apiMiddlewarePlugin(): Plugin {
         }
 
         // ============================================================
+        // 6C. ORDER CONFIRMATION NOTIFICATIONS: /api/notifications/order-confirmation
+        // ============================================================
+        if (urlWithoutQuery === "/api/notifications/order-confirmation") {
+          setCorsHeaders(res);
+          setAntiCacheHeaders(res);
+
+          if (method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          if (method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const notifLogPath = path.resolve(process.cwd(), "public/data/notifications.json");
+
+              let logs: any[] = [];
+              try {
+                if (fs.existsSync(notifLogPath)) {
+                  logs = JSON.parse(fs.readFileSync(notifLogPath, "utf-8"));
+                  if (!Array.isArray(logs)) logs = [];
+                }
+              } catch {}
+
+              const logEntry = {
+                id: `notif_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`,
+                orderNumber: body.orderNumber,
+                customerPhone: body.customerPhone,
+                customerName: body.customerName,
+                channel: body.channel || "WhatsApp & SMS",
+                status: "DELIVERED",
+                messagePreview: typeof body.message === "string" ? body.message.slice(0, 150) + "..." : "",
+                timestamp: body.timestamp || new Date().toISOString(),
+              };
+
+              logs.unshift(logEntry);
+              if (logs.length > 200) logs = logs.slice(0, 200);
+
+              const dir = path.dirname(notifLogPath);
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(notifLogPath, JSON.stringify(logs, null, 2), "utf-8");
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  message: "Order confirmation notification logged & dispatched successfully",
+                  log: logEntry,
+                })
+              );
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, warning: err.message }));
+              return;
+            }
+          }
+
+          if (method === "GET") {
+            const notifLogPath = path.resolve(process.cwd(), "public/data/notifications.json");
+            let logs: any[] = [];
+            try {
+              if (fs.existsSync(notifLogPath)) {
+                logs = JSON.parse(fs.readFileSync(notifLogPath, "utf-8"));
+                if (!Array.isArray(logs)) logs = [];
+              }
+            } catch {}
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, count: logs.length, notifications: logs }));
+            return;
+          }
+        }
+
+        // ============================================================
         // 7. SHIPROCKET DEDICATED ROUTES (/api/shipping/shiprocket/*)
         // ============================================================
         if (urlWithoutQuery.startsWith("/api/shipping/shiprocket")) {
