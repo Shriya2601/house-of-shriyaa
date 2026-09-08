@@ -419,8 +419,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       }
     };
+    const handleContentUpdated = (e: any) => {
+      if (e.detail) {
+        setSiteContent(e.detail);
+      }
+    };
+    const handleCatalogUpdated = (e: any) => {
+      if (Array.isArray(e.detail) && e.detail.length > 0) {
+        setProducts(e.detail);
+      }
+    };
     window.addEventListener("hos-product-deleted", handleProdDel);
     window.addEventListener("hos-product-saved", handleProdSaved);
+    window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
+    window.addEventListener("hos-content-updated", handleContentUpdated);
     window.addEventListener("hos-category-deleted", handleCatDel);
     window.addEventListener("hos-category-saved", handleCatSaved);
 
@@ -430,6 +442,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       unsubCategories();
       window.removeEventListener("hos-product-deleted", handleProdDel);
       window.removeEventListener("hos-product-saved", handleProdSaved);
+      window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
+      window.removeEventListener("hos-content-updated", handleContentUpdated);
       window.removeEventListener("hos-category-deleted", handleCatDel);
       window.removeEventListener("hos-category-saved", handleCatSaved);
     };

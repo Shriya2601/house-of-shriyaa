@@ -306,6 +306,18 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
     .then((r) => (r.ok ? r.json() : null))
     .then((serverData) => {
       if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
+        // Prevent stale server overwrites if local is newer
+        const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+        let localTime = 0;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            localTime = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
+          } catch {}
+        }
+        const serverTime = serverData.updatedAt ? new Date(serverData.updatedAt).getTime() : 0;
+        if (serverTime < localTime) return;
+
         const merged = { ...defaultSiteContent, ...serverData };
         try {
           localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
@@ -313,18 +325,21 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         callback(merged);
         return;
       }
-      // Fallback to static JSON file
-      return fetch(`/data/siteContent.json?v=${Date.now()}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((staticData) => {
-          if (staticData) {
-            const merged = { ...defaultSiteContent, ...staticData };
-            try {
-              localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
-            } catch {}
-            callback(merged);
-          }
-        });
+      // Fallback to static JSON file only if nothing in localStorage
+      const localCurrent = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+      if (!localCurrent) {
+        return fetch(`/data/siteContent.json?v=${Date.now()}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((staticData) => {
+            if (staticData) {
+              const merged = { ...defaultSiteContent, ...staticData };
+              try {
+                localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
+              } catch {}
+              callback(merged);
+            }
+          });
+      }
     })
     .catch(() => {});
 
@@ -336,7 +351,19 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       docRef,
       (snap) => {
         if (snap.exists()) {
-          const merged = { ...defaultSiteContent, ...(snap.data() as SiteContent) };
+          const fsData = snap.data() as SiteContent;
+          const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
+          let localTime = 0;
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              localTime = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
+            } catch {}
+          }
+          const fsTime = fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0;
+          if (fsTime < localTime) return;
+
+          const merged = { ...defaultSiteContent, ...fsData };
           try {
             localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(merged));
           } catch {}
@@ -356,6 +383,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 }
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<void> {
+  pausePolling(15);
   let existing: any = {};
   try {
     const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
@@ -478,12 +506,18 @@ export async function deleteCategory(id: string): Promise<void> {
   broadcastCrossDeviceSync("categories", current);
 }
 
+let pausePollingUntil = 0;
+
+export function pausePolling(seconds = 15): void {
+  pausePollingUntil = Date.now() + seconds * 1000;
+}
+
 // Helper to append/update anti-cache timestamp parameter on uploaded images
 function applyImageCacheBuster(url: string | undefined): string {
   if (!url || typeof url !== "string") return "";
   if (url.startsWith("/uploads/")) {
-    const clean = url.split("?")[0];
-    return `${clean}?v=${Date.now()}`;
+    if (url.includes("?v=")) return url;
+    return `${url}?v=${Date.now()}`;
   }
   return url;
 }
@@ -497,6 +531,11 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   // Active sync function: fetches from central backend API with anti-cache headers
   const fetchLiveProducts = async () => {
     if (!active) return;
+    if (Date.now() < pausePollingUntil) {
+      // Polling paused after manual saves to avoid overwriting optimistic updates
+      return;
+    }
+
     try {
       const res = await fetch(`/api/products?t=${Date.now()}`, {
         cache: "no-store",
@@ -507,12 +546,37 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         if (Array.isArray(apiData) && apiData.length > 0) {
           const normalized = apiData.map(ensureProductVariants);
           const current = getCachedProducts();
-          // Check if data changed to avoid redundant re-renders
+
+          // Intelligent merge: NEVER overwrite a local product that was updated more recently!
+          const currentMap = new Map<string, Product>();
+          current.forEach((p) => currentMap.set(p.id, p));
+
+          const merged: Product[] = [];
+          for (const sProd of normalized) {
+            const localProd = currentMap.get(sProd.id);
+            if (localProd) {
+              const localTime = localProd.updatedAt ? new Date(localProd.updatedAt).getTime() : 0;
+              const serverTime = sProd.updatedAt ? new Date(sProd.updatedAt).getTime() : 0;
+              if (localTime > serverTime) {
+                // Local copy is newer, preserve local!
+                merged.push(localProd);
+                currentMap.delete(sProd.id);
+                continue;
+              }
+            }
+            merged.push(sProd);
+            currentMap.delete(sProd.id);
+          }
+          // Retain any locally added products not yet in server response
+          for (const remaining of currentMap.values()) {
+            merged.push(remaining);
+          }
+
           const currentStr = JSON.stringify(current);
-          const newStr = JSON.stringify(normalized);
+          const newStr = JSON.stringify(merged);
           if (currentStr !== newStr) {
-            cacheProductsLocally(normalized);
-            callback(normalized);
+            cacheProductsLocally(merged);
+            callback(merged);
           }
           return;
         }
@@ -529,7 +593,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         if (Array.isArray(staticData) && staticData.length > 0) {
           const normalized = staticData.map(ensureProductVariants);
           const current = getCachedProducts();
-          if (JSON.stringify(current) !== JSON.stringify(normalized)) {
+          if (current.length === 0) {
             cacheProductsLocally(normalized);
             callback(normalized);
           }
@@ -666,6 +730,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 }
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean }> {
+  pausePolling(15);
   const id = product.id || `hos-${Date.now()}`;
 
   // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
@@ -738,6 +803,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  pausePolling(15);
   const current = getCachedProducts().filter((p) => p.id !== id);
   cacheProductsLocally(current);
 

@@ -71,6 +71,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   // Initialize slides from store
   useEffect(() => {
+    if (uploadingIndex !== null || isSaving) return;
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
       // Ensure 3 slides minimum
       const merged = siteContent.heroSlides.map((s, idx) => ({
@@ -80,7 +81,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       }));
       setSlides(merged.slice(0, 3));
     }
-  }, [siteContent]);
+  }, [siteContent, uploadingIndex, isSaving]);
 
   const currentSlide = slides[activeSlideIndex] || slides[0];
 
@@ -162,17 +163,26 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       const resData = await res.json();
       const uploadedUrl = resData.url || compressedDataUrl;
 
-      // Update slide image state
-      setSlides((prev) => {
-        const next = [...prev];
-        next[activeSlideIndex] = {
-          ...next[activeSlideIndex],
-          image: uploadedUrl,
-        };
-        return next;
-      });
+      // Update slide image state AND immediately persist it to disk and live website
+      const nextSlides = slides.map((s, idx) =>
+        idx === activeSlideIndex
+          ? {
+              ...s,
+              image: uploadedUrl,
+            }
+          : s
+      );
+      setSlides(nextSlides);
 
-      showToast(`Slide ${activeSlideIndex + 1} image uploaded successfully!`, "success");
+      try {
+        await saveSiteContent({
+          heroSlides: nextSlides,
+        });
+        showToast(`Slide ${activeSlideIndex + 1} photo uploaded & published live to homepage!`, "success");
+      } catch (saveErr: any) {
+        console.error("Auto-save banner content error:", saveErr);
+        showToast(`Slide ${activeSlideIndex + 1} image uploaded successfully!`, "success");
+      }
     } catch (err: any) {
       console.error("Banner upload error:", err);
       showToast("Failed to upload image: " + (err.message || "Unknown error"), "error");

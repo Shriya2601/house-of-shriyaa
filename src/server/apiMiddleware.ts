@@ -45,14 +45,6 @@ function writeProducts(products: any[]): void {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(publicPath, JSON.stringify(products, null, 2), "utf-8");
-
-    // Also update src/data/products.json if exists
-    const srcPath = path.resolve(process.cwd(), "src/data/products.json");
-    if (fs.existsSync(path.dirname(srcPath))) {
-      try {
-        fs.writeFileSync(srcPath, JSON.stringify(products, null, 2), "utf-8");
-      } catch {}
-    }
   } catch (err) {
     console.error("[API Middleware] Error writing products:", err);
   }
@@ -522,12 +514,6 @@ export function apiMiddlewarePlugin(): Plugin {
               if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
               fs.writeFileSync(publicContentPath, jsonFormatted, "utf-8");
 
-              if (fs.existsSync(path.dirname(srcContentPath))) {
-                try {
-                  fs.writeFileSync(srcContentPath, jsonFormatted, "utf-8");
-                } catch {}
-              }
-
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(JSON.stringify({ success: true, siteContent: updated }));
@@ -563,10 +549,6 @@ export function apiMiddlewarePlugin(): Plugin {
               const dir = path.dirname(ordersPath);
               if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
               fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
-              const srcOrders = path.resolve(process.cwd(), "src/data/orders.json");
-              if (fs.existsSync(path.dirname(srcOrders))) {
-                fs.writeFileSync(srcOrders, JSON.stringify(list, null, 2), "utf-8");
-              }
             } catch (err) {
               console.error("[API Middleware] Error writing orders:", err);
             }
@@ -683,10 +665,6 @@ export function apiMiddlewarePlugin(): Plugin {
               const dir = path.dirname(ordersPath);
               if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
               fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
-              const srcOrders = path.resolve(process.cwd(), "src/data/orders.json");
-              if (fs.existsSync(path.dirname(srcOrders))) {
-                fs.writeFileSync(srcOrders, JSON.stringify(list, null, 2), "utf-8");
-              }
             } catch (err) {
               console.error("[API Middleware] Error writing orders:", err);
             }

@@ -321,8 +321,6 @@ export default function AddProductModal({
   };
 
   const handleRemoveExtraImage = (indexToRemove: number) => {
-    const targetUrl = extraImages[indexToRemove];
-    if (targetUrl) purgeOldImage(targetUrl);
     setExtraImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
@@ -403,22 +401,41 @@ export default function AddProductModal({
       sizes: ["Unstitched Suit"],
       updatedAt: new Date().toISOString(),
       createdAt: productToEdit?.createdAt || new Date().toISOString(),
-      colorVariants: [
-        {
-          id: `var-${prodId}-0`,
-          colorName: color.trim(),
-          colorHex: colorHex.trim(),
-          price: price.trim(),
-          originalPrice: originalPrice.trim(),
-          savings,
-          fabricType: fabricType.trim(),
-          description: description.trim(),
-          image: finalMainImg,
-          hoverImage: finalHoverImage,
-          images: finalImages,
-          inStock,
-        },
-      ],
+      colorVariants:
+        productToEdit?.colorVariants && productToEdit.colorVariants.length > 0
+          ? [
+              {
+                ...productToEdit.colorVariants[0],
+                colorName: color.trim(),
+                colorHex: colorHex.trim(),
+                price: price.trim(),
+                originalPrice: originalPrice.trim(),
+                savings,
+                fabricType: fabricType.trim(),
+                description: description.trim(),
+                image: finalMainImg,
+                hoverImage: finalHoverImage,
+                images: finalImages,
+                inStock,
+              },
+              ...productToEdit.colorVariants.slice(1),
+            ]
+          : [
+              {
+                id: `var-${prodId}-0`,
+                colorName: color.trim(),
+                colorHex: colorHex.trim(),
+                price: price.trim(),
+                originalPrice: originalPrice.trim(),
+                savings,
+                fabricType: fabricType.trim(),
+                description: description.trim(),
+                image: finalMainImg,
+                hoverImage: finalHoverImage,
+                images: finalImages,
+                inStock,
+              },
+            ],
     };
 
     try {
@@ -570,7 +587,6 @@ export default function AddProductModal({
                         <button
                           type="button"
                           onClick={() => {
-                            if (image) purgeOldImage(image);
                             setImage("");
                             setMainImageDetails(null);
                           }}
@@ -669,7 +685,6 @@ export default function AddProductModal({
                         <button
                           type="button"
                           onClick={() => {
-                            if (hoverImage && hoverImage !== image) purgeOldImage(hoverImage);
                             setHoverImage("");
                             setHoverImageDetails(null);
                           }}

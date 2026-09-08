@@ -2318,7 +2318,7 @@ function Catalog({
         <div className="product-grid">
           {visibleProducts.map((product, index) => (
             <ProductCard
-              key={product.id}
+              key={`${product.id}-${product.updatedAt || ""}-${product.image || ""}`}
               index={index}
               product={product}
               isWishlisted={wishlist.has(product.id)}

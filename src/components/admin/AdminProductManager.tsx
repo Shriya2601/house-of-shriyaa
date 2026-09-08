@@ -209,7 +209,7 @@ export default function AdminProductManager({
 
                   return (
                     <tr
-                      key={p.id}
+                      key={`${p.id}-${p.updatedAt || ""}-${p.image || ""}`}
                       className="hover:bg-stone-50/80 transition-colors group"
                     >
                       {/* Product details */}
