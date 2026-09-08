@@ -29,5 +29,26 @@
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2"
-  }
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32",
+    "android",
+    "freebsd",
+    "aix",
+    "openbsd",
+    "sunos"
+  ],
+  "cpu": [
+    "x64",
+    "arm64",
+    "arm",
+    "ia32",
+    "ppc64",
+    "s390x",
+    "riscv64",
+    "loong64",
+    "wasm32"
+  ]
 }
