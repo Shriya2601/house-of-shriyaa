@@ -401,10 +401,36 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   if (existingIdx > -1) updated[existingIdx] = sanitized;
   cacheProductsLocally(updated);
 
+  // Sync with Backend API endpoint
+  try {
+    const apiRes = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sanitized),
+    });
+    if (!apiRes.ok && apiRes.status !== 405) {
+      // Fallback to item-specific endpoint if collection post failed
+      await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sanitized),
+      }).catch(() => {});
+    }
+  } catch (apiErr) {
+    console.warn("Backend API sync notice:", apiErr);
+  }
+
+  // Sync to Firestore
   try {
     const docRef = doc(db, "products", id);
     await setDoc(docRef, sanitized, { merge: true });
   } catch {}
+
+  // Dispatch custom event for real-time reactivity
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
+  }
 
   return { id, success: true };
 }
@@ -413,9 +439,19 @@ export async function deleteProduct(id: string): Promise<void> {
   const current = getCachedProducts().filter((p) => p.id !== id);
   cacheProductsLocally(current);
   try {
+    await fetch(`/api/products/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  } catch {}
+  try {
     const docRef = doc(db, "products", id);
     await deleteDoc(docRef);
   } catch {}
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
+  }
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {

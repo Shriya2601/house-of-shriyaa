@@ -1,1 +1,4 @@
-/*    /index.html   200
+/api/products/*   /.netlify/functions/products   200
+/api/products     /.netlify/functions/products   200
+/*                /index.html                    200
+

@@ -48,11 +48,13 @@ import {
   adminUpdateOrder,
   adminDeleteOrder,
 } from "../services/storeService";
-import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod } from "../types";
+import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Product } from "../types";
+import AdminProductManager from "../components/admin/AdminProductManager";
+import AddProductModal from "../components/admin/AddProductModal";
 
 export default function AdminPortal() {
   const navigate = useNavigate();
-  const { products, currentUser } = useStore();
+  const { products, setProducts, currentUser } = useStore();
 
   // Admin Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionValid());
@@ -63,7 +65,7 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products">("products");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -74,8 +76,9 @@ export default function AdminPortal() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
 
-  // Add Booking / Order Modal State
+  // Add Booking / Order / Product Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [isProductModalOpen, setIsProductModalOpen] = useState<boolean>(false);
   const [addType, setAddType] = useState<"booking" | "order">("order"); // Default to order since user requested "if customer buy from admin end"
 
   // Quick Action / Edit Modals
@@ -534,13 +537,23 @@ export default function AdminPortal() {
             <button
               id="admin-btn-add-new"
               onClick={() => {
-                setAddType(activeTab === "orders" ? "order" : "booking");
-                setIsAddModalOpen(true);
+                if (activeTab === "products") {
+                  setIsProductModalOpen(true);
+                } else {
+                  setAddType(activeTab === "orders" ? "order" : "booking");
+                  setIsAddModalOpen(true);
+                }
               }}
               className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider bg-[#d4af37] hover:bg-[#c29d2b] text-[#0d4f3c] rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
               <Plus size={15} />
-              <span>Add New Booking</span>
+              <span>
+                {activeTab === "products"
+                  ? "Add New Product"
+                  : activeTab === "orders"
+                  ? "Add Customer Sale"
+                  : "Add New Booking"}
+              </span>
             </button>
 
             <button
@@ -662,6 +675,29 @@ export default function AdminPortal() {
                 {orders.length}
               </span>
             </button>
+
+            <button
+              id="admin-tab-products"
+              onClick={() => {
+                setActiveTab("products");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "products"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <Sparkles size={14} />
+              <span>Boutique Catalog</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "products" ? "bg-white/20 text-white" : "bg-stone-300 text-stone-700"
+                }`}
+              >
+                {products.length}
+              </span>
+            </button>
           </div>
 
           {/* Search & Filter Inputs */}
@@ -721,6 +757,25 @@ export default function AdminPortal() {
             <RefreshCw size={24} className="animate-spin mx-auto text-[#0d4f3c]" />
             <p className="text-xs font-medium">Fetching real-time records from atelier database...</p>
           </div>
+        ) : activeTab === "products" ? (
+          <AdminProductManager
+            products={products}
+            onProductUpdated={(updatedProd) => {
+              setProducts((prev) => {
+                const idx = prev.findIndex((p) => p.id === updatedProd.id);
+                if (idx > -1) {
+                  const next = [...prev];
+                  next[idx] = updatedProd;
+                  return next;
+                }
+                return [updatedProd, ...prev];
+              });
+            }}
+            onProductDeleted={(deletedId) => {
+              setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+            }}
+            showToast={showToast}
+          />
         ) : activeTab === "bookings" ? (
           /* =========================================================================
              TAB 1: ATELIER CONSULTATION BOOKINGS
@@ -1153,6 +1208,28 @@ export default function AdminPortal() {
           onOrderCreated={(newO) => {
             setOrders((prev) => [newO, ...prev]);
             showToast(`Couture order ${newO.orderNumber} booked successfully!`);
+          }}
+        />
+      )}
+
+      {/* =========================================================================
+          MODAL: ADD / EDIT BOUTIQUE PRODUCT (CATALOG)
+          ========================================================================= */}
+      {isProductModalOpen && (
+        <AddProductModal
+          isOpen={isProductModalOpen}
+          onClose={() => setIsProductModalOpen(false)}
+          onSuccess={(newProd) => {
+            setProducts((prev) => {
+              const idx = prev.findIndex((p) => p.id === newProd.id);
+              if (idx > -1) {
+                const next = [...prev];
+                next[idx] = newProd;
+                return next;
+              }
+              return [newProd, ...prev];
+            });
+            showToast(`Product "${newProd.name}" added to boutique catalog successfully!`);
           }}
         />
       )}
