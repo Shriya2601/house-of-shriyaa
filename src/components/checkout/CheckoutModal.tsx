@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, ShieldCheck, Truck, CreditCard, Banknote, Sparkles, MessageCircle, ArrowRight, Loader2, Gift, Tag } from "lucide-react";
+import { X, CheckCircle2, ShieldCheck, Truck, CreditCard, Banknote, Sparkles, MessageCircle, ArrowRight, Loader2, Gift, Tag, Copy, Check, ExternalLink } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { Order, PaymentMethod } from "../../types";
 import { validateReferralCode } from "../../services/storeService";
@@ -39,6 +39,7 @@ export default function CheckoutModal() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [copiedAwb, setCopiedAwb] = useState(false);
 
   // Auto-fill from logged in profile if available & auto-check referral
   useEffect(() => {
@@ -323,6 +324,70 @@ export default function CheckoutModal() {
                   <span className="font-serif font-bold text-base text-[#0d4f3c]">₹{placedOrder.total.toLocaleString("en-IN")}</span>
                 </div>
               </div>
+
+              {/* Shiprocket Automated Fulfillment & Tracking Details */}
+              {(placedOrder.trackingNumber || placedOrder.shiprocketOrderId) && (
+                <div className="bg-[#0d4f3c]/5 border border-[#0d4f3c]/20 rounded-xl p-4 max-w-md mx-auto text-left space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-serif font-bold text-xs text-[#0d4f3c] flex items-center gap-1.5">
+                      <Truck size={15} />
+                      <span>Shiprocket Express Dispatch</span>
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                      {placedOrder.shiprocketStatus || "Manifest Created"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#6b6257]">Courier Partner</span>
+                    <span className="font-semibold text-[#1e1b18]">
+                      {placedOrder.trackingCourier || "Shiprocket Express"}
+                    </span>
+                  </div>
+
+                  {placedOrder.trackingNumber && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-[#6b6257]">Air Waybill (AWB)</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-[#0d4f3c]">
+                          {placedOrder.trackingNumber}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(placedOrder.trackingNumber!);
+                            setCopiedAwb(true);
+                            setTimeout(() => setCopiedAwb(false), 2000);
+                          }}
+                          className="text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                          title="Copy AWB"
+                        >
+                          {copiedAwb ? (
+                            <Check size={12} className="text-emerald-600" />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {placedOrder.trackingUrl && (
+                    <div className="pt-1.5 border-t border-[#0d4f3c]/10 flex items-center justify-between text-[11px]">
+                      <span className="text-stone-500">Live Courier Updates:</span>
+                      <a
+                        href={placedOrder.trackingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-bold text-[#0d4f3c] hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>Track on Shiprocket</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <p className="text-xs text-[#6b6257] max-w-md mx-auto leading-relaxed">
                 Our Surat atelier has registered your order and will package your pieces with signature tissue, lavender sachets, and authentic handloom certification.

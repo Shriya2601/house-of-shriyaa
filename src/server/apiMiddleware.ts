@@ -76,13 +76,10 @@ function parseJsonBody(req: Connect.IncomingMessage): Promise<any> {
 }
 
 export function apiMiddlewarePlugin(): Plugin {
-  return {
-    name: "api-middleware-plugin",
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const rawUrl = req.url || "";
-        const urlWithoutQuery = rawUrl.split("?")[0].replace(/\/+$/, "");
-        const method = (req.method || "GET").toUpperCase();
+  const apiHandler: Connect.NextHandleFunction = async (req, res, next) => {
+    const rawUrl = req.url || "";
+    const urlWithoutQuery = rawUrl.split("?")[0].replace(/\/+$/, "");
+    const method = (req.method || "GET").toUpperCase();
 
         // Check if request is under /api
         if (!urlWithoutQuery.startsWith("/api")) {
@@ -325,8 +322,331 @@ export function apiMiddlewarePlugin(): Plugin {
           }
         }
 
+        // ============================================================
+        // 6. ORDERS COLLECTION & SHIPROCKET AUTO-FULFILLMENT: /api/orders
+        // ============================================================
+        if (urlWithoutQuery === "/api/orders") {
+          const ordersPath = path.resolve(process.cwd(), "public/data/orders.json");
+          const readOrdersList = (): any[] => {
+            try {
+              if (fs.existsSync(ordersPath)) {
+                const data = fs.readFileSync(ordersPath, "utf-8");
+                const parsed = JSON.parse(data);
+                if (Array.isArray(parsed)) return parsed;
+              }
+            } catch {}
+            return [];
+          };
+
+          const writeOrdersList = (list: any[]) => {
+            try {
+              const dir = path.dirname(ordersPath);
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
+              const srcOrders = path.resolve(process.cwd(), "src/data/orders.json");
+              if (fs.existsSync(path.dirname(srcOrders))) {
+                fs.writeFileSync(srcOrders, JSON.stringify(list, null, 2), "utf-8");
+              }
+            } catch (err) {
+              console.error("[API Middleware] Error writing orders:", err);
+            }
+          };
+
+          if (method === "GET") {
+            const orders = readOrdersList();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(orders));
+            return;
+          }
+
+          if (method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const now = new Date();
+              const datePrefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+              const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+              const orderId = body.id || `ord_${Date.now()}_${randomSuffix}`;
+              const orderNumber = body.orderNumber || `HOS-${datePrefix}-${randomSuffix}`;
+
+              let order: any = {
+                ...body,
+                id: orderId,
+                orderNumber,
+                createdAt: body.createdAt || now.toISOString(),
+                updatedAt: now.toISOString(),
+                orderStatus: body.orderStatus || "confirmed",
+                paymentStatus: body.paymentStatus || (body.paymentMethod?.includes("Cash") ? "Pending" : "Paid"),
+              };
+
+              // Automatically trigger Shiprocket shipment creation
+              let shiprocketResult: any = null;
+              try {
+                const { createShiprocketOrder } = await import("./shiprocketService");
+                shiprocketResult = await createShiprocketOrder(order);
+
+                if (shiprocketResult) {
+                  order.shiprocketOrderId = shiprocketResult.shiprocketOrderId;
+                  order.shiprocketShipmentId = shiprocketResult.shipmentId;
+                  order.shiprocketStatus = shiprocketResult.status;
+                  order.trackingNumber = shiprocketResult.awbCode || order.trackingNumber;
+                  order.trackingCourier = shiprocketResult.courierName || order.trackingCourier || "Shiprocket Express";
+                  order.trackingUrl = shiprocketResult.trackingUrl || (order.trackingNumber ? `https://shiprocket.co/tracking/${order.trackingNumber}` : undefined);
+                  order.shiprocketSyncedAt = new Date().toISOString();
+
+                  if (shiprocketResult.error) {
+                    order.shiprocketError = shiprocketResult.error;
+                  }
+                }
+              } catch (srErr: any) {
+                console.error("[API Middleware] Shiprocket auto-dispatch error:", srErr.message);
+                order.shiprocketError = srErr.message;
+              }
+
+              // Persist order
+              const existingOrders = readOrdersList();
+              const existingIdx = existingOrders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
+              if (existingIdx > -1) {
+                existingOrders[existingIdx] = { ...existingOrders[existingIdx], ...order };
+              } else {
+                existingOrders.unshift(order);
+              }
+              writeOrdersList(existingOrders);
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  order,
+                  shiprocket: shiprocketResult,
+                })
+              );
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Invalid order payload" }));
+              return;
+            }
+          }
+        }
+
+        // ============================================================
+        // 7. SHIPROCKET DEDICATED ROUTES (/api/shipping/shiprocket/*)
+        // ============================================================
+        if (urlWithoutQuery.startsWith("/api/shipping/shiprocket")) {
+          const {
+            testShiprocketAuth,
+            createShiprocketOrder,
+            trackShiprocketShipment,
+            checkCourierServiceability,
+            updateShiprocketConfig,
+            getShiprocketConfig,
+          } = await import("./shiprocketService");
+
+          // A. Status & Connection Test: GET /api/shipping/shiprocket/status
+          if (urlWithoutQuery === "/api/shipping/shiprocket/status" && method === "GET") {
+            const statusResult = await testShiprocketAuth();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(statusResult));
+            return;
+          }
+
+          // B. Update Config / Credentials: POST /api/shipping/shiprocket/config
+          if (urlWithoutQuery === "/api/shipping/shiprocket/config") {
+            if (method === "GET") {
+              const cfg = getShiprocketConfig();
+              const maskedEmail = cfg.email.replace(/^(.)(.*)(@.*)$/, (_, f, m, end) => `${f}${"*".repeat(m.length)}${end}`);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  email: cfg.email,
+                  emailMasked: maskedEmail,
+                  pickupLocation: cfg.pickupLocation,
+                  isConfigured: cfg.isConfigured,
+                  hasPassword: Boolean(cfg.password),
+                })
+              );
+              return;
+            }
+
+            if (method === "POST") {
+              try {
+                const body = await parseJsonBody(req);
+                const updated = updateShiprocketConfig({
+                  email: body.email,
+                  password: body.password,
+                  pickupLocation: body.pickupLocation,
+                });
+                const testRes = await testShiprocketAuth();
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(
+                  JSON.stringify({
+                    success: updated,
+                    auth: testRes,
+                  })
+                );
+                return;
+              } catch (err: any) {
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: err.message }));
+                return;
+              }
+            }
+          }
+
+          // C. Create Shipment / Push Order: POST /api/shipping/shiprocket/create-order
+          if (urlWithoutQuery === "/api/shipping/shiprocket/create-order" && method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const orderData = body.order || body;
+              const pickupOverride = body.pickupLocation;
+
+              const result = await createShiprocketOrder(orderData, pickupOverride);
+
+              // Update order in public/data/orders.json if present
+              const { updatePersistedOrder } = await import("./shiprocketService");
+              const updatedOrderRecord = {
+                ...orderData,
+                shiprocketOrderId: result.shiprocketOrderId,
+                shiprocketShipmentId: result.shipmentId,
+                trackingNumber: result.awbCode || orderData.trackingNumber,
+                trackingCourier: result.courierName || orderData.trackingCourier || "Shiprocket Express",
+                trackingUrl: result.trackingUrl,
+                shiprocketStatus: result.status,
+                shiprocketSyncedAt: new Date().toISOString(),
+                shiprocketError: result.error,
+              };
+              updatePersistedOrder(updatedOrderRecord);
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  success: result.success,
+                  shiprocket: result,
+                  order: updatedOrderRecord,
+                })
+              );
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
+          // D. Live Tracking: GET /api/shipping/shiprocket/track
+          if (urlWithoutQuery === "/api/shipping/shiprocket/track" && method === "GET") {
+            const urlObj = new URL(rawUrl, "http://localhost:3000");
+            const awb = urlObj.searchParams.get("awb") || undefined;
+            const shipmentId = urlObj.searchParams.get("shipmentId") || undefined;
+            const orderId = urlObj.searchParams.get("orderId") || undefined;
+
+            const trackingResult = await trackShiprocketShipment({
+              awb,
+              shipmentId,
+              orderId,
+            });
+
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(trackingResult));
+            return;
+          }
+
+          // E. Courier Serviceability: POST /api/shipping/shiprocket/serviceability
+          if (urlWithoutQuery === "/api/shipping/shiprocket/serviceability") {
+            try {
+              let body: any = {};
+              if (method === "POST") {
+                body = await parseJsonBody(req);
+              } else {
+                const urlObj = new URL(rawUrl, "http://localhost:3000");
+                body = {
+                  deliveryPincode: urlObj.searchParams.get("pincode") || urlObj.searchParams.get("deliveryPincode"),
+                  pickupPincode: urlObj.searchParams.get("pickupPincode"),
+                  weight: Number(urlObj.searchParams.get("weight") || 0.8),
+                  cod: urlObj.searchParams.get("cod") === "1" || urlObj.searchParams.get("cod") === "true",
+                };
+              }
+
+              const result = await checkCourierServiceability({
+                deliveryPincode: body.deliveryPincode || "110001",
+                pickupPincode: body.pickupPincode || "395003",
+                weight: body.weight || 0.8,
+                cod: body.cod,
+              });
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify(result));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
+          // F. Webhook Handler: POST /api/shipping/shiprocket/webhook
+          if (urlWithoutQuery === "/api/shipping/shiprocket/webhook" && method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              console.log("[Shiprocket Webhook] Received event:", JSON.stringify(body));
+
+              const awb = body.awb || body.awb_code;
+              const orderId = body.order_id;
+              const currentStatus = (body.current_status || body.status || "").toLowerCase();
+
+              if (orderId || awb) {
+                const { updatePersistedOrder } = await import("./shiprocketService");
+                let mappedOrderStatus = "confirmed";
+                if (currentStatus.includes("delivered")) mappedOrderStatus = "delivered";
+                else if (currentStatus.includes("out for delivery") || currentStatus.includes("in transit") || currentStatus.includes("shipped") || currentStatus.includes("pickup")) mappedOrderStatus = "shipped";
+                else if (currentStatus.includes("cancel") || currentStatus.includes("rto")) mappedOrderStatus = "cancelled";
+
+                updatePersistedOrder({
+                  id: orderId,
+                  orderNumber: orderId,
+                  trackingNumber: awb,
+                  trackingCourier: body.courier_name || "Shiprocket Express",
+                  shiprocketStatus: body.current_status || body.status,
+                  orderStatus: mappedOrderStatus,
+                  updatedAt: new Date().toISOString(),
+                });
+              }
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, message: "Webhook acknowledged" }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+        }
+
         next();
-      });
+  };
+
+  return {
+    name: "api-middleware-plugin",
+    configureServer(server) {
+      server.middlewares.use(apiHandler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(apiHandler);
     },
   };
 }

@@ -548,17 +548,46 @@ export async function createRealOrder(
   const orderNumber = `HOS-${datePrefix}-${randomSuffix}`;
   const orderId = `ord_${Date.now()}_${randomSuffix}`;
 
-  const fullOrder: Order = {
+  let fullOrder: Order = {
     ...orderInput,
     id: orderId,
     orderNumber,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
-    orderStatus: orderInput.orderStatus || "pending",
-    status: orderInput.orderStatus || "pending",
+    orderStatus: orderInput.orderStatus || "confirmed",
+    status: orderInput.orderStatus || "confirmed",
     totalAmount: orderInput.total,
     customerAddress: orderInput.shippingAddress,
   };
+
+  // Dispatch to server /api/orders for automatic Shiprocket fulfillment
+  try {
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fullOrder),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.order) {
+        fullOrder = {
+          ...fullOrder,
+          ...data.order,
+          shiprocketOrderId: data.order.shiprocketOrderId || fullOrder.shiprocketOrderId,
+          shiprocketShipmentId: data.order.shiprocketShipmentId || fullOrder.shiprocketShipmentId,
+          trackingNumber: data.order.trackingNumber || fullOrder.trackingNumber,
+          trackingCourier: data.order.trackingCourier || fullOrder.trackingCourier,
+          trackingUrl: data.order.trackingUrl || fullOrder.trackingUrl,
+          shiprocketStatus: data.order.shiprocketStatus || fullOrder.shiprocketStatus,
+          shiprocketSyncedAt: data.order.shiprocketSyncedAt || fullOrder.shiprocketSyncedAt,
+          shiprocketError: data.order.shiprocketError || fullOrder.shiprocketError,
+        };
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Backend /api/orders dispatch notice:", apiErr);
+  }
 
   const current = getCachedOrders();
   cacheOrdersLocally([fullOrder, ...current]);
@@ -1251,7 +1280,7 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
     orderInput.orderNumber || `HOS-ADM-${now.getFullYear().toString().slice(-2)}${randomNum}`;
   const orderId = orderInput.id || `order_adm_${Date.now()}_${randomNum}`;
 
-  const order: Order = {
+  let order: Order = {
     id: orderId,
     orderNumber,
     customer: orderInput.customer || {
@@ -1279,6 +1308,34 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
     updatedAt: now.toISOString(),
   };
 
+  // Push to server /api/orders for automatic Shiprocket fulfillment
+  try {
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(order),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.order) {
+        order = {
+          ...order,
+          ...data.order,
+          shiprocketOrderId: data.order.shiprocketOrderId || order.shiprocketOrderId,
+          shiprocketShipmentId: data.order.shiprocketShipmentId || order.shiprocketShipmentId,
+          trackingNumber: data.order.trackingNumber || order.trackingNumber,
+          trackingCourier: data.order.trackingCourier || order.trackingCourier,
+          trackingUrl: data.order.trackingUrl || order.trackingUrl,
+          shiprocketStatus: data.order.shiprocketStatus || order.shiprocketStatus,
+          shiprocketSyncedAt: data.order.shiprocketSyncedAt || order.shiprocketSyncedAt,
+          shiprocketError: data.order.shiprocketError || order.shiprocketError,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Backend order creation notice:", err);
+  }
+
   const current = getCachedOrders();
   cacheOrdersLocally([order, ...current]);
 
@@ -1291,6 +1348,52 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
 
   window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: order }));
   return order;
+}
+
+export async function adminFetchAllOrders(): Promise<Order[]> {
+  let list: Order[] = getCachedOrders();
+
+  // 1. Fetch from server /api/orders (reads public/data/orders.json)
+  try {
+    const res = await fetch("/api/orders");
+    if (res.ok) {
+      const serverOrders = await res.json();
+      if (Array.isArray(serverOrders) && serverOrders.length > 0) {
+        const map = new Map<string, Order>();
+        for (const o of [...serverOrders, ...list]) {
+          const key = o.id || o.orderNumber;
+          if (!map.has(key)) map.set(key, o);
+        }
+        list = Array.from(map.values());
+        cacheOrdersLocally(list);
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Backend orders fetch notice:", apiErr);
+  }
+
+  // 2. Fetch from Firestore if configured
+  try {
+    const colRef = collection(db, "orders");
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+      const map = new Map<string, Order>();
+      for (const o of [...remote, ...list]) {
+        const key = o.id || o.orderNumber;
+        if (!map.has(key)) map.set(key, o);
+      }
+      list = Array.from(map.values());
+      list.sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      cacheOrdersLocally(list);
+    }
+  } catch (e) {
+    console.warn("Firestore adminFetchAllOrders notice:", e);
+  }
+
+  return list;
 }
 
 export async function adminUpdateOrder(

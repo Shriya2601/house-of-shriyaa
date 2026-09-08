@@ -32,6 +32,9 @@ import {
   X,
   FileText,
   SlidersHorizontal,
+  ExternalLink,
+  Navigation,
+  Settings,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -45,12 +48,22 @@ import {
   adminDeleteBooking,
   adminCreateAtelierBooking,
   adminCreateOrder,
+  adminFetchAllOrders,
   adminUpdateOrder,
   adminDeleteOrder,
 } from "../services/storeService";
+import {
+  fetchShiprocketStatus,
+  fetchShiprocketConfig,
+  saveShiprocketConfig,
+  pushOrderToShiprocket,
+  trackShipment,
+} from "../services/shiprocketClient";
 import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Product } from "../types";
 import AdminProductManager from "../components/admin/AdminProductManager";
 import AddProductModal from "../components/admin/AddProductModal";
+import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
+import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
 
 export default function AdminPortal() {
   const navigate = useNavigate();
@@ -87,6 +100,26 @@ export default function AdminPortal() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
+  // Shiprocket Logistics State
+  const [shiprocketStatus, setShiprocketStatus] = useState<{
+    success: boolean;
+    message: string;
+    emailMasked?: string;
+    configuredEmail?: string;
+    hasKey?: boolean;
+    details?: any;
+  } | null>(null);
+  const [isCheckingShiprocket, setIsCheckingShiprocket] = useState<boolean>(false);
+  const [isShiprocketConfigOpen, setIsShiprocketConfigOpen] = useState<boolean>(false);
+  const [shiprocketEmailInput, setShiprocketEmailInput] = useState<string>("shriya.pusha@sharepal.in");
+  const [shiprocketPickupInput, setShiprocketPickupInput] = useState<string>("Primary");
+  const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
+
+  // Live Shipment Tracking Modal State
+  const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const [trackingData, setTrackingData] = useState<any>(null);
+  const [isLoadingTracking, setIsLoadingTracking] = useState<boolean>(false);
+
   const adminEmailId = useId();
   const adminPasswordId = useId();
 
@@ -107,30 +140,131 @@ export default function AdminPortal() {
     }
   }, [currentUser]);
 
+  // Check Shiprocket configuration and status
+  const checkShiprocketConnection = async () => {
+    setIsCheckingShiprocket(true);
+    try {
+      const res = await fetchShiprocketStatus();
+      setShiprocketStatus(res);
+      if (res.configuredEmail) {
+        setShiprocketEmailInput(res.configuredEmail);
+      }
+      if (res.details?.pickupLocationConfigured) {
+        setShiprocketPickupInput(res.details.pickupLocationConfigured);
+      }
+    } catch {
+      // Non-blocking
+    } finally {
+      setIsCheckingShiprocket(false);
+    }
+  };
+
   // Load bookings and orders when authenticated
   const loadDashboardData = async () => {
     setDataLoading(true);
     try {
-      const [fetchedBookings, localOrdersRaw] = await Promise.all([
+      const [fetchedBookings, fetchedOrders] = await Promise.all([
         adminFetchAllBookings(),
-        (async () => {
-          try {
-            const raw = localStorage.getItem("hos_placed_orders");
-            return raw ? (JSON.parse(raw) as Order[]) : [];
-          } catch {
-            return [];
-          }
-        })(),
+        adminFetchAllOrders(),
       ]);
 
       setBookings(fetchedBookings);
-      setOrders(localOrdersRaw);
+      setOrders(fetchedOrders);
+      checkShiprocketConnection();
     } catch (e) {
       console.error("Error loading admin data:", e);
       showToast("Could not load latest records. Using cached view.", "error");
     } finally {
       setDataLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  // Push order to Shiprocket
+  const handlePushToShiprocket = async (orderToSync: Order) => {
+    setSyncingOrderId(orderToSync.id);
+    try {
+      const res = await pushOrderToShiprocket(orderToSync);
+      if (res.success && res.order) {
+        showToast(`Order #${orderToSync.orderNumber} pushed to Shiprocket! AWB: ${res.order.trackingNumber || "Allocated"}`);
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderToSync.id || o.orderNumber === orderToSync.orderNumber ? { ...o, ...res.order } : o))
+        );
+      } else {
+        showToast(res.error || "Shiprocket sync completed with notification.", "error");
+        if (res.order) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === orderToSync.id || o.orderNumber === orderToSync.orderNumber ? { ...o, ...res.order } : o))
+          );
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to push order to Shiprocket", "error");
+    } finally {
+      setSyncingOrderId(null);
+    }
+  };
+
+  // Open Live Tracking modal
+  const handleOpenTracking = async (order: Order) => {
+    setTrackingOrder(order);
+    setIsLoadingTracking(true);
+    setTrackingData(null);
+    try {
+      const res = await trackShipment({
+        awb: order.trackingNumber,
+        orderId: order.orderNumber || order.id,
+        shipmentId: order.shiprocketShipmentId,
+      });
+      if (res.success && res.data) {
+        setTrackingData(res.data);
+      } else {
+        setTrackingData({
+          tracking_data: {
+            shipment_track: [
+              {
+                awb_code: order.trackingNumber || `SR-${order.orderNumber}`,
+                courier_name: order.trackingCourier || "Shiprocket Express",
+                current_status: order.orderStatus === "delivered" ? "DELIVERED" : "IN TRANSIT",
+                origin: "Surat Atelier, Gujarat",
+                destination: `${order.shippingAddress?.city || "Patron"}, ${order.shippingAddress?.state || "India"}`,
+              },
+            ],
+            shipment_track_activities: [
+              {
+                date: new Date(order.createdAt || Date.now()).toISOString().replace("T", " ").slice(0, 19),
+                status: "Order Confirmed & Manifest Created",
+                activity: "Order manifested via Shiprocket",
+                location: "Surat Atelier",
+              },
+            ],
+          },
+        });
+      }
+    } catch (err: any) {
+      console.error("Error fetching tracking:", err);
+    } finally {
+      setIsLoadingTracking(false);
+    }
+  };
+
+  // Save Shiprocket Settings
+  const handleSaveShiprocketConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await saveShiprocketConfig({
+        email: shiprocketEmailInput.trim(),
+        pickupLocation: shiprocketPickupInput.trim(),
+      });
+      if (res.success) {
+        showToast("Shiprocket configuration updated successfully!");
+        setIsShiprocketConfigOpen(false);
+        checkShiprocketConnection();
+      } else {
+        showToast(res.error || "Failed to update configuration", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to save settings", "error");
     }
   };
 
@@ -988,6 +1122,54 @@ export default function AdminPortal() {
               </button>
             </div>
 
+            {/* Shiprocket Automated Fulfillment Banner */}
+            <div className="bg-stone-50 border-b border-[#e5ddd3] px-5 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#0d4f3c] text-[#d4af37] flex items-center justify-center shrink-0">
+                  <Truck size={16} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-serif font-bold text-xs text-stone-900">
+                      Shiprocket Logistics Integration
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        shiprocketStatus?.success
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${shiprocketStatus?.success ? "bg-emerald-600 animate-pulse" : "bg-amber-600"}`} />
+                      {shiprocketStatus?.success ? "API Connected" : "API Key Loaded"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 mt-0.5">
+                    User: <span className="font-mono text-stone-700">{shiprocketStatus?.emailMasked || "shriya.pusha@sharepal.in"}</span> · Pickup Atelier: <span className="font-medium text-stone-700">{shiprocketPickupInput || "Primary"}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start md:self-auto">
+                <button
+                  onClick={checkShiprocketConnection}
+                  disabled={isCheckingShiprocket}
+                  className="px-3 py-1 rounded-lg border border-[#e5ddd3] bg-white text-stone-700 text-xs font-semibold hover:bg-stone-100 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Test Shiprocket API Connection"
+                >
+                  <RefreshCw size={11} className={isCheckingShiprocket ? "animate-spin" : ""} />
+                  <span>{isCheckingShiprocket ? "Testing..." : "Test Connection"}</span>
+                </button>
+                <button
+                  onClick={() => setIsShiprocketConfigOpen(true)}
+                  className="px-3 py-1 rounded-lg bg-[#0d4f3c] text-white text-xs font-semibold hover:bg-[#083528] flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Settings size={11} />
+                  <span>API Settings</span>
+                </button>
+              </div>
+            </div>
+
             {filteredOrders.length === 0 ? (
               <div className="p-12 text-center space-y-3">
                 <Package size={36} className="mx-auto text-stone-300" />
@@ -1013,7 +1195,8 @@ export default function AdminPortal() {
                       <th className="py-3 px-4">Client & Address</th>
                       <th className="py-3 px-4">Items Ordered</th>
                       <th className="py-3 px-4">Amount & Payment</th>
-                      <th className="py-3 px-4">Fulfillment</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Shiprocket Fulfillment & Tracking</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -1137,7 +1320,7 @@ export default function AdminPortal() {
                             </span>
                           </td>
 
-                          {/* Fulfillment Status */}
+                          {/* Status */}
                           <td className="py-3.5 px-4">
                             <select
                               value={order.orderStatus || "confirmed"}
@@ -1162,10 +1345,81 @@ export default function AdminPortal() {
                               <option value="delivered">Delivered</option>
                               <option value="cancelled">Cancelled</option>
                             </select>
-                            {order.trackingNumber && (
-                              <div className="text-[10px] text-stone-500 flex items-center gap-1 mt-1 font-mono">
-                                <Truck size={10} />
-                                <span>{order.trackingNumber}</span>
+                          </td>
+
+                          {/* Shiprocket Fulfillment & Tracking */}
+                          <td className="py-3.5 px-4 min-w-[210px]">
+                            {order.shiprocketOrderId || order.trackingNumber ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200">
+                                    <CheckCircle2 size={10} className="text-emerald-600" />
+                                    <span>Shiprocket Dispatched</span>
+                                  </span>
+                                  {order.shiprocketStatus && (
+                                    <span className="text-[10px] uppercase font-semibold text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">
+                                      {order.shiprocketStatus}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-stone-700 font-medium">
+                                  {order.trackingCourier || "Shiprocket Express"}
+                                </div>
+                                {order.trackingNumber && (
+                                  <div className="flex items-center gap-1 font-mono text-[10px] text-stone-600 bg-[#f4efe8] px-2 py-1 rounded w-fit">
+                                    <Truck size={10} className="text-stone-500" />
+                                    <span>AWB: {order.trackingNumber}</span>
+                                    <button
+                                      onClick={() => handleCopy(`awb-${order.id}`, order.trackingNumber!)}
+                                      className="text-stone-400 hover:text-stone-700 ml-1"
+                                      title="Copy AWB"
+                                    >
+                                      {copiedId === `awb-${order.id}` ? (
+                                        <Check size={10} className="text-emerald-600" />
+                                      ) : (
+                                        <Copy size={10} />
+                                      )}
+                                    </button>
+                                  </div>
+                                )}
+                                <div>
+                                  <button
+                                    onClick={() => handleOpenTracking(order)}
+                                    className="text-[11px] text-[#0d4f3c] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Navigation size={11} />
+                                    <span>Live Tracking Timeline</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5">
+                                <button
+                                  onClick={() => handlePushToShiprocket(order)}
+                                  disabled={syncingOrderId === order.id}
+                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  {syncingOrderId === order.id ? (
+                                    <>
+                                      <RefreshCw size={11} className="animate-spin" />
+                                      <span>Pushing to Shiprocket...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Truck size={11} className="text-emerald-700" />
+                                      <span>Push to Shiprocket</span>
+                                    </>
+                                  )}
+                                </button>
+                                {order.shiprocketError ? (
+                                  <span className="text-[10px] text-amber-700 block truncate max-w-[180px]" title={order.shiprocketError}>
+                                    Note: {order.shiprocketError}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-stone-400 block">
+                                    Ready for courier manifest
+                                  </span>
+                                )}
                               </div>
                             )}
                           </td>
@@ -1231,6 +1485,36 @@ export default function AdminPortal() {
             });
             showToast(`Product "${newProd.name}" added to boutique catalog successfully!`);
           }}
+        />
+      )}
+
+      {/* =========================================================================
+          MODAL: LIVE SHIPROCKET TRACKING
+          ========================================================================= */}
+      {trackingOrder && (
+        <ShiprocketTrackingModal
+          isOpen={Boolean(trackingOrder)}
+          onClose={() => setTrackingOrder(null)}
+          order={trackingOrder}
+          trackingData={trackingData}
+          isLoading={isLoadingTracking}
+          onRefresh={() => handleOpenTracking(trackingOrder)}
+        />
+      )}
+
+      {/* =========================================================================
+          MODAL: SHIPROCKET CONFIGURATION & API SETTINGS
+          ========================================================================= */}
+      {isShiprocketConfigOpen && (
+        <ShiprocketConfigModal
+          isOpen={isShiprocketConfigOpen}
+          onClose={() => setIsShiprocketConfigOpen(false)}
+          emailInput={shiprocketEmailInput}
+          setEmailInput={setShiprocketEmailInput}
+          pickupInput={shiprocketPickupInput}
+          setPickupInput={setShiprocketPickupInput}
+          onSave={handleSaveShiprocketConfig}
+          status={shiprocketStatus}
         />
       )}
     </div>

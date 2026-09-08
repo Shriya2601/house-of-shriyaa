@@ -148,6 +148,12 @@ export interface Order {
   orderStatus: OrderStatus;
   trackingCourier?: string;
   trackingNumber?: string;
+  trackingUrl?: string;
+  shiprocketOrderId?: string | number;
+  shiprocketShipmentId?: string | number;
+  shiprocketStatus?: string;
+  shiprocketSyncedAt?: string;
+  shiprocketError?: string;
   notes?: string;
   referralCode?: string;
   referralDiscount?: number;
