@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   SlidersHorizontal,
@@ -44,12 +44,31 @@ export default function ShiprocketConfigModal({
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [localPassword, setLocalPassword] = useState(passwordInput);
+  const [localPassword, setLocalPassword] = useState(passwordInput || "H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O");
   const [testResult, setTestResult] = useState<{
     success?: boolean;
     message?: string;
     locations?: any[];
   } | null>(null);
+
+  useEffect(() => {
+    if (passwordInput) {
+      setLocalPassword(passwordInput);
+    } else {
+      const defaultPass = "H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O";
+      setLocalPassword(defaultPass);
+      if (setPasswordInput) setPasswordInput(defaultPass);
+    }
+  }, [passwordInput, isOpen, setPasswordInput]);
+
+  useEffect(() => {
+    if (!emailInput && setEmailInput) {
+      setEmailInput("shriyapusha01@gmail.com");
+    }
+    if (!pickupInput && setPickupInput) {
+      setPickupInput("Home");
+    }
+  }, [emailInput, pickupInput, setEmailInput, setPickupInput]);
 
   if (!isOpen) return null;
 

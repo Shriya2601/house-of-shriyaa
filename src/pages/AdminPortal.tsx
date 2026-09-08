@@ -205,7 +205,7 @@ export default function AdminPortal() {
   const [isCheckingShiprocket, setIsCheckingShiprocket] = useState<boolean>(false);
   const [isShiprocketConfigOpen, setIsShiprocketConfigOpen] = useState<boolean>(false);
   const [shiprocketEmailInput, setShiprocketEmailInput] = useState<string>("shriyapusha01@gmail.com");
-  const [shiprocketPasswordInput, setShiprocketPasswordInput] = useState<string>("");
+  const [shiprocketPasswordInput, setShiprocketPasswordInput] = useState<string>("H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O");
   const [shiprocketPickupInput, setShiprocketPickupInput] = useState<string>("Home");
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
 

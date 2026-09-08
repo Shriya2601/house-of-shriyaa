@@ -751,19 +751,44 @@ export function apiMiddlewarePlugin(): Plugin {
             return;
           }
 
-          // A2. Test Provided Credentials: POST /api/shipping/shiprocket/test-credentials
-          if (urlWithoutQuery === "/api/shipping/shiprocket/test-credentials" && method === "POST") {
+          // A2. Test Provided Credentials: POST / GET /api/shipping/shiprocket/test-credentials
+          if (urlWithoutQuery === "/api/shipping/shiprocket/test-credentials") {
+            setCorsHeaders(res);
+            setAntiCacheHeaders(res);
+            if (method === "OPTIONS") {
+              res.statusCode = 204;
+              res.end();
+              return;
+            }
+
             try {
-              const body = await parseJsonBody(req);
-              const testResult = await testCustomShiprocketCredentials(body.email, body.password);
+              let email = "";
+              let password = "";
+              if (method === "POST" || method === "PUT") {
+                const body = await parseJsonBody(req);
+                email = body.email || "";
+                password = body.password || "";
+              } else if (method === "GET") {
+                const parsedUrl = new URL(rawUrl, "http://localhost:3000");
+                email = parsedUrl.searchParams.get("email") || "";
+                password = parsedUrl.searchParams.get("password") || "";
+              }
+
+              if (!email || !password) {
+                const cfg = getShiprocketConfig();
+                email = email || cfg.email;
+                password = password || cfg.password;
+              }
+
+              const testResult = await testCustomShiprocketCredentials(email, password);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(JSON.stringify(testResult));
               return;
             } catch (err: any) {
               res.setHeader("Content-Type", "application/json");
-              res.statusCode = 400;
-              res.end(JSON.stringify({ success: false, message: err.message }));
+              res.statusCode = 200; // Always return 200 with JSON payload so client gets clean readable message
+              res.end(JSON.stringify({ success: false, message: err.message || "Failed to verify credentials" }));
               return;
             }
           }
