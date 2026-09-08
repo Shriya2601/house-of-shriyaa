@@ -442,11 +442,40 @@
     font-size: 0.5rem;
     line-height: 1;
   }
+  .track-header-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #0d4f3c;
+    background: transparent;
+  }
+  .track-header-btn:hover {
+    color: #083427;
+    background: #f5efeb;
+  }
+  .account-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
   .account-action span {
     display: none;
-    margin-left: -0.1rem;
-    font-size: 0.66rem;
+    font-size: 0.68rem;
     font-weight: 700;
+    color: #1e1b18;
+  }
+  @media (min-width: 580px) {
+    .account-action {
+      width: auto;
+      padding-inline: 0.5rem;
+    }
+    .account-action span {
+      display: inline-block;
+      max-width: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
   .bag-button {
     min-width: 3.3rem;

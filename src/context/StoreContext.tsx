@@ -33,6 +33,7 @@ import {
   customerSignUp,
   customerSignOut,
   customerResetPassword,
+  confirmOrderPayment,
 } from "../services/storeService";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -85,6 +86,11 @@ interface StoreContextType {
   customerOrders: Order[];
   atelierBookings: AtelierBooking[];
   refreshCustomerOrders: () => Promise<void>;
+  confirmCustomerOrderPayment: (
+    orderIdOrNumber: string,
+    utrNumber: string,
+    paymentMethod?: string
+  ) => Promise<{ success: boolean; order?: Order; message?: string }>;
   updateProfileDetails: (updates: Partial<CustomerProfile>) => Promise<void>;
   bookAtelierSession: (
     bookingData: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
@@ -243,21 +249,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Merge without duplicates and sort newest first
-        const seen = new Set<string>();
-        const merged: Order[] = [];
-        for (const ord of [...remoteOrders, ...combinedOrders]) {
+        // Smart merge preserving verified payment status & UTR
+        const orderMap = new Map<string, Order>();
+        for (const ord of [...combinedOrders, ...remoteOrders]) {
           const key = ord.orderNumber || ord.id;
-          if (key && !seen.has(key)) {
-            seen.add(key);
-            merged.push({
+          if (!key) continue;
+          const existing = orderMap.get(key);
+          if (!existing) {
+            orderMap.set(key, {
               ...ord,
               status: ord.status || ord.orderStatus || "pending",
               totalAmount: ord.totalAmount ?? ord.total ?? 0,
               customerAddress: ord.customerAddress || ord.shippingAddress,
             });
+          } else {
+            const bestPaymentStatus =
+              ord.paymentStatus && ord.paymentStatus !== "Pending"
+                ? ord.paymentStatus
+                : existing.paymentStatus || ord.paymentStatus || "Pending";
+            const bestUtr = ord.utrNumber || existing.utrNumber;
+            orderMap.set(key, {
+              ...existing,
+              ...ord,
+              paymentStatus: bestPaymentStatus,
+              utrNumber: bestUtr,
+              status: ord.status || ord.orderStatus || existing.status || "pending",
+              totalAmount: ord.totalAmount ?? ord.total ?? existing.totalAmount ?? 0,
+              customerAddress: ord.customerAddress || ord.shippingAddress || existing.customerAddress,
+            });
           }
         }
+        const merged = Array.from(orderMap.values());
         merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         combinedOrders = merged;
       } catch (e) {
@@ -277,6 +299,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [currentUser]);
+
+  // Real-time synchronization for order updates across window / modals
+  useEffect(() => {
+    const handleSingleOrderUpdate = (e: any) => {
+      const updated: Order = e.detail;
+      if (updated && (updated.id || updated.orderNumber)) {
+        setCustomerOrders((prev) => {
+          const idx = prev.findIndex(
+            (o) => o.id === updated.id || o.orderNumber === updated.orderNumber
+          );
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...updated };
+            return next;
+          }
+          return [updated, ...prev];
+        });
+      }
+    };
+
+    window.addEventListener("hos-order-updated", handleSingleOrderUpdate);
+    return () => window.removeEventListener("hos-order-updated", handleSingleOrderUpdate);
+  }, []);
 
   // Subscribe to real-time Firebase Auth & load profile
   useEffect(() => {
@@ -694,6 +739,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const handleConfirmCustomerOrderPayment = async (
+    orderIdOrNumber: string,
+    utrNumber: string,
+    paymentMethod: string = "UPI / QR Code"
+  ) => {
+    const res = await confirmOrderPayment(orderIdOrNumber, utrNumber, paymentMethod);
+    if (res.success) {
+      setCustomerOrders((prev) =>
+        prev.map((ord) => {
+          if (ord.id === orderIdOrNumber || ord.orderNumber === orderIdOrNumber) {
+            return {
+              ...ord,
+              paymentStatus: "Payment Verification Pending" as PaymentStatus,
+              utrNumber: utrNumber.trim(),
+              paymentDetails: {
+                ...ord.paymentDetails,
+                methodType: "upi",
+                utrNumber: utrNumber.trim(),
+                paidAt: new Date().toISOString(),
+              },
+            };
+          }
+          return ord;
+        })
+      );
+    }
+    return res;
+  };
+
   return (
     <StoreContext.Provider
       value={{
@@ -725,6 +799,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         customerOrders,
         atelierBookings,
         refreshCustomerOrders,
+        confirmCustomerOrderPayment: handleConfirmCustomerOrderPayment,
         updateProfileDetails,
         bookAtelierSession,
         signIn: handleSignIn,

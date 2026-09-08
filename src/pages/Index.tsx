@@ -261,6 +261,32 @@ export function NavigationDrawer({
               </button>
             </div>
           )}
+
+          {/* Quick Shortcuts: Track Order & My Orders */}
+          <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenModal("track_order");
+              }}
+              className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 bg-white/10 hover:bg-white/20 text-[#faf8f5] rounded-lg text-xs font-semibold transition-colors"
+            >
+              <Truck size={13} className="text-[#d4af37]" />
+              <span>Track Order</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenModal("order_history");
+              }}
+              className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 bg-white/10 hover:bg-white/20 text-[#faf8f5] rounded-lg text-xs font-semibold transition-colors"
+            >
+              <Package size={13} className="text-[#d4af37]" />
+              <span>My Orders ({customerOrders.length})</span>
+            </button>
+          </div>
         </div>
 
         {/* Drawer Content */}
@@ -693,10 +719,12 @@ export function NavigationDrawer({
 export function InteractiveModal({
   type,
   onClose,
+  onOpenModal,
   onOpenAuth,
 }: {
   type: string | null;
   onClose: () => void;
+  onOpenModal?: (type: string) => void;
   onOpenAuth?: () => void;
 }) {
   const {
@@ -707,7 +735,20 @@ export function InteractiveModal({
     siteContent,
     updateProfileDetails,
     bookAtelierSession,
+    confirmCustomerOrderPayment,
   } = useStore();
+
+  const [activeModalType, setActiveModalType] = useState<string | null>(type);
+
+  useEffect(() => {
+    setActiveModalType(type);
+  }, [type]);
+
+  const switchModal = (newType: string) => {
+    setActiveModalType(newType);
+    if (onOpenModal) onOpenModal(newType);
+  };
+
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [searchedOrder, setSearchedOrder] = useState<Order | null>(null);
   const [trackError, setTrackError] = useState("");
@@ -731,6 +772,13 @@ export function InteractiveModal({
   const [trackUtrSubmitting, setTrackUtrSubmitting] = useState(false);
   const [trackUtrSuccess, setTrackUtrSuccess] = useState(false);
   const [copiedTrackAwb, setCopiedTrackAwb] = useState(false);
+
+  // Order History UTR states
+  const [historyUtrInputs, setHistoryUtrInputs] = useState<Record<string, string>>({});
+  const [historyUtrSubmitting, setHistoryUtrSubmitting] = useState<Record<string, boolean>>({});
+  const [historyUtrSuccess, setHistoryUtrSuccess] = useState<Record<string, boolean>>({});
+  const [activeHistoryPayOrder, setActiveHistoryPayOrder] = useState<string | null>(null);
+  const [copiedUpiId, setCopiedUpiId] = useState(false);
 
   const [newAddr, setNewAddr] = useState<Omit<SavedAddress, "id">>({
     label: "Home",
@@ -793,22 +841,61 @@ export function InteractiveModal({
 
   const handleTrackSubmitUtr = async (e: React.FormEvent, orderId: string, orderNumber: string) => {
     e.preventDefault();
-    if (!trackUtrInput.trim()) return;
+    const cleanUtr = trackUtrInput.trim();
+    if (!cleanUtr) return;
     setTrackUtrSubmitting(true);
     try {
-      await confirmOrderPayment(orderId, trackUtrInput.trim(), orderNumber);
-      setTrackUtrSuccess(true);
-      if (searchedOrder) {
-        setSearchedOrder({
-          ...searchedOrder,
-          paymentStatus: "Payment Verification Pending",
-          utrNumber: trackUtrInput.trim(),
-        });
+      const res = await confirmCustomerOrderPayment(orderId || orderNumber, cleanUtr, "UPI / QR Code");
+      if (res.success) {
+        setTrackUtrSuccess(true);
+        if (searchedOrder) {
+          setSearchedOrder({
+            ...searchedOrder,
+            paymentStatus: "Payment Verification Pending",
+            utrNumber: cleanUtr,
+            paymentDetails: {
+              ...searchedOrder.paymentDetails,
+              methodType: "upi",
+              utrNumber: cleanUtr,
+              paidAt: new Date().toISOString(),
+            },
+          });
+        }
       }
     } catch (err) {
       console.error("UTR submission error:", err);
     } finally {
       setTrackUtrSubmitting(false);
+    }
+  };
+
+  const handleHistorySubmitUtr = async (e: React.FormEvent, order: Order) => {
+    e.preventDefault();
+    const utr = (historyUtrInputs[order.id] || "").trim();
+    if (!utr) return;
+    setHistoryUtrSubmitting((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await confirmCustomerOrderPayment(order.id, utr, "UPI / QR Code");
+      if (res.success) {
+        setHistoryUtrSuccess((prev) => ({ ...prev, [order.id]: true }));
+        if (searchedOrder && (searchedOrder.id === order.id || searchedOrder.orderNumber === order.orderNumber)) {
+          setSearchedOrder({
+            ...searchedOrder,
+            paymentStatus: "Payment Verification Pending",
+            utrNumber: utr,
+            paymentDetails: {
+              ...searchedOrder.paymentDetails,
+              methodType: "upi",
+              utrNumber: utr,
+              paidAt: new Date().toISOString(),
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.error("History UTR submission error:", err);
+    } finally {
+      setHistoryUtrSubmitting((prev) => ({ ...prev, [order.id]: false }));
     }
   };
 
@@ -857,7 +944,7 @@ export function InteractiveModal({
   };
 
   const renderContent = () => {
-    switch (type) {
+    switch (activeModalType || type) {
       case "track_order": {
         const orderToDisplay = searchedOrder || (customerOrders.length > 0 ? customerOrders[0] : null);
 
@@ -871,6 +958,36 @@ export function InteractiveModal({
 
         return (
           <div className="space-y-4">
+            {/* Quick Order Selection Chips if user has multiple orders */}
+            {customerOrders.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold text-[#706458] block">Your Recent Bookings:</span>
+                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {customerOrders.map((ord) => {
+                    const isSelected = orderToDisplay?.id === ord.id || orderToDisplay?.orderNumber === ord.orderNumber;
+                    return (
+                      <button
+                        key={ord.id}
+                        type="button"
+                        onClick={() => {
+                          setSearchedOrder(ord);
+                          setTrackSearchQuery(ord.orderNumber);
+                          setTrackError("");
+                        }}
+                        className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap font-medium transition-all ${
+                          isSelected
+                            ? "bg-[#0d4f3c] text-white shadow-xs font-bold"
+                            : "bg-[#f4efe8] text-[#554b43] hover:bg-[#e8dfd5]"
+                        }`}
+                      >
+                        #{ord.orderNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleTrackSearch} className="flex gap-2">
               <input
                 type="text"
@@ -886,6 +1003,21 @@ export function InteractiveModal({
                 Track
               </button>
             </form>
+
+            <div className="flex items-center justify-between text-[11px] text-[#706458] px-1">
+              <span>Don't have your Order ID?</span>
+              <a
+                href={`https://wa.me/919501698356?text=${encodeURIComponent(
+                  "Namaste House of Shriya! I want to track my order status. Please help me locate my booking."
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#0d4f3c] font-bold hover:underline inline-flex items-center gap-1"
+              >
+                <MessageCircle size={11} className="text-[#25D366]" />
+                <span>Ask on WhatsApp (9501698356)</span>
+              </a>
+            </div>
 
             {trackError && (
               <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
@@ -943,13 +1075,28 @@ export function InteractiveModal({
                   {/* If payment is pending or customer wants to submit UTR */}
                   {isPending && (
                     <div className="space-y-2 pt-1 border-t border-[#f0e8dc]">
-                      <p className="text-[11px] text-[#706458]">
-                        Complete your payment via UPI to <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong> or submit your 12-digit UTR below for instant verification:
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] text-[#706458]">
+                          Pay via UPI to <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong>:
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText("houseofshriya.order@upi");
+                            setCopiedUpiId(true);
+                            setTimeout(() => setCopiedUpiId(false), 2000);
+                          }}
+                          className="text-[10px] text-[#0d4f3c] font-bold hover:underline flex items-center gap-1"
+                        >
+                          {copiedUpiId ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                          <span>{copiedUpiId ? "Copied UPI" : "Copy UPI ID"}</span>
+                        </button>
+                      </div>
+
                       {trackUtrSuccess ? (
                         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2.5 rounded-lg text-xs flex items-center gap-2">
                           <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                          <span>Thank you! Your UTR has been submitted and atelier staff will verify within 15 minutes.</span>
+                          <span>Thank you! Your UTR has been submitted and registered for verification.</span>
                         </div>
                       ) : (
                         <form
@@ -1096,20 +1243,40 @@ export function InteractiveModal({
                 </div>
               </div>
             ) : (
-              <div className="text-center py-6 text-xs text-[#706458] space-y-2">
-                <p>No active shipments found. Enter an order number or mobile number above, or sign in to track your bookings.</p>
-                {!currentUser && onOpenAuth && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenAuth();
-                    }}
-                    className="inline-block mt-2 px-4 py-1.5 bg-[#0d4f3c] text-white rounded-full font-bold text-xs"
+              <div className="text-center py-6 text-xs text-[#706458] space-y-3">
+                <p>No active shipments found. Enter an order number or mobile number above, or check your order history.</p>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  {customerOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => switchModal("order_history")}
+                      className="px-4 py-2 bg-[#0d4f3c] text-white rounded-xl font-bold text-xs"
+                    >
+                      View All My Orders ({customerOrders.length})
+                    </button>
+                  )}
+                  <a
+                    href="https://wa.me/919501698356?text=Namaste%20House%20of%20Shriya!%20I%20need%20help%20tracking%20my%20order."
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#25D366] text-white rounded-xl font-bold text-xs"
                   >
-                    Sign In to View Orders
-                  </button>
-                )}
+                    <MessageCircle size={14} />
+                    <span>WhatsApp Help (9501698356)</span>
+                  </a>
+                  {!currentUser && onOpenAuth && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenAuth();
+                      }}
+                      className="px-4 py-2 bg-[#d4af37] text-[#0d4f3c] rounded-xl font-bold text-xs"
+                    >
+                      Sign In to View Orders
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1310,13 +1477,22 @@ export function InteractiveModal({
                     const totalVal = order.totalAmount ?? order.total ?? 0;
                     const statusStr = (order.status || order.orderStatus || "pending").replace("_", " ");
                     const pMethod = (order.paymentMethod || "COD").toUpperCase();
+                    const isPaid = order.paymentStatus === "Paid";
+                    const isVerifying = order.paymentStatus === "Payment Verification Pending";
+                    const isPending = !isPaid && !isVerifying;
+                    const isPayOpen = activeHistoryPayOrder === order.id;
+                    const isSubmitting = historyUtrSubmitting[order.id];
+                    const isSuccess = historyUtrSuccess[order.id];
 
                     return (
-                      <div key={order.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2">
+                      <div key={order.id} className="bg-white p-3.5 rounded-xl border border-[#ebe2d8] space-y-2.5 shadow-2xs">
                         <div className="flex justify-between items-center text-xs">
-                          <strong className="text-[#8c6d37]">Order #{order.orderNumber}</strong>
-                          <span className="text-[#0d4f3c] font-bold capitalize">{statusStr}</span>
+                          <strong className="text-[#8c6d37] font-mono">#{order.orderNumber}</strong>
+                          <span className="bg-[#0d4f3c]/10 text-[#0d4f3c] text-[11px] font-bold px-2 py-0.5 rounded-full capitalize border border-[#0d4f3c]/20">
+                            {statusStr}
+                          </span>
                         </div>
+
                         <div>
                           <p className="text-sm font-semibold text-[#1e1b18]">
                             {order.items.map((i) => i.name || i.productName || "Couture Ensemble").join(", ")}
@@ -1329,18 +1505,124 @@ export function InteractiveModal({
                             })}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center pt-2 border-t border-[#f5efeb] text-xs">
-                          <span className="text-[#706458]">Total: ₹{totalVal.toLocaleString()} ({pMethod})</span>
-                          <button
-                            onClick={() => {
-                              setSearchedOrder(order);
-                              setTrackSearchQuery(order.orderNumber);
-                              onClose();
-                            }}
-                            className="text-[#0d4f3c] font-bold hover:underline"
-                          >
-                            Track Package →
-                          </button>
+
+                        {/* Payment Status & Details */}
+                        <div className="bg-[#fcfaf7] p-2.5 rounded-lg border border-[#f0e8dc] text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#63594e] font-medium flex items-center gap-1.5">
+                              <CreditCard size={13} className="text-[#8c6d37]" />
+                              <span>Payment:</span>
+                            </span>
+
+                            {isPaid ? (
+                              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 size={10} /> Paid & Confirmed
+                              </span>
+                            ) : isVerifying || isSuccess ? (
+                              <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                                <Clock size={10} /> Verification Pending
+                              </span>
+                            ) : (
+                              <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-1">
+                                <AlertCircle size={10} /> Payment Pending
+                              </span>
+                            )}
+                          </div>
+
+                          {(order.utrNumber || (isSuccess && historyUtrInputs[order.id])) && (
+                            <div className="flex items-center justify-between text-[11px] text-[#63594e] bg-white px-2 py-1 rounded border border-[#ebe2d8]">
+                              <span>UTR Reference:</span>
+                              <strong className="font-mono text-[#0d4f3c]">
+                                {order.utrNumber || historyUtrInputs[order.id]}
+                              </strong>
+                            </div>
+                          )}
+
+                          {isPending && !isSuccess && (
+                            <div className="pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setActiveHistoryPayOrder(isPayOpen ? null : order.id)}
+                                className="text-[11px] font-bold text-[#0d4f3c] hover:underline flex items-center gap-1"
+                              >
+                                <span>{isPayOpen ? "Hide Payment & UTR" : "Pay via UPI / Submit UTR →"}</span>
+                              </button>
+
+                              {isPayOpen && (
+                                <div className="mt-2 space-y-2 pt-2 border-t border-[#f0e8dc]">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-[#706458]">
+                                      UPI ID: <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText("houseofshriya.order@upi");
+                                        setCopiedUpiId(true);
+                                        setTimeout(() => setCopiedUpiId(false), 2000);
+                                      }}
+                                      className="text-[10px] text-[#0d4f3c] font-bold hover:underline flex items-center gap-1"
+                                    >
+                                      {copiedUpiId ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                                      <span>{copiedUpiId ? "Copied" : "Copy"}</span>
+                                    </button>
+                                  </div>
+
+                                  <form onSubmit={(e) => handleHistorySubmitUtr(e, order)} className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Enter 12-digit UTR #"
+                                      value={historyUtrInputs[order.id] || ""}
+                                      onChange={(e) =>
+                                        setHistoryUtrInputs((prev) => ({ ...prev, [order.id]: e.target.value }))
+                                      }
+                                      required
+                                      className="flex-1 px-2.5 py-1 text-xs bg-white border border-[#d6ccc2] rounded-lg focus:outline-none focus:border-[#0d4f3c]"
+                                    />
+                                    <button
+                                      type="submit"
+                                      disabled={isSubmitting}
+                                      className="px-3 py-1 bg-[#0d4f3c] text-white font-bold rounded-lg hover:bg-[#083528] transition-colors text-xs shrink-0 disabled:opacity-50"
+                                    >
+                                      {isSubmitting ? "Submitting..." : "Submit UTR"}
+                                    </button>
+                                  </form>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between pt-2 border-t border-[#f5efeb] text-xs gap-2">
+                          <span className="text-[#706458] font-medium">
+                            Total: <strong className="text-[#1e1b18]">₹{totalVal.toLocaleString()}</strong> ({pMethod})
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`https://wa.me/919501698356?text=${encodeURIComponent(
+                                `Namaste House of Shriya! Inquiry for order #${order.orderNumber} (₹${totalVal.toLocaleString()}).`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#25D366] hover:underline flex items-center gap-1 text-[11px] font-bold"
+                              title="WhatsApp Support"
+                            >
+                              <MessageCircle size={12} />
+                              <span>WhatsApp</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchedOrder(order);
+                                setTrackSearchQuery(order.orderNumber);
+                                switchModal("track_order");
+                              }}
+                              className="px-2.5 py-1 bg-[#0d4f3c] hover:bg-[#083427] text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+                            >
+                              <Truck size={12} />
+                              <span>Track Package →</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1959,7 +2241,7 @@ export function InteractiveModal({
   };
 
   const getTitle = () => {
-    switch (type) {
+    switch (activeModalType || type) {
       case "track_order":
         return "Live Order Tracking";
       case "order_history":
@@ -2101,7 +2383,7 @@ export function StoreHeader({
           <button
             data-editable="true"
             className="header-pill track-pill"
-            onClick={onOpenDrawer}
+            onClick={() => (onOpenModal ? onOpenModal("track_order") : onOpenDrawer())}
           >
             <Truck size={14} /> <BuilderText as="span" id="nav_track_order" label="Track Order Pill" text="Track Order" />
           </button>
@@ -2117,6 +2399,17 @@ export function StoreHeader({
 
         {/* Right Side: Quick Action Pills & Icons */}
         <div className="header-right">
+          {/* Quick Track Order Icon Button on Right Side */}
+          <button
+            data-editable="true"
+            className="icon-button header-action track-header-btn"
+            aria-label="Track Order & Shipment"
+            title="Track Order & Shipment"
+            onClick={() => (onOpenModal ? onOpenModal("track_order") : onOpenDrawer())}
+          >
+            <Truck size={18} />
+          </button>
+
           <button data-editable="true" className="refer-pill" onClick={() => onOpenModal ? onOpenModal("referral") : onOpenDrawer()}>
             <Gift size={14} />
             <span data-editable="true"><BuilderText as="span" text="Refer & Earn" /> <BuilderText as="b" text="₹100" /></span>
@@ -2164,13 +2457,13 @@ export function StoreHeader({
             <button
               data-editable="true"
               className="icon-button header-action account-action"
-              aria-label="My Account"
-              onClick={onOpenDrawer}
-              title={customerProfile?.fullName || currentUser.displayName || "My Account"}
+              aria-label="My Account & Orders"
+              onClick={() => (onOpenModal ? onOpenModal("order_history") : onOpenDrawer())}
+              title={customerProfile?.fullName || currentUser.displayName || "My Orders"}
             >
               <UserRound size={18} />
-              <span className="max-w-[70px] truncate">
-                {customerProfile?.fullName?.split(" ")[0] || currentUser.displayName?.split(" ")[0] || "Account"}
+              <span className="max-w-[75px] truncate font-medium">
+                {customerProfile?.fullName?.split(" ")[0] || currentUser.displayName?.split(" ")[0] || "Orders"}
               </span>
             </button>
           ) : (
@@ -3063,6 +3356,7 @@ export default function Index() {
           <InteractiveModal
             type={activeModal}
             onClose={() => setActiveModal(null)}
+            onOpenModal={(type) => setActiveModal(type)}
             onOpenAuth={() => setIsAuthOpen(true)}
           />
 

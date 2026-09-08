@@ -189,6 +189,7 @@ export interface Order {
   status?: string;
   totalAmount?: number;
   customerAddress?: ShippingAddress;
+  utrNumber?: string;
 }
 
 export interface AtelierBooking {

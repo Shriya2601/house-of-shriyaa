@@ -1022,6 +1022,7 @@ export async function updateOrderStatus(
     updatedAt: now,
   };
 
+  let updatedFullOrder: Order | null = null;
   if (idx > -1) {
     current[idx] = {
       ...current[idx],
@@ -1029,8 +1030,25 @@ export async function updateOrderStatus(
       trackingCourier: trackingCourier ?? current[idx].trackingCourier,
       trackingNumber: trackingNumber ?? current[idx].trackingNumber,
     };
+    updatedFullOrder = current[idx];
     cacheOrdersLocally(current);
   }
+
+  // Also sync to customer placed orders cache for immediate consistency
+  try {
+    const placed: Order[] = JSON.parse(localStorage.getItem("hos_placed_orders") || "[]");
+    const pIdx = placed.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+    if (pIdx > -1) {
+      placed[pIdx] = {
+        ...placed[pIdx],
+        ...payload,
+        trackingCourier: trackingCourier ?? placed[pIdx].trackingCourier,
+        trackingNumber: trackingNumber ?? placed[pIdx].trackingNumber,
+      };
+      if (!updatedFullOrder) updatedFullOrder = placed[pIdx];
+      localStorage.setItem("hos_placed_orders", JSON.stringify(placed));
+    }
+  } catch {}
 
   // 1. Sync to central backend API
   try {
@@ -1049,9 +1067,14 @@ export async function updateOrderStatus(
 
   // 3. Broadcast update
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: { orderId, ...payload } }));
+    window.dispatchEvent(
+      new CustomEvent("hos-order-updated", {
+        detail: updatedFullOrder || { id: orderId, orderId, ...payload },
+      })
+    );
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: current }));
   }
-  broadcastCrossDeviceSync("orders");
+  broadcastCrossDeviceSync("orders", updatedFullOrder);
 }
 
 export function subscribeOrders(callback: (orders: Order[]) => void): () => void {
@@ -1276,16 +1299,29 @@ export async function confirmOrderPayment(
 
   const now = new Date().toISOString();
   const currentOrders = getCachedOrders();
-  const targetIdx = currentOrders.findIndex(
+  let targetIdx = currentOrders.findIndex(
     (o) => o.id === orderIdOrNumber || o.orderNumber === orderIdOrNumber
   );
 
-  const existing = targetIdx > -1 ? currentOrders[targetIdx] : null;
+  let placedOrdersList: Order[] = [];
+  try {
+    placedOrdersList = JSON.parse(localStorage.getItem("hos_placed_orders") || "[]");
+  } catch {}
+
+  const placedIdx = placedOrdersList.findIndex(
+    (o) => o.id === orderIdOrNumber || o.orderNumber === orderIdOrNumber
+  );
+
+  const existing =
+    (targetIdx > -1 ? currentOrders[targetIdx] : null) ||
+    (placedIdx > -1 ? placedOrdersList[placedIdx] : null);
+
   const realOrderId = existing?.id || orderIdOrNumber;
 
   const paymentPayload = {
     paymentStatus: "Payment Verification Pending" as PaymentStatus,
     paymentMethod: paymentMethod as any,
+    utrNumber: cleanUtr,
     paymentDetails: {
       methodType: "upi" as const,
       utrNumber: cleanUtr,
@@ -1295,12 +1331,19 @@ export async function confirmOrderPayment(
     updatedAt: now,
   };
 
-  let updatedOrder: Order | null = existing
+  let updatedOrder: Order = existing
     ? {
         ...existing,
         ...paymentPayload,
       }
-    : null;
+    : ({
+        id: realOrderId,
+        orderNumber: typeof orderIdOrNumber === "string" && orderIdOrNumber.startsWith("HOS-") ? orderIdOrNumber : `HOS-${realOrderId.slice(0, 6).toUpperCase()}`,
+        status: "pending",
+        orderStatus: "pending",
+        createdAt: now,
+        ...paymentPayload,
+      } as any);
 
   // 1. Sync to central backend API
   try {
@@ -1312,7 +1355,7 @@ export async function confirmOrderPayment(
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (data?.order) {
-        updatedOrder = data.order;
+        updatedOrder = { ...updatedOrder, ...data.order, ...paymentPayload };
       }
     }
   } catch (err) {
@@ -1327,22 +1370,33 @@ export async function confirmOrderPayment(
     console.warn("Firestore payment confirmation notice:", fsErr);
   }
 
-  // 3. Update local cache
-  if (updatedOrder) {
-    const nextList = [...currentOrders];
-    if (targetIdx > -1) {
-      nextList[targetIdx] = updatedOrder;
-    } else {
-      nextList.unshift(updatedOrder);
-    }
-    cacheOrdersLocally(nextList);
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updatedOrder }));
-      window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextList }));
-    }
-    broadcastCrossDeviceSync("orders", updatedOrder);
+  // 3. Update global cached orders
+  const nextList = [...currentOrders];
+  if (targetIdx > -1) {
+    nextList[targetIdx] = updatedOrder;
+  } else {
+    nextList.unshift(updatedOrder);
   }
+  cacheOrdersLocally(nextList);
+
+  // 4. Update customer placed orders cache (hos_placed_orders)
+  try {
+    if (placedIdx > -1) {
+      placedOrdersList[placedIdx] = updatedOrder;
+    } else {
+      placedOrdersList.unshift(updatedOrder);
+    }
+    localStorage.setItem("hos_placed_orders", JSON.stringify(placedOrdersList));
+  } catch (e) {
+    console.warn("Error updating hos_placed_orders:", e);
+  }
+
+  // 5. Dispatch real-time local events
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updatedOrder }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextList }));
+  }
+  broadcastCrossDeviceSync("orders", updatedOrder);
 
   return {
     success: true,
