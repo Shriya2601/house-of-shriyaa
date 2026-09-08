@@ -86,7 +86,13 @@ function parseJsonBody(req: Connect.IncomingMessage): Promise<any> {
 export function apiMiddlewarePlugin(): Plugin {
   const apiHandler: Connect.NextHandleFunction = async (req, res, next) => {
     const rawUrl = req.url || "";
-    const urlWithoutQuery = rawUrl.split("?")[0].replace(/\/+$/, "");
+    let pathname = rawUrl;
+    try {
+      pathname = new URL(rawUrl, "http://localhost").pathname;
+    } catch {
+      pathname = rawUrl.split("?")[0];
+    }
+    const urlWithoutQuery = pathname.replace(/\/+$/, "") || "/";
     const method = (req.method || "GET").toUpperCase();
 
     try {
@@ -360,11 +366,18 @@ export function apiMiddlewarePlugin(): Plugin {
         }
 
         // 5. DIRECT PHOTO UPLOAD & PURGE: /api/upload
-        if (urlWithoutQuery === "/api/upload") {
+        if (urlWithoutQuery === "/api/upload" || urlWithoutQuery === "/api/upload/") {
           setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+
+          if (method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
 
           // Support removing an image to completely purge it from disk and memory cache
-          if (method === "DELETE" || (method === "POST" && rawUrl.includes("delete"))) {
+          if (method === "DELETE" || ((method === "POST" || method === "PUT") && rawUrl.includes("delete"))) {
             try {
               let filenameToDelete = "";
               const urlObj = new URL(rawUrl, "http://localhost:3000");
@@ -402,7 +415,14 @@ export function apiMiddlewarePlugin(): Plugin {
             }
           }
 
-          if (method === "POST") {
+          if (method === "GET") {
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, status: "ready", message: "Upload service active" }));
+            return;
+          }
+
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
             try {
               const body = await parseJsonBody(req);
               const rawData = body.dataUrl || body.image || body.base64;
@@ -466,6 +486,11 @@ export function apiMiddlewarePlugin(): Plugin {
               return;
             }
           }
+
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 200;
+          res.end(JSON.stringify({ success: true, status: "ready" }));
+          return;
         }
 
         // ============================================================

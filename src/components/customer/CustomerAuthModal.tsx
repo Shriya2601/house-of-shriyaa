@@ -47,6 +47,7 @@ export default function CustomerAuthModal({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const emailInputId = useId();
   const passwordInputId = useId();
@@ -177,11 +178,17 @@ export default function CustomerAuthModal({
           referralCode.trim()
         );
         setSuccessMessage(
-          "Patron account created successfully! Welcome to House of Shriya."
+          referralCode.trim()
+            ? "Patron account created! ₹100 referral discount unlocked for your order."
+            : "Patron account created successfully! Welcome to House of Shriya."
         );
       } else {
-        await signIn(cleanEmail, cleanPass);
-        setSuccessMessage("Signed in successfully! Welcome back.");
+        await signIn(cleanEmail, cleanPass, referralCode.trim());
+        setSuccessMessage(
+          referralCode.trim()
+            ? "Signed in successfully! ₹100 referral discount applied to your account."
+            : "Signed in successfully! Welcome back."
+        );
       }
 
       await refreshCustomerOrders();
@@ -312,13 +319,39 @@ export default function CustomerAuthModal({
               </div>
 
               {customerProfile?.referralCode && (
-                <div className="mt-3.5 pt-3 border-t border-[#f0e8de] flex items-center justify-between text-xs">
-                  <span className="text-[#706458] flex items-center gap-1">
-                    <Gift size={13} className="text-[#0d4f3c]" /> Your Referral Code:
-                  </span>
-                  <span className="font-mono font-bold text-[#0d4f3c] bg-[#0d4f3c]/5 px-2.5 py-0.5 rounded border border-[#0d4f3c]/20">
-                    {customerProfile.referralCode}
-                  </span>
+                <div className="mt-3.5 pt-3 border-t border-[#f0e8de] space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#706458] flex items-center gap-1 font-medium">
+                      <Gift size={13} className="text-[#0d4f3c]" /> Your Referral Code:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-[#0d4f3c] bg-[#0d4f3c]/5 px-2.5 py-1 rounded border border-[#0d4f3c]/20 text-xs tracking-wider">
+                        {customerProfile.referralCode}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(customerProfile.referralCode || "");
+                          setCopiedCode(true);
+                          setTimeout(() => setCopiedCode(false), 2000);
+                        }}
+                        className="px-2.5 py-1 bg-[#0d4f3c] hover:bg-[#083528] text-white text-[11px] font-semibold rounded transition-colors"
+                      >
+                        {copiedCode ? "Copied!" : "Copy Code"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-[#706458] bg-[#f9f7f4] p-2.5 rounded-lg border border-[#e8dfd5] leading-relaxed">
+                    Share your code with friends. When they use it, they get <strong className="text-[#0d4f3c]">₹100 instant discount</strong> on their order, and you earn ₹100 credit. (Limit 1 per customer account).
+                  </p>
+
+                  {customerProfile?.referralDiscountAvailable && customerProfile.referralDiscountAvailable > 0 ? (
+                    <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2 text-xs flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                      <span><strong>₹100 Referral Discount Available:</strong> Will be applied automatically at checkout!</span>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -658,8 +691,8 @@ export default function CustomerAuthModal({
                 </div>
               )}
 
-              {/* SIGN UP: Referral Code */}
-              {mode === "signup" && (
+              {/* Referral Code for Sign In & Sign Up */}
+              {(mode === "signup" || mode === "signin") && (
                 <div>
                   <label
                     htmlFor={referralInputId}
@@ -678,12 +711,15 @@ export default function CustomerAuthModal({
                     <input
                       id={referralInputId}
                       type="text"
-                      placeholder="e.g. SHRIYA-7890"
+                      placeholder="e.g. HOS-VIP7890"
                       value={referralCode}
                       onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                       className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-[#d6ccc2] rounded-lg focus:outline-none focus:border-[#0d4f3c] uppercase font-mono"
                     />
                   </div>
+                  <p className="text-[10px] text-[#8c827a] mt-1">
+                    Enter friend's referral code to get ₹100 instant discount on your order (1 use per customer ID).
+                  </p>
                 </div>
               )}
 

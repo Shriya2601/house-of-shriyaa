@@ -87,7 +87,7 @@ interface StoreContextType {
   bookAtelierSession: (
     bookingData: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt" | "status">
   ) => Promise<AtelierBooking>;
-  signIn: (email: string, pass: string) => Promise<User>;
+  signIn: (email: string, pass: string, referralCode?: string) => Promise<User>;
   signUp: (
     email: string,
     pass: string,
@@ -317,8 +317,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCustomerProfile(updated);
   };
 
-  const handleSignIn = async (email: string, pass: string): Promise<User> => {
-    const user = await customerSignIn(email, pass);
+  const handleSignIn = async (email: string, pass: string, referralCode?: string): Promise<User> => {
+    const user = await customerSignIn(email, pass, referralCode);
     setCurrentUser(user);
     try {
       const prof = await fetchCustomerProfile(user.uid);
@@ -617,6 +617,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notes: details.notes || "",
       isTest: false, // strictly marked as real customer order
     });
+
+    // If referral discount was applied, mark referral code as consumed by this customer ID
+    if (details.referralCode && discount > 0) {
+      try {
+        if (currentUser?.uid) {
+          await updateProfileDetails({
+            claimedReferralDiscount: true,
+            usedReferralCode: details.referralCode,
+            referralDiscountAvailable: 0,
+          });
+        }
+        localStorage.removeItem("hos_pending_referral");
+        localStorage.removeItem("hos_referral_discount");
+        const custEmail = (details.customer?.email || currentUser?.email || "").toLowerCase().trim();
+        if (custEmail) {
+          localStorage.setItem(`hos_claimed_ref_${custEmail}`, "true");
+        }
+      } catch (e) {
+        console.warn("Notice: customer referral state cleanup:", e);
+      }
+    }
 
     // Save to local placed orders list for immediate persistence and guest retrieval
     try {

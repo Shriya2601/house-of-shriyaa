@@ -1278,6 +1278,35 @@ export function subscribeAuthState(callback: (user: User | null) => void): () =>
   };
 }
 
+export function generateCustomerReferralCode(name?: string, uid?: string): string {
+  const clean = (name || "HOS").replace(/[^a-zA-Z]/g, "").toUpperCase();
+  const prefix = clean.slice(0, 3) || "HOS";
+  const suffix = (uid || "").replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase() || Math.floor(1000 + Math.random() * 9000).toString();
+  return `HOS-${prefix}${suffix}`;
+}
+
+export async function creditReferrer(referrerCode: string): Promise<void> {
+  const cleanCode = referrerCode.trim().toUpperCase();
+  if (!cleanCode) return;
+  try {
+    const q = query(collection(db, "customers"), where("referralCode", "==", cleanCode));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      const data = docSnap.data() as CustomerProfile;
+      const updatedCount = (data.referralCount || 0) + 1;
+      const updatedEarnings = (data.referralEarnings || 0) + 100;
+      await updateDoc(docSnap.ref, {
+        referralCount: updatedCount,
+        referralEarnings: updatedEarnings,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.warn("Notice: creditReferrer non-blocking error:", err);
+  }
+}
+
 export async function customerSignUp(
   email: string,
   pass: string,
@@ -1328,6 +1357,24 @@ export async function customerSignUp(
   }
 
   const uid = userCredUser ? userCredUser.uid : `cust_${Date.now()}`;
+  const myReferralCode = generateCustomerReferralCode(cleanName, uid);
+
+  // Check entered referral code
+  const cleanEnteredRef = (referralCode || localStorage.getItem("hos_pending_referral") || "").trim().toUpperCase();
+  let validReferralApplied = false;
+  let referrerCodeToSave: string | undefined = undefined;
+
+  if (cleanEnteredRef && cleanEnteredRef !== myReferralCode) {
+    validReferralApplied = true;
+    referrerCodeToSave = cleanEnteredRef;
+    try {
+      localStorage.setItem("hos_pending_referral", cleanEnteredRef);
+      localStorage.setItem("hos_referral_discount", "100");
+    } catch {}
+    // Credit referrer
+    creditReferrer(cleanEnteredRef).catch(() => {});
+  }
+
   const profile: CustomerProfile = {
     uid,
     email: cleanEmail,
@@ -1335,7 +1382,11 @@ export async function customerSignUp(
     phone: cleanPhone,
     savedAddresses: [],
     tier: "House Patron",
-    referralCode: referralCode || undefined,
+    referralCode: myReferralCode, // Unique personal referral code
+    referredBy: referrerCodeToSave,
+    referralDiscountAvailable: validReferralApplied ? 100 : 0,
+    referralCount: 0,
+    referralEarnings: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -1356,7 +1407,7 @@ export async function customerSignUp(
   return finalUser;
 }
 
-export async function customerSignIn(email: string, pass: string): Promise<User> {
+export async function customerSignIn(email: string, pass: string, enteredReferralCode?: string): Promise<User> {
   const cleanEmail = email.trim().toLowerCase();
   const cleanPass = pass.trim();
 
@@ -1407,9 +1458,41 @@ export async function customerSignIn(email: string, pass: string): Promise<User>
 
   try {
     const profileSnap = await getDoc(doc(db, "customers", finalUser.uid));
+    let profileData: CustomerProfile;
     if (profileSnap.exists()) {
-      localStorage.setItem("hos_customer_profile", JSON.stringify(profileSnap.data()));
+      profileData = profileSnap.data() as CustomerProfile;
+    } else {
+      const cached = localStorage.getItem("hos_customer_profile");
+      profileData = cached ? JSON.parse(cached) : { uid: finalUser.uid, email: cleanEmail, fullName: finalUser.displayName || "Patron" };
     }
+
+    // Ensure customer has their unique referral code
+    if (!profileData.referralCode) {
+      profileData.referralCode = generateCustomerReferralCode(profileData.fullName || finalUser.displayName, finalUser.uid);
+      await setDoc(doc(db, "customers", finalUser.uid), { referralCode: profileData.referralCode }, { merge: true }).catch(() => {});
+    }
+
+    // Check if referral code was entered on login or pending from URL/storage
+    const candidateRef = (enteredReferralCode || localStorage.getItem("hos_pending_referral") || "").trim().toUpperCase();
+    if (
+      candidateRef &&
+      !profileData.referredBy &&
+      !profileData.claimedReferralDiscount &&
+      candidateRef !== profileData.referralCode
+    ) {
+      profileData.referredBy = candidateRef;
+      profileData.referralDiscountAvailable = 100;
+      await setDoc(
+        doc(db, "customers", finalUser.uid),
+        { referredBy: candidateRef, referralDiscountAvailable: 100 },
+        { merge: true }
+      ).catch(() => {});
+      localStorage.setItem("hos_pending_referral", candidateRef);
+      localStorage.setItem("hos_referral_discount", "100");
+      creditReferrer(candidateRef).catch(() => {});
+    }
+
+    localStorage.setItem("hos_customer_profile", JSON.stringify(profileData));
     localStorage.setItem("hos_customer_token", `token_${Date.now()}`);
   } catch {}
 
@@ -1456,7 +1539,8 @@ export async function customerSignOut(): Promise<void> {
 
 export async function validateReferralCode(
   code: string,
-  customerEmail?: string
+  customerEmail?: string,
+  customerId?: string
 ): Promise<{ valid: boolean; discountAmount?: number; referrerName?: string; referralCode?: string; message?: string; error?: string }> {
   const cleanCode = code.trim().toUpperCase();
   if (!cleanCode) {
@@ -1480,13 +1564,51 @@ export async function validateReferralCode(
     };
   }
 
+  // Referral code logic (starts with HOS-, REF-, or 6+ characters)
   if (cleanCode.startsWith("HOS-") || cleanCode.startsWith("REF-") || cleanCode.length >= 6) {
+    // 1. Check if user is using their own code
+    try {
+      const localProfStr = localStorage.getItem("hos_customer_profile");
+      if (localProfStr) {
+        const localProf = JSON.parse(localProfStr);
+        if (localProf?.referralCode && localProf.referralCode.trim().toUpperCase() === cleanCode) {
+          return { valid: false, error: "You cannot use your own referral code." };
+        }
+        if (localProf?.claimedReferralDiscount || localProf?.usedReferralCode) {
+          return {
+            valid: false,
+            error: "A referral discount has already been applied to this account. Only one referral discount is permitted per customer ID.",
+          };
+        }
+      }
+    } catch {}
+
+    // 2. Check placed orders: One referral discount per customer ID / email
+    try {
+      const orders: Order[] = JSON.parse(localStorage.getItem("hos_placed_orders") || "[]");
+      const emailToCheck = (customerEmail || "").trim().toLowerCase();
+      const idToCheck = (customerId || "").trim();
+
+      const existingOrderWithRef = orders.find((o) => {
+        const matchEmail = emailToCheck && o.customer?.email?.trim().toLowerCase() === emailToCheck;
+        const matchId = idToCheck && o.userId === idToCheck;
+        return (matchEmail || matchId) && (o.referralCode || (o.referralDiscount && o.referralDiscount > 0));
+      });
+
+      if (existingOrderWithRef) {
+        return {
+          valid: false,
+          error: "Referral discount has already been used on this customer account. Only one referral discount is allowed per customer ID.",
+        };
+      }
+    } catch {}
+
     return {
       valid: true,
-      discountAmount: 500,
-      referrerName: "Atelier Patron Referral",
+      discountAmount: 100, // Exactly ₹100 discount as requested
+      referrerName: "House Patron",
       referralCode: cleanCode,
-      message: "Patron referral applied: ₹500 off",
+      message: "Referral code applied: ₹100 instant discount on your order!",
     };
   }
 
@@ -1494,22 +1616,35 @@ export async function validateReferralCode(
 }
 
 export async function fetchCustomerProfile(uid: string): Promise<CustomerProfile | null> {
+  let profile: CustomerProfile | null = null;
   try {
     const docRef = doc(db, "customers", uid);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      const data = snap.data() as CustomerProfile;
-      try {
-        localStorage.setItem("hos_customer_profile", JSON.stringify(data));
-      } catch {}
-      return data;
+      profile = snap.data() as CustomerProfile;
     }
   } catch {}
 
-  try {
-    const local = localStorage.getItem("hos_customer_profile");
-    if (local) return JSON.parse(local);
-  } catch {}
+  if (!profile) {
+    try {
+      const local = localStorage.getItem("hos_customer_profile");
+      if (local) profile = JSON.parse(local);
+    } catch {}
+  }
+
+  if (profile) {
+    // Ensure referralCode exists
+    if (!profile.referralCode) {
+      profile.referralCode = generateCustomerReferralCode(profile.fullName, profile.uid);
+      try {
+        await setDoc(doc(db, "customers", uid), { referralCode: profile.referralCode }, { merge: true });
+      } catch {}
+    }
+    try {
+      localStorage.setItem("hos_customer_profile", JSON.stringify(profile));
+    } catch {}
+    return profile;
+  }
 
   return null;
 }

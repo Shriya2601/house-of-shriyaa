@@ -239,6 +239,8 @@ export interface CustomerProfile {
   referralCount?: number;
   referralEarnings?: number;
   referralDiscountAvailable?: number;
+  claimedReferralDiscount?: boolean;
+  usedReferralCode?: string;
   createdAt?: string;
   updatedAt?: string;
 }

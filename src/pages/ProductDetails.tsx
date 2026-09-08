@@ -314,6 +314,7 @@ export default function ProductDetails() {
         onPookie={openPookie}
         onOpenDrawer={() => setDrawerOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenModal={(type) => setActiveModal(type)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         wishlistCount={wishlist.size}

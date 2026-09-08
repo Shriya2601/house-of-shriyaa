@@ -95,6 +95,9 @@ export default function CheckoutModal() {
   useEffect(() => {
     if (isCheckoutOpen && !appliedReferral) {
       try {
+        if (customerProfile?.claimedReferralDiscount || customerProfile?.usedReferralCode) {
+          return;
+        }
         const urlParams = new URLSearchParams(window.location.search);
         const refUrl = urlParams.get("ref");
         const pendingRef = refUrl || customerProfile?.referredBy || localStorage.getItem("hos_pending_referral") || "";
@@ -114,7 +117,8 @@ export default function CheckoutModal() {
     setValidatingRef(true);
     try {
       const buyerEmail = email || customerProfile?.email || currentUser?.email;
-      const res = await validateReferralCode(code, buyerEmail);
+      const buyerId = currentUser?.uid || customerProfile?.uid;
+      const res = await validateReferralCode(code, buyerEmail, buyerId);
       if (res.valid) {
         setAppliedReferral({
           code: res.referralCode || code,
@@ -142,7 +146,8 @@ export default function CheckoutModal() {
     setReferralFeedback(null);
     try {
       const buyerEmail = email.trim() || customerProfile?.email || currentUser?.email;
-      const res = await validateReferralCode(referralInput.trim(), buyerEmail);
+      const buyerId = currentUser?.uid || customerProfile?.uid;
+      const res = await validateReferralCode(referralInput.trim(), buyerEmail, buyerId);
       if (res.valid) {
         setAppliedReferral({
           code: res.referralCode || referralInput.trim().toUpperCase(),

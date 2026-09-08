@@ -146,22 +146,29 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         reader.readAsDataURL(file);
       });
 
-      // Post to /api/upload
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataUrl: compressedDataUrl,
-          filename: `hero-slide-${activeSlideIndex + 1}`,
-        }),
-      });
+      // Attempt server upload to /api/upload for permanent file storage
+      let uploadedUrl = compressedDataUrl;
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dataUrl: compressedDataUrl,
+            filename: `hero-slide-${activeSlideIndex + 1}`,
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error("Server upload endpoint returned error status: " + res.status);
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.url) {
+            uploadedUrl = resData.url;
+          }
+        } else {
+          console.warn(`[Banner Upload] Server returned status ${res.status}, continuing with high-quality optimized image.`);
+        }
+      } catch (uploadErr) {
+        console.warn("[Banner Upload] Server upload endpoint unreachable, continuing with optimized image:", uploadErr);
       }
-
-      const resData = await res.json();
-      const uploadedUrl = resData.url || compressedDataUrl;
 
       // Update slide image state AND immediately persist it to disk and live website
       const nextSlides = slides.map((s, idx) =>
@@ -178,10 +185,10 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         await saveSiteContent({
           heroSlides: nextSlides,
         });
-        showToast(`Slide ${activeSlideIndex + 1} photo uploaded & published live to homepage!`, "success");
+        showToast(`Slide ${activeSlideIndex + 1} photo updated & published live to homepage!`, "success");
       } catch (saveErr: any) {
         console.error("Auto-save banner content error:", saveErr);
-        showToast(`Slide ${activeSlideIndex + 1} image uploaded successfully!`, "success");
+        showToast(`Slide ${activeSlideIndex + 1} image updated successfully!`, "success");
       }
     } catch (err: any) {
       console.error("Banner upload error:", err);

@@ -8,7 +8,7 @@ import { useEditMode, CanvaEditable } from "../components/editmode";
 import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
-import { customerSignOut, findOrderByOrderNumber } from "../services/storeService";
+import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode } from "../services/storeService";
 import { SavedAddress, Order, AtelierBooking } from "../types";
 import {
   ArrowRight,
@@ -498,11 +498,7 @@ export function NavigationDrawer({
               className="nav-item-btn"
               onClick={() => {
                 onClose();
-                if (!currentUser) {
-                  onOpenAuth();
-                } else {
-                  onOpenModal("referral");
-                }
+                onOpenModal("referral");
               }}
             >
               <div className="nav-item-left">
@@ -1296,35 +1292,25 @@ export function InteractiveModal({
       }
 
       case "referral": {
-        if (!currentUser) {
-          return (
-            <div className="text-center py-8 space-y-3 text-xs">
-              <Gift size={36} className="mx-auto text-[#c5a059]" />
-              <div>
-                <strong className="text-sm font-serif text-[#1e1b18] block">Customer Login Required</strong>
-                <p className="text-[#706458] mt-1">
-                  Sign in or create an account to view your unique referral code and earn ₹100 rewards.
-                </p>
-              </div>
-              {onOpenAuth && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenAuth();
-                  }}
-                  className="px-5 py-2 bg-[#0d4f3c] text-white font-bold rounded-full text-xs"
-                >
-                  Sign In / Register
-                </button>
-              )}
-            </div>
-          );
+        // Retrieve or generate referral code for logged-in patron or guest visitor
+        let myRefCode = customerProfile?.referralCode || "";
+        if (!myRefCode && currentUser) {
+          myRefCode = generateCustomerReferralCode(currentUser.displayName || currentUser.email, currentUser.uid);
+          updateProfileDetails({ referralCode: myRefCode }).catch(() => {});
+        } else if (!myRefCode && !currentUser) {
+          const storedGuest = localStorage.getItem("hos_guest_referral_code");
+          if (storedGuest) {
+            myRefCode = storedGuest;
+          } else {
+            myRefCode = generateCustomerReferralCode("PATRON", String(Date.now()));
+            try {
+              localStorage.setItem("hos_guest_referral_code", myRefCode);
+            } catch {}
+          }
         }
 
-        const myRefCode = customerProfile?.referralCode || "";
         const shareUrl = `${window.location.origin}/?ref=${myRefCode}`;
-        const whatsappShareText = `Namaste! Use my House of Shriya referral code *${myRefCode}* to get ₹100 instant discount on your first luxury unstitched suit: ${shareUrl}`;
+        const whatsappShareText = `Namaste! Use my House of Shriya referral code *${myRefCode}* to get ₹100 instant discount on your order: ${shareUrl}`;
 
         const handleCopyCode = () => {
           if (!myRefCode) return;
@@ -1344,21 +1330,26 @@ export function InteractiveModal({
                 Give ₹100, Get ₹100
               </h3>
               <p className="text-[11px] text-[#63594e] max-w-sm mx-auto leading-relaxed">
-                Invite friends and family to House of Shriya. When they purchase their first unstitched suit using your code, they get ₹100 off, and you earn ₹100 in atelier rewards!
+                Invite friends and family to House of Shriya. When they log in or order using your referral code, they get <strong className="text-[#0d4f3c]">₹100 instant discount</strong>, and you earn ₹100 in atelier rewards!
               </p>
             </div>
 
             {/* Unique Referral Code Card */}
             <div className="p-4 bg-white border border-[#ebe2d8] rounded-xl space-y-3">
-              <span className="text-[11px] font-bold text-[#1e1b18] block">Your Unique Referral Code</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-[#1e1b18] block">Your Unique Referral Code</span>
+                <span className="text-[10px] text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
+                  Active
+                </span>
+              </div>
               <div className="flex items-center justify-between bg-[#f5efeb] border border-[#e2d5c5] rounded-xl p-3">
-                <span className="font-mono text-base font-bold text-[#0d4f3c] tracking-widest">
-                  {myRefCode || "GENERATING..."}
+                <span className="font-mono text-base font-bold text-[#0d4f3c] tracking-widest select-all">
+                  {myRefCode || "HOS-VIP100"}
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d4f3c] text-white font-bold text-xs hover:bg-[#083528] transition-colors"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#0d4f3c] text-white font-bold text-xs hover:bg-[#083528] transition-colors shadow-xs"
                 >
                   {referralCopied ? (
                     <>
@@ -1389,7 +1380,7 @@ export function InteractiveModal({
                   onClick={() => {
                     if (navigator.share) {
                       navigator.share({
-                        title: "House of Shriya - Luxury Suits",
+                        title: "House of Shriya - Luxury Suits & Sarees",
                         text: whatsappShareText,
                         url: shareUrl,
                       }).catch(() => {});
@@ -1405,27 +1396,61 @@ export function InteractiveModal({
               </div>
             </div>
 
-            {/* Performance Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
-                <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
-                  Friends Referred
-                </span>
-                <strong className="text-xl font-serif text-[#0d4f3c] block mt-1">
-                  {customerProfile?.referralCount || 0}
-                </strong>
-                <span className="text-[10px] text-[#8c6d37]">Patrons Joined</span>
+            {/* If unauthenticated, offer 1-click sign in to permanently save rewards */}
+            {!currentUser && onOpenAuth && (
+              <div className="p-3.5 bg-[#f9f7f4] border border-[#e8dfd5] rounded-xl flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-semibold text-[#1e1b18] block">Save Your Referral Earnings</span>
+                  <p className="text-[11px] text-[#706458] mt-0.5">
+                    Sign in to track your ₹100 rewards balance and view orders in one place.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth();
+                  }}
+                  className="px-3.5 py-1.5 bg-[#0d4f3c] text-white font-bold text-xs rounded-full hover:bg-[#083528] shrink-0"
+                >
+                  Sign In
+                </button>
               </div>
-              <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
-                <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
-                  Rewards Earned
-                </span>
-                <strong className="text-xl font-serif text-emerald-700 block mt-1">
-                  ₹{customerProfile?.referralEarnings || 0}
-                </strong>
-                <span className="text-[10px] text-emerald-800">Available Balance</span>
+            )}
+
+            {/* Performance Stats (for logged in patrons) */}
+            {currentUser && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
+                    Friends Referred
+                  </span>
+                  <strong className="text-xl font-serif text-[#0d4f3c] block mt-1">
+                    {customerProfile?.referralCount || 0}
+                  </strong>
+                  <span className="text-[10px] text-[#8c6d37]">Patrons Joined</span>
+                </div>
+                <div className="p-3.5 bg-white border border-[#ebe2d8] rounded-xl text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-[#706458] font-semibold block">
+                    Rewards Earned
+                  </span>
+                  <strong className="text-xl font-serif text-emerald-700 block mt-1">
+                    ₹{customerProfile?.referralEarnings || 0}
+                  </strong>
+                  <span className="text-[10px] text-emerald-800">Available Balance</span>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Available Discount Banner */}
+            {customerProfile?.referralDiscountAvailable && customerProfile.referralDiscountAvailable > 0 ? (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-3 flex items-center gap-2.5">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <div className="text-xs leading-relaxed">
+                  <strong>₹100 Referral Discount Active:</strong> Will be automatically applied to your cart at checkout!
+                </div>
+              </div>
+            ) : null}
 
             {/* Program Details */}
             <div className="p-3.5 bg-[#faf8f5] border border-[#ebe2d8] rounded-xl space-y-2">
@@ -1433,15 +1458,19 @@ export function InteractiveModal({
               <div className="space-y-1.5 text-[11px] text-[#706458]">
                 <div className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">1</span>
-                  <span>Share your unique code or link with friends who appreciate fine handloom.</span>
+                  <span>Click & copy your personal referral code or share directly via WhatsApp with friends.</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">2</span>
-                  <span>They apply your code when registering or checking out to get ₹100 instant discount.</span>
+                  <span>When anyone logs in or orders using your code, they get <strong>₹100 instant discount</strong>.</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">3</span>
-                  <span>Once their order is placed, your account is credited with ₹100 in rewards automatically!</span>
+                  <span>Strict rule: Each customer ID / account can redeem a referral code exactly once.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#0d4f3c] text-white text-[9px] flex items-center justify-center shrink-0 font-bold mt-0.5">4</span>
+                  <span>When their order is placed, your account is credited with ₹100 in atelier rewards!</span>
                 </div>
               </div>
             </div>
@@ -1757,6 +1786,7 @@ export function StoreHeader({
   onPookie,
   onOpenDrawer,
   onOpenAuth,
+  onOpenModal,
   searchQuery,
   onSearchChange,
   wishlistCount,
@@ -1765,6 +1795,7 @@ export function StoreHeader({
   onPookie: () => void;
   onOpenDrawer: () => void;
   onOpenAuth?: () => void;
+  onOpenModal?: (type: string) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   wishlistCount: number;
@@ -1865,7 +1896,7 @@ export function StoreHeader({
 
         {/* Right Side: Quick Action Pills & Icons */}
         <div className="header-right">
-          <button data-editable="true" className="refer-pill" onClick={onOpenDrawer}>
+          <button data-editable="true" className="refer-pill" onClick={() => onOpenModal ? onOpenModal("referral") : onOpenDrawer()}>
             <Gift size={14} />
             <span data-editable="true"><BuilderText as="span" text="Refer & Earn" /> <BuilderText as="b" text="₹100" /></span>
           </button>
@@ -2720,13 +2751,6 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
               >
                 <BuilderText as="span" text="Contact Us" />
               </button>
-              <Link
-                to="/admin"
-                className="text-left text-[#faf8f5]/50 hover:text-[#d4af37] transition-colors text-[11px] block mt-1"
-                title="Atelier Administration Portal"
-              >
-                <BuilderText as="span" text="Admin Portal" />
-              </Link>
             </div>
             <div>
               <BuilderText as="strong" text="Stay in the know" />
@@ -2742,14 +2766,6 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
           <BuilderText as="span" text={siteContent?.footerNote ? siteContent.footerNote.replace(/\s*·?\s*(?:SURAT|WORLDWIDE SHIPPING).*$/i, "").trim() : "© House of Shriya. Made for your forever wardrobe."} />
           <div className="flex items-center gap-3">
             <BuilderText as="span" text={`${siteContent?.atelierCity || "Surat, Gujarat, India"} · Worldwide Shipping`} />
-            <Link
-              to="/admin"
-              className="text-[#faf8f5]/40 hover:text-[#d4af37] text-[11px] inline-flex items-center gap-1 transition-colors"
-              title="Atelier Admin Portal"
-            >
-              <Lock size={10} />
-              <span>Admin</span>
-            </Link>
           </div>
         </div>
       </div>
@@ -2790,6 +2806,7 @@ export default function Index() {
         onPookie={openPookie}
         onOpenDrawer={() => setDrawerOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenModal={(type) => setActiveModal(type)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         wishlistCount={wishlist.size}
