@@ -97,7 +97,8 @@ export function apiMiddlewarePlugin(): Plugin {
     const urlWithoutQuery = rawUrl.split("?")[0].replace(/\/+$/, "");
     const method = (req.method || "GET").toUpperCase();
 
-    // Direct Static Image Serving for /uploads/*
+    try {
+      // Direct Static Image Serving for /uploads/*
     // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
     if (urlWithoutQuery.startsWith("/uploads/")) {
       const filename = path.basename(urlWithoutQuery);
@@ -1069,7 +1070,27 @@ export function apiMiddlewarePlugin(): Plugin {
           }
         }
 
+        // If request is targeting /api/*, ALWAYS handle it with JSON error, NEVER let it fall through to Vite SPA html!
+        if (urlWithoutQuery.startsWith("/api/")) {
+          setCorsHeaders(res);
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: `API route not found: ${method} ${urlWithoutQuery}` }));
+          return;
+        }
+
         next();
+    } catch (err: any) {
+      console.error("[API Middleware Error]:", err);
+      if (urlWithoutQuery.startsWith("/api/")) {
+        setCorsHeaders(res);
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ success: false, error: err.message || "Internal server error" }));
+        return;
+      }
+      next(err);
+    }
   };
 
   return {

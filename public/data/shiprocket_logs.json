@@ -1,6 +1,183 @@
 [
   {
     "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 76,
+    "errorMessage": "Credentials verified for shriyapusha01@gmail.com. Found 1 pickup locations.",
+    "responsePayload": {
+      "pickupLocationsCount": 1
+    },
+    "id": "log_1788886342016_03u0o",
+    "timestamp": "2026-09-08T16:52:22.016Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 236,
+    "responsePayload": {
+      "success": true,
+      "expiresInDays": 7,
+      "tokenReceived": true
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788886339546_ne7yn",
+    "timestamp": "2026-09-08T16:52:19.546Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 210,
+    "responsePayload": {
+      "success": true,
+      "expiresInDays": 7,
+      "tokenReceived": true
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788886253210_54sng",
+    "timestamp": "2026-09-08T16:50:53.210Z"
+  },
+  {
+    "action": "RETRY_SYNC",
+    "status": "SUCCESS",
+    "orderNumber": "HOS-2026-3152",
+    "orderId": "ord_1788736907066",
+    "attemptNumber": 1,
+    "errorMessage": "Order synced on retry attempt #1. Shiprocket ID: 1573230240",
+    "id": "log_1788886242806_mmo2w",
+    "timestamp": "2026-09-08T16:50:42.806Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "SUCCESS",
+    "orderNumber": "HOS-2026-3152",
+    "orderId": "ord_1788736907066",
+    "endpoint": "/orders/create/adhoc",
+    "statusCode": 200,
+    "durationMs": 545,
+    "requestPayload": {
+      "order_id": "HOS-2026-3152",
+      "order_date": "2026-09-06 23:21",
+      "pickup_location": "Home",
+      "channel_id": "",
+      "comment": "House of Shriya Atelier Order - HOS-2026-3152 (Prepaid)",
+      "billing_customer_name": "Rohit",
+      "billing_last_name": "Verma",
+      "billing_address": "123 Heritage Lane",
+      "billing_address_2": "",
+      "billing_city": "Jaipur",
+      "billing_pincode": "302001",
+      "billing_state": "Rajasthan",
+      "billing_country": "India",
+      "billing_email": "rohit@example.com",
+      "billing_phone": "9812345678",
+      "shipping_is_billing": true,
+      "order_items": [
+        {
+          "name": "Noor-E-Chanderi Unstitched Suit",
+          "sku": "hos-001",
+          "units": 1,
+          "selling_price": 4999,
+          "discount": 0,
+          "tax": 0,
+          "hsn": 5007
+        }
+      ],
+      "payment_method": "Prepaid",
+      "shipping_charges": 0,
+      "giftwrap_charges": 0,
+      "transaction_charges": 0,
+      "total_discount": 100,
+      "sub_total": 4999,
+      "length": 30,
+      "breadth": 24,
+      "height": 6,
+      "weight": 0.8
+    },
+    "responsePayload": {
+      "order_id": 1573230240,
+      "channel_order_id": "HOS-2026-3152",
+      "shipment_id": 1569448310,
+      "status": "NEW",
+      "status_code": 1,
+      "onboarding_completed_now": 0,
+      "awb_code": "",
+      "courier_company_id": "",
+      "courier_name": "",
+      "new_channel": false,
+      "packaging_box_error": ""
+    },
+    "id": "log_1788886242805_74vfk",
+    "timestamp": "2026-09-08T16:50:42.805Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 262,
+    "responsePayload": {
+      "success": true,
+      "expiresInDays": 7,
+      "tokenReceived": true
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788886242523_s7r3y",
+    "timestamp": "2026-09-08T16:50:42.523Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 230,
+    "errorMessage": "Credentials verified for shriyapusha01@gmail.com. Found 1 pickup locations.",
+    "responsePayload": {
+      "pickupLocationsCount": 1
+    },
+    "id": "log_1788886197582_j7mt9",
+    "timestamp": "2026-09-08T16:49:57.582Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "errorMessage": "Shiprocket Login Failed: Invalid email and password combination",
+    "durationMs": 230,
+    "requestPayload": {
+      "email": "ethnicbyshriya@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788885802717_ggiyl",
+    "timestamp": "2026-09-08T16:43:22.717Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "statusCode": 403,
+    "errorMessage": "Invalid email and password combination",
+    "durationMs": 229,
+    "responsePayload": {
+      "message": "Invalid email and password combination",
+      "status_code": 403
+    },
+    "requestPayload": {
+      "email": "ethnicbyshriya@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788885802716_cvr9w",
+    "timestamp": "2026-09-08T16:43:22.716Z"
+  },
+  {
+    "action": "AUTH",
     "status": "FAILED",
     "statusCode": 403,
     "durationMs": 237,

@@ -204,9 +204,9 @@ export default function AdminPortal() {
   } | null>(null);
   const [isCheckingShiprocket, setIsCheckingShiprocket] = useState<boolean>(false);
   const [isShiprocketConfigOpen, setIsShiprocketConfigOpen] = useState<boolean>(false);
-  const [shiprocketEmailInput, setShiprocketEmailInput] = useState<string>("shriya.pusha@sharepal.in");
+  const [shiprocketEmailInput, setShiprocketEmailInput] = useState<string>("shriyapusha01@gmail.com");
   const [shiprocketPasswordInput, setShiprocketPasswordInput] = useState<string>("");
-  const [shiprocketPickupInput, setShiprocketPickupInput] = useState<string>("Primary");
+  const [shiprocketPickupInput, setShiprocketPickupInput] = useState<string>("Home");
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
 
   // Live Shipment Tracking Modal State

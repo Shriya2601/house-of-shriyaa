@@ -167,7 +167,7 @@ export default function ShiprocketConfigModal({
               required
               value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="e.g. shriya.pusha@sharepal.in"
+              placeholder="shriyapusha01@gmail.com"
               className="w-full bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
             />
             <span className="text-[11px] text-stone-500 mt-1 block">
@@ -204,20 +204,36 @@ export default function ShiprocketConfigModal({
 
           {/* Field: Pickup Location */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5 flex items-center gap-1.5">
-              <MapPin size={13} className="text-[#0d4f3c]" />
-              <span>Pickup Location Nickname</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-stone-700 flex items-center gap-1.5">
+                <MapPin size={13} className="text-[#0d4f3c]" />
+                <span>Pickup Location Nickname *</span>
+              </label>
+              {status?.details?.availablePickupLocations?.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {status.details.availablePickupLocations.map((loc: any, idx: number) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setPickupInput(loc.name || loc.pickup_location)}
+                      className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer font-medium"
+                    >
+                      Use "{loc.name || loc.pickup_location}"
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <input
               type="text"
               required
               value={pickupInput}
               onChange={(e) => setPickupInput(e.target.value)}
-              placeholder="Primary (or your exact Shiprocket pickup nickname)"
+              placeholder="e.g. Home"
               className="w-full bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
             />
             <span className="text-[11px] text-stone-500 mt-1 block">
-              Default is usually <code className="font-mono bg-stone-100 px-1 py-0.5 rounded">Primary</code> or your registered Atelier address nickname.
+              Must match the exact pickup nickname registered in Shiprocket (e.g. <code className="font-mono bg-stone-100 px-1 py-0.5 rounded">Home</code>).
             </span>
           </div>
 

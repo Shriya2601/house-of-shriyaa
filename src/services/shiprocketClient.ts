@@ -46,16 +46,34 @@ export interface ShiprocketTrackingResponse {
   error?: string;
 }
 
+async function safeJsonParse<T = any>(res: Response, fallbackError = "Invalid response from server"): Promise<T> {
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      return await res.json();
+    } catch {
+      // Fallback to text parsing
+    }
+  }
+
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`Server status ${res.status}: ${text.slice(0, 120) || fallbackError}`);
+  }
+  if (text.trim().startsWith("<")) {
+    throw new Error("Shiprocket service endpoint is synchronizing. Please retry in a few moments.");
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(fallbackError);
+  }
+}
+
 export async function fetchShiprocketStatus(): Promise<ShiprocketStatusResponse> {
   try {
     const res = await fetch("/api/shipping/shiprocket/status");
-    if (!res.ok) {
-      return {
-        success: false,
-        message: `HTTP error ${res.status}`,
-      };
-    }
-    return await res.json();
+    return await safeJsonParse(res, "Could not fetch status");
   } catch (err: any) {
     return {
       success: false,
@@ -73,12 +91,12 @@ export async function fetchShiprocketConfig(): Promise<{
 }> {
   try {
     const res = await fetch("/api/shipping/shiprocket/config");
-    return await res.json();
+    return await safeJsonParse(res, "Could not fetch configuration");
   } catch (err) {
     return {
       email: "",
       emailMasked: "",
-      pickupLocation: "Primary",
+      pickupLocation: "Home",
       isConfigured: false,
       hasPassword: false,
     };
@@ -96,7 +114,7 @@ export async function saveShiprocketConfig(params: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
-    return await res.json();
+    return await safeJsonParse(res, "Could not save configuration");
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -117,7 +135,7 @@ export async function pushOrderToShiprocket(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order, pickupLocation }),
     });
-    return await res.json();
+    return await safeJsonParse(res, "Could not create Shiprocket order");
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -135,7 +153,7 @@ export async function trackShipment(params: {
     if (params.orderId) query.set("orderId", params.orderId);
 
     const res = await fetch(`/api/shipping/shiprocket/track?${query.toString()}`);
-    return await res.json();
+    return await safeJsonParse(res, "Could not fetch tracking data");
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -257,7 +275,7 @@ export async function testCustomCredentials(params: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
-    return await res.json();
+    return await safeJsonParse(res, "Failed to verify credentials with Shiprocket");
   } catch (err: any) {
     return {
       success: false,
