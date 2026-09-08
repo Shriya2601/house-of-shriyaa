@@ -131,23 +131,54 @@ const PRODUCTS_CACHE_KEY = "hos_products_cache";
 const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
+// Multi-tab / cross-device broadcast channel for 0ms instantaneous synchronization
+const syncChannel: BroadcastChannel | null =
+  typeof window !== "undefined" && "BroadcastChannel" in window
+    ? new BroadcastChannel("hos_cross_device_channel")
+    : null;
+
+export function broadcastCrossDeviceSync(type: "products" | "orders" | "categories", data?: any) {
+  if (syncChannel) {
+    try {
+      syncChannel.postMessage({ type, data, timestamp: Date.now() });
+    } catch {}
+  }
+}
+
 /* ============================================================
    PRODUCT VARIANT NORMALIZATION & CACHING
 ============================================================ */
 
 export function ensureProductVariants(product: any): Product {
-  const primaryImg = product.image || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
-  const hoverImg = product.hoverImage || primaryImg;
+  const primaryImg = product.image || (Array.isArray(product.images) && product.images[0]) || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+  const hoverImg = product.hoverImage || (Array.isArray(product.images) && product.images[1]) || primaryImg;
+
+  // Clean gallery images without forcefully resurrecting deleted photos
+  let cleanImages: string[] = [];
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    cleanImages = product.images.filter(Boolean);
+  } else {
+    cleanImages = [primaryImg, hoverImg].filter(Boolean);
+  }
+
+  // Ensure primary image is present
+  if (cleanImages.length > 0 && !cleanImages.includes(primaryImg)) {
+    cleanImages[0] = primaryImg;
+  }
 
   let variants: ColorVariant[] = [];
   if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
     variants = product.colorVariants.map((v: any, idx: number) => {
-      // If idx === 0 (the primary variant), ensure it strictly matches product.image & hoverImage
-      const vImages = idx === 0 && product.image
-        ? [product.image, product.hoverImage || product.image].filter(Boolean)
-        : (Array.isArray(v.images) && v.images.length > 0
-            ? v.images.filter(Boolean)
-            : [v.image || primaryImg, v.hoverImage || hoverImg].filter(Boolean));
+      let vImages: string[] = [];
+      if (idx === 0) {
+        vImages = cleanImages;
+      } else if (Array.isArray(v.images) && v.images.length > 0) {
+        vImages = v.images.filter(Boolean);
+      } else if (v.image) {
+        vImages = [v.image, v.hoverImage || v.image].filter(Boolean);
+      } else {
+        vImages = [primaryImg, hoverImg].filter(Boolean);
+      }
 
       return {
         id: v.id || `var-${product.id || "prod"}-${idx + 1}`,
@@ -159,15 +190,12 @@ export function ensureProductVariants(product: any): Product {
         description: v.description || product.description || "",
         fabricType: v.fabricType || product.fabricType || "Pure Silk",
         images: vImages,
-        image: vImages[0] || (idx === 0 ? primaryImg : v.image || primaryImg),
-        hoverImage: vImages[1] || vImages[0] || (idx === 0 ? hoverImg : v.hoverImage || hoverImg),
+        image: vImages[0] || primaryImg,
+        hoverImage: vImages[1] || vImages[0] || hoverImg,
         inStock: v.inStock !== false,
       };
     });
   } else {
-    const galleryImgs = Array.isArray(product.images) && product.images.length > 0
-      ? product.images.filter(Boolean)
-      : [primaryImg, hoverImg].filter(Boolean);
     variants = [
       {
         id: `var-${product.id || "prod"}-primary`,
@@ -178,17 +206,13 @@ export function ensureProductVariants(product: any): Product {
         savings: product.savings || "Save 33%",
         description: product.description || "",
         fabricType: product.fabricType || "Pure Silk",
-        images: galleryImgs,
-        image: galleryImgs[0] || primaryImg,
-        hoverImage: galleryImgs[1] || galleryImgs[0] || hoverImg,
+        images: cleanImages,
+        image: cleanImages[0] || primaryImg,
+        hoverImage: cleanImages[1] || cleanImages[0] || hoverImg,
         inStock: product.inStock !== false,
       },
     ];
   }
-
-  const cleanImages = Array.isArray(product.images) && product.images.length > 0 && product.images[0] === primaryImg
-    ? product.images.filter(Boolean)
-    : [primaryImg, hoverImg].filter(Boolean);
 
   return {
     ...product,
@@ -413,10 +437,22 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
   try {
     localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(updated));
   } catch {}
+
+  // Sync with central backend API
+  try {
+    await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+  } catch {}
+
   try {
     const docRef = doc(db, "categories", category.id);
     await setDoc(docRef, category, { merge: true });
   } catch {}
+
+  broadcastCrossDeviceSync("categories", updated);
 }
 
 export async function deleteCategory(id: string): Promise<void> {
@@ -424,21 +460,104 @@ export async function deleteCategory(id: string): Promise<void> {
   try {
     localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(current));
   } catch {}
+
+  // Sync with central backend API
+  try {
+    await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(current),
+    });
+  } catch {}
+
   try {
     const docRef = doc(db, "categories", id);
     await deleteDoc(docRef);
   } catch {}
+
+  broadcastCrossDeviceSync("categories", current);
+}
+
+// Helper to append/update anti-cache timestamp parameter on uploaded images
+function applyImageCacheBuster(url: string | undefined): string {
+  if (!url || typeof url !== "string") return "";
+  if (url.startsWith("/uploads/")) {
+    const clean = url.split("?")[0];
+    return `${clean}?v=${Date.now()}`;
+  }
+  return url;
 }
 
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
+  // Immediately serve cached products for instant layout
   callback(getCachedProducts());
 
-  // Listen to immediate custom window events dispatched during admin operations
+  let active = true;
+
+  // Active sync function: fetches from central backend API with anti-cache headers
+  const fetchLiveProducts = async () => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/products?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (res.ok) {
+        const apiData = await res.json();
+        if (Array.isArray(apiData) && apiData.length > 0) {
+          const normalized = apiData.map(ensureProductVariants);
+          const current = getCachedProducts();
+          // Check if data changed to avoid redundant re-renders
+          const currentStr = JSON.stringify(current);
+          const newStr = JSON.stringify(normalized);
+          if (currentStr !== newStr) {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
+          return;
+        }
+      }
+    } catch {}
+
+    // Fallback to static JSON file if server endpoint temporarily unavailable
+    try {
+      const staticRes = await fetch(`/data/products.json?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (Array.isArray(staticData) && staticData.length > 0) {
+          const normalized = staticData.map(ensureProductVariants);
+          const current = getCachedProducts();
+          if (JSON.stringify(current) !== JSON.stringify(normalized)) {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
+        }
+      }
+    } catch {}
+  };
+
+  // 1. Initial live fetch immediately
+  fetchLiveProducts();
+
+  // 2. Active background polling interval (every 7s) for seamless cross-device synchronization (Mobile, Tablet, Laptop)
+  const pollTimer = setInterval(fetchLiveProducts, 7000);
+
+  // 3. Listen to window focus & visibility changes (e.g. when user switches from Mobile to Laptop or switches tabs)
+  const handleFocusOrVisible = () => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      fetchLiveProducts();
+    }
+  };
+
+  // 4. Listen to local/custom events dispatched during admin operations
   const handleCatalogUpdate = (e: any) => {
     if (Array.isArray(e.detail) && e.detail.length > 0) {
       callback(e.detail.map(ensureProductVariants));
     }
   };
+
   const handleSingleProductSaved = (e: any) => {
     if (e.detail && e.detail.id) {
       const current = getCachedProducts();
@@ -451,34 +570,35 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     }
   };
 
+  // 5. BroadcastChannel handler for 0ms cross-tab & cross-window updates
+  const handleBroadcastMessage = (event: MessageEvent) => {
+    if (event.data?.type === "products") {
+      fetchLiveProducts();
+    }
+  };
+
   if (typeof window !== "undefined") {
+    window.addEventListener("focus", handleFocusOrVisible);
+    window.addEventListener("online", handleFocusOrVisible);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdate);
     window.addEventListener("hos-product-saved", handleSingleProductSaved);
+    window.addEventListener("hos-product-deleted", fetchLiveProducts);
+    window.addEventListener("storage", (e) => {
+      if (e.key === PRODUCTS_CACHE_KEY) {
+        callback(getCachedProducts());
+      }
+    });
   }
 
-  // Fetch freshest live products from API endpoint first
-  fetch(`/api/products?v=${Date.now()}`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((apiData) => {
-      if (Array.isArray(apiData) && apiData.length > 0) {
-        const normalized = apiData.map(ensureProductVariants);
-        cacheProductsLocally(normalized);
-        callback(normalized);
-        return;
-      }
-      // Fallback to static JSON file if API not reachable
-      return fetch(`/data/products.json?v=${Date.now()}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((staticData) => {
-          if (Array.isArray(staticData) && staticData.length > 0) {
-            const normalized = staticData.map(ensureProductVariants);
-            cacheProductsLocally(normalized);
-            callback(normalized);
-          }
-        });
-    })
-    .catch(() => {});
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+  }
 
+  if (syncChannel) {
+    syncChannel.addEventListener("message", handleBroadcastMessage);
+  }
+
+  // 6. Firestore real-time listener (when available)
   let unsubFs = () => {};
   try {
     const colRef = collection(db, "products");
@@ -496,19 +616,53 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   } catch {}
 
   return () => {
+    active = false;
+    clearInterval(pollTimer);
     unsubFs();
     if (typeof window !== "undefined") {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      window.removeEventListener("online", handleFocusOrVisible);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdate);
       window.removeEventListener("hos-product-saved", handleSingleProductSaved);
+      window.removeEventListener("hos-product-deleted", fetchLiveProducts);
+    }
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
+    }
+    if (syncChannel) {
+      syncChannel.removeEventListener("message", handleBroadcastMessage);
     }
   };
 }
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean }> {
   const id = product.id || `hos-${Date.now()}`;
+
+  // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
+  const cleanImage = applyImageCacheBuster(product.image);
+  const cleanHover = applyImageCacheBuster(product.hoverImage || cleanImage);
+  const cleanImages = (product.images || [cleanImage, cleanHover])
+    .filter(Boolean)
+    .map(applyImageCacheBuster);
+
+  const updatedVariants = Array.isArray(product.colorVariants)
+    ? product.colorVariants.map((v) => ({
+        ...v,
+        image: applyImageCacheBuster(v.image || cleanImage),
+        hoverImage: applyImageCacheBuster(v.hoverImage || cleanHover),
+        images: Array.isArray(v.images) && v.images.length > 0
+          ? v.images.map(applyImageCacheBuster)
+          : cleanImages,
+      }))
+    : undefined;
+
   const sanitized = ensureProductVariants({
     ...product,
     id,
+    image: cleanImage,
+    hoverImage: cleanHover,
+    images: cleanImages,
+    colorVariants: updatedVariants,
     updatedAt: new Date().toISOString(),
   });
 
@@ -518,7 +672,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   if (existingIdx > -1) updated[existingIdx] = sanitized;
   cacheProductsLocally(updated);
 
-  // Sync with Backend API endpoint
+  // 1. Sync with Centralized Backend API endpoint (/api/products)
   try {
     const apiRes = await fetch("/api/products", {
       method: "POST",
@@ -537,17 +691,18 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     console.warn("Backend API sync notice:", apiErr);
   }
 
-  // Sync to Firestore
+  // 2. Sync to Firestore
   try {
     const docRef = doc(db, "products", id);
     await setDoc(docRef, sanitized, { merge: true });
   } catch {}
 
-  // Dispatch custom event for real-time reactivity
+  // 3. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
   }
+  broadcastCrossDeviceSync("products", updated);
 
   return { id, success: true };
 }
@@ -555,20 +710,26 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 export async function deleteProduct(id: string): Promise<void> {
   const current = getCachedProducts().filter((p) => p.id !== id);
   cacheProductsLocally(current);
+
+  // 1. Central Backend API deletion
   try {
     await fetch(`/api/products/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   } catch {}
+
+  // 2. Firestore deletion
   try {
     const docRef = doc(db, "products", id);
     await deleteDoc(docRef);
   } catch {}
 
+  // 3. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
   }
+  broadcastCrossDeviceSync("products", current);
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {
@@ -670,6 +831,7 @@ export async function createRealOrder(
   }
 
   window.dispatchEvent(new CustomEvent("hos-order-created", { detail: fullOrder }));
+  broadcastCrossDeviceSync("orders", fullOrder);
   return fullOrder;
 }
 
@@ -754,31 +916,145 @@ export async function updateOrderStatus(
 ): Promise<void> {
   const current = getCachedOrders();
   const idx = current.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+  const now = new Date().toISOString();
+  const payload = {
+    orderStatus,
+    status: orderStatus,
+    trackingCourier: trackingCourier || null,
+    trackingNumber: trackingNumber || null,
+    updatedAt: now,
+  };
+
   if (idx > -1) {
     current[idx] = {
       ...current[idx],
-      orderStatus,
+      ...payload,
       trackingCourier: trackingCourier ?? current[idx].trackingCourier,
       trackingNumber: trackingNumber ?? current[idx].trackingNumber,
-      updatedAt: new Date().toISOString(),
     };
     cacheOrdersLocally(current);
   }
 
+  // 1. Sync to central backend API
   try {
-    const docRef = doc(db, "orders", orderId);
-    await updateDoc(docRef, {
-      orderStatus,
-      trackingCourier: trackingCourier || null,
-      trackingNumber: trackingNumber || null,
-      updatedAt: new Date().toISOString(),
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
   } catch {}
+
+  // 2. Sync to Firestore
+  try {
+    const docRef = doc(db, "orders", orderId);
+    await updateDoc(docRef, payload);
+  } catch {}
+
+  // 3. Broadcast update
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: { orderId, ...payload } }));
+  }
+  broadcastCrossDeviceSync("orders");
 }
 
 export function subscribeOrders(callback: (orders: Order[]) => void): () => void {
+  // Immediately serve cached orders
   callback(getCachedOrders());
 
+  let active = true;
+
+  // Active sync function: fetches from central backend API with anti-cache headers
+  const fetchLiveOrders = async () => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/orders?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (res.ok) {
+        const apiData = await res.json();
+        if (Array.isArray(apiData)) {
+          const sorted = [...apiData].sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+          const current = getCachedOrders();
+          if (JSON.stringify(current) !== JSON.stringify(sorted)) {
+            cacheOrdersLocally(sorted);
+            callback(sorted);
+          }
+          return;
+        }
+      }
+    } catch {}
+
+    // Fallback to static JSON file if server endpoint temporarily unavailable
+    try {
+      const staticRes = await fetch(`/data/orders.json?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (Array.isArray(staticData)) {
+          const sorted = [...staticData].sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+          const current = getCachedOrders();
+          if (JSON.stringify(current) !== JSON.stringify(sorted)) {
+            cacheOrdersLocally(sorted);
+            callback(sorted);
+          }
+        }
+      }
+    } catch {}
+  };
+
+  // 1. Initial live fetch immediately
+  fetchLiveOrders();
+
+  // 2. Active background polling interval (every 7s) for seamless cross-device synchronization
+  const pollTimer = setInterval(fetchLiveOrders, 7000);
+
+  // 3. Listen to window focus & visibility changes
+  const handleFocusOrVisible = () => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      fetchLiveOrders();
+    }
+  };
+
+  // 4. Listen to local/custom order events
+  const handleOrderChange = () => {
+    fetchLiveOrders();
+  };
+
+  // 5. BroadcastChannel handler for 0ms cross-device & cross-tab updates
+  const handleBroadcastMessage = (event: MessageEvent) => {
+    if (event.data?.type === "orders") {
+      fetchLiveOrders();
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", handleFocusOrVisible);
+    window.addEventListener("online", handleFocusOrVisible);
+    window.addEventListener("hos-order-created", handleOrderChange);
+    window.addEventListener("hos-order-updated", handleOrderChange);
+    window.addEventListener("hos-orders-updated", handleOrderChange);
+    window.addEventListener("storage", (e) => {
+      if (e.key === ORDERS_CACHE_KEY) {
+        callback(getCachedOrders());
+      }
+    });
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+  }
+
+  if (syncChannel) {
+    syncChannel.addEventListener("message", handleBroadcastMessage);
+  }
+
+  // 6. Firestore real-time listener
   let unsubFs = () => {};
   try {
     const colRef = collection(db, "orders");
@@ -797,7 +1073,22 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
   } catch {}
 
   return () => {
+    active = false;
+    clearInterval(pollTimer);
     unsubFs();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      window.removeEventListener("online", handleFocusOrVisible);
+      window.removeEventListener("hos-order-created", handleOrderChange);
+      window.removeEventListener("hos-order-updated", handleOrderChange);
+      window.removeEventListener("hos-orders-updated", handleOrderChange);
+    }
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
+    }
+    if (syncChannel) {
+      syncChannel.removeEventListener("message", handleBroadcastMessage);
+    }
   };
 }
 
@@ -1468,12 +1759,28 @@ export async function adminUpdateOrder(
     cacheOrdersLocally(current);
   }
 
+  // 1. Sync to central backend API
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...updates, updatedAt: now }),
+    });
+  } catch {}
+
+  // 2. Sync to Firestore
   try {
     const docRef = doc(db, "orders", orderId);
     await updateDoc(docRef, { ...updates, updatedAt: now });
   } catch (e) {
     console.warn("Firestore adminUpdateOrder error:", e);
   }
+
+  // 3. Broadcast real-time event
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: { orderId, ...updates } }));
+  }
+  broadcastCrossDeviceSync("orders");
 }
 
 export async function adminDeleteOrder(orderId: string): Promise<void> {
@@ -1481,10 +1788,24 @@ export async function adminDeleteOrder(orderId: string): Promise<void> {
   const filtered = current.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
   cacheOrdersLocally(filtered);
 
+  // 1. Central backend API deletion
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "DELETE",
+    });
+  } catch {}
+
+  // 2. Firestore deletion
   try {
     const docRef = doc(db, "orders", orderId);
     await deleteDoc(docRef);
   } catch (e) {
     console.warn("Firestore adminDeleteOrder error:", e);
   }
+
+  // 3. Broadcast real-time event
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: filtered }));
+  }
+  broadcastCrossDeviceSync("orders", filtered);
 }

@@ -2,14 +2,21 @@ import type { Connect, Plugin } from "vite";
 import fs from "fs";
 import path from "path";
 
-// In-memory cache for ultra-fast instant rendering of uploaded photos
-const memoryUploadsCache = new Map<string, { mime: string; buffer: Buffer }>();
+// In-memory cache for ultra-fast instant rendering of uploaded photos with timestamp tracking
+const memoryUploadsCache = new Map<string, { mime: string; buffer: Buffer; mtimeMs: number }>();
 
 // 1x1 transparent PNG fallback buffer
 const TRANSPARENT_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
   "base64"
 );
+
+function setAntiCacheHeaders(res: any) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+}
 
 function getProductsFilePath(): string {
   const publicPath = path.resolve(process.cwd(), "public/data/products.json");
@@ -103,51 +110,71 @@ export function apiMiddlewarePlugin(): Plugin {
         return;
       }
 
-      // 1. Check in-memory cache
-      if (memoryUploadsCache.has(filename)) {
-        const item = memoryUploadsCache.get(filename)!;
-        res.setHeader("Content-Type", item.mime);
-        res.setHeader("Content-Length", item.buffer.length);
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-        res.statusCode = 200;
-        res.end(item.buffer);
-        return;
-      }
-
-      // 2. Check filesystem
+      // Check filesystem first to ensure file exists and is fresh
       const possiblePaths = [
         path.resolve(process.cwd(), "public/uploads", filename),
         path.resolve(process.cwd(), "dist/uploads", filename),
       ];
 
+      let foundPath: string | null = null;
       for (const p of possiblePaths) {
         if (fs.existsSync(p)) {
-          try {
-            const data = fs.readFileSync(p);
-            let mime = "image/jpeg";
-            const ext = path.extname(filename).toLowerCase();
-            if (ext === ".png") mime = "image/png";
-            else if (ext === ".webp") mime = "image/webp";
-            else if (ext === ".svg") mime = "image/svg+xml";
-            else if (ext === ".gif") mime = "image/gif";
-
-            memoryUploadsCache.set(filename, { mime, buffer: data });
-
-            res.setHeader("Content-Type", mime);
-            res.setHeader("Content-Length", data.length);
-            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-            res.statusCode = 200;
-            res.end(data);
-            return;
-          } catch (readErr) {
-            console.warn("[Uploads Server] Read error:", readErr);
-          }
+          foundPath = p;
+          break;
         }
       }
 
-      // 3. Fallback: If not found, return image fallback (NEVER HTML)
+      if (foundPath) {
+        try {
+          const stat = fs.statSync(foundPath);
+          const etag = `"${filename}-${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}"`;
+
+          // Check If-None-Match header for conditional 304 response
+          const ifNoneMatch = req.headers["if-none-match"];
+          if (ifNoneMatch && ifNoneMatch === etag) {
+            res.setHeader("ETag", etag);
+            res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120, stale-while-revalidate=60");
+            res.statusCode = 304;
+            res.end();
+            return;
+          }
+
+          let buffer: Buffer;
+          let mime = "image/jpeg";
+          const ext = path.extname(filename).toLowerCase();
+          if (ext === ".png") mime = "image/png";
+          else if (ext === ".webp") mime = "image/webp";
+          else if (ext === ".svg") mime = "image/svg+xml";
+          else if (ext === ".gif") mime = "image/gif";
+
+          // Use memory cache only if modification timestamp matches
+          const cached = memoryUploadsCache.get(filename);
+          if (cached && cached.mtimeMs === stat.mtimeMs) {
+            buffer = cached.buffer;
+            mime = cached.mime;
+          } else {
+            buffer = fs.readFileSync(foundPath);
+            memoryUploadsCache.set(filename, { mime, buffer, mtimeMs: stat.mtimeMs });
+          }
+
+          res.setHeader("Content-Type", mime);
+          res.setHeader("Content-Length", buffer.length);
+          res.setHeader("ETag", etag);
+          // Smart caching: 60s browser, 120s Cloudflare CDN, stale-while-revalidate for fast rendering without stuck caches
+          res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120, stale-while-revalidate=60");
+          res.statusCode = 200;
+          res.end(buffer);
+          return;
+        } catch (readErr) {
+          console.warn("[Uploads Server] Read error:", readErr);
+        }
+      }
+
+      // Fallback: If not found, evict from memory cache and return 404 with strict NO-CACHE
+      memoryUploadsCache.delete(filename);
       res.setHeader("Content-Type", "image/png");
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      res.setHeader("Pragma", "no-cache");
       res.statusCode = 404;
       res.end(TRANSPARENT_PNG);
       return;
@@ -169,6 +196,7 @@ export function apiMiddlewarePlugin(): Plugin {
 
         // 1. HEALTH CHECK: GET /api/health
         if (urlWithoutQuery === "/api/health" && method === "GET") {
+          setAntiCacheHeaders(res);
           res.setHeader("Content-Type", "application/json");
           res.statusCode = 200;
           res.end(JSON.stringify({ status: "healthy", timestamp: new Date().toISOString() }));
@@ -177,6 +205,8 @@ export function apiMiddlewarePlugin(): Plugin {
 
         // 2. PRODUCTS COLLECTION: /api/products
         if (urlWithoutQuery === "/api/products") {
+          setAntiCacheHeaders(res);
+
           if (method === "GET") {
             const products = readProducts();
             res.setHeader("Content-Type", "application/json");
@@ -236,6 +266,7 @@ export function apiMiddlewarePlugin(): Plugin {
         // 3. SINGLE PRODUCT ITEM: /api/products/:id
         const productMatch = urlWithoutQuery.match(/^\/api\/products\/([^/]+)$/);
         if (productMatch) {
+          setAntiCacheHeaders(res);
           const productId = decodeURIComponent(productMatch[1]);
           let products = readProducts();
 
@@ -297,6 +328,7 @@ export function apiMiddlewarePlugin(): Plugin {
 
         // 4. CATEGORIES: /api/categories
         if (urlWithoutQuery === "/api/categories") {
+          setAntiCacheHeaders(res);
           const catPath = path.resolve(process.cwd(), "public/data/categories.json");
           let categories: any[] = [];
           try {
@@ -334,68 +366,112 @@ export function apiMiddlewarePlugin(): Plugin {
           }
         }
 
-        // 5. DIRECT PHOTO UPLOAD: /api/upload
-        if (urlWithoutQuery === "/api/upload" && method === "POST") {
-          try {
-            const body = await parseJsonBody(req);
-            const rawData = body.dataUrl || body.image || body.base64;
-            if (!rawData || typeof rawData !== "string") {
+        // 5. DIRECT PHOTO UPLOAD & PURGE: /api/upload
+        if (urlWithoutQuery === "/api/upload") {
+          setAntiCacheHeaders(res);
+
+          // Support removing an image to completely purge it from disk and memory cache
+          if (method === "DELETE" || (method === "POST" && rawUrl.includes("delete"))) {
+            try {
+              let filenameToDelete = "";
+              const urlObj = new URL(rawUrl, "http://localhost:3000");
+              const queryTarget = urlObj.searchParams.get("filename") || urlObj.searchParams.get("url");
+              if (queryTarget) {
+                filenameToDelete = path.basename(queryTarget.split("?")[0]);
+              } else {
+                const body = await parseJsonBody(req);
+                const target = body.filename || body.url || body.image;
+                if (target) filenameToDelete = path.basename(String(target).split("?")[0]);
+              }
+
+              if (filenameToDelete && !filenameToDelete.includes("..") && filenameToDelete !== ".gitkeep") {
+                memoryUploadsCache.delete(filenameToDelete);
+                const pathsToDel = [
+                  path.resolve(process.cwd(), "public/uploads", filenameToDelete),
+                  path.resolve(process.cwd(), "dist/uploads", filenameToDelete),
+                ];
+                for (const p of pathsToDel) {
+                  if (fs.existsSync(p)) {
+                    try { fs.unlinkSync(p); } catch {}
+                  }
+                }
+              }
+
               res.setHeader("Content-Type", "application/json");
-              res.statusCode = 400;
-              res.end(JSON.stringify({ error: "Missing image dataUrl in request payload" }));
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, purged: filenameToDelete }));
+              return;
+            } catch (delErr: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: delErr.message }));
               return;
             }
+          }
 
-            // Extract mime type and base64 buffer
-            let ext = "jpg";
-            let mime = "image/jpeg";
-            let base64Data = rawData;
-            const matches = rawData.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
-            if (matches) {
-              const detectedSub = matches[1].toLowerCase();
-              if (detectedSub.includes("png")) { ext = "png"; mime = "image/png"; }
-              else if (detectedSub.includes("webp")) { ext = "webp"; mime = "image/webp"; }
-              else if (detectedSub.includes("gif")) { ext = "gif"; mime = "image/gif"; }
-              else if (detectedSub.includes("jpeg") || detectedSub.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
-              base64Data = matches[2];
+          if (method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const rawData = body.dataUrl || body.image || body.base64;
+              if (!rawData || typeof rawData !== "string") {
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: "Missing image dataUrl in request payload" }));
+                return;
+              }
+
+              // Extract mime type and base64 buffer
+              let ext = "jpg";
+              let mime = "image/jpeg";
+              let base64Data = rawData;
+              const matches = rawData.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+              if (matches) {
+                const detectedSub = matches[1].toLowerCase();
+                if (detectedSub.includes("png")) { ext = "png"; mime = "image/png"; }
+                else if (detectedSub.includes("webp")) { ext = "webp"; mime = "image/webp"; }
+                else if (detectedSub.includes("gif")) { ext = "gif"; mime = "image/gif"; }
+                else if (detectedSub.includes("jpeg") || detectedSub.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
+                base64Data = matches[2];
+              }
+
+              const buffer = Buffer.from(base64Data, "base64");
+              const safePrefix = (body.filename || "upload")
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]/g, "-")
+                .slice(0, 24) || "upload";
+              const timestamp = Date.now();
+              const generatedFilename = `${safePrefix}-${timestamp}-${Math.floor(Math.random() * 10000)}.${ext}`;
+
+              const uploadsDir = path.resolve(process.cwd(), "public/uploads");
+              if (!fs.existsSync(uploadsDir)) {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+              }
+              const filePath = path.join(uploadsDir, generatedFilename);
+              fs.writeFileSync(filePath, buffer);
+
+              // Also copy to dist/uploads if dist exists
+              const distUploadsDir = path.resolve(process.cwd(), "dist/uploads");
+              if (fs.existsSync(distUploadsDir)) {
+                try {
+                  fs.writeFileSync(path.join(distUploadsDir, generatedFilename), buffer);
+                } catch {}
+              }
+
+              // Immediately prime the in-memory cache with timestamp
+              memoryUploadsCache.set(generatedFilename, { mime, buffer, mtimeMs: timestamp });
+
+              const publicUrl = `/uploads/${generatedFilename}?v=${timestamp}`;
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, url: publicUrl, filename: generatedFilename }));
+              return;
+            } catch (err: any) {
+              console.error("[API Middleware] Photo upload error:", err);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: err.message || "Failed to process photo upload" }));
+              return;
             }
-
-            const buffer = Buffer.from(base64Data, "base64");
-            const safePrefix = (body.filename || "upload")
-              .toLowerCase()
-              .replace(/[^a-z0-9_-]/g, "-")
-              .slice(0, 24) || "upload";
-            const generatedFilename = `${safePrefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
-
-            const uploadsDir = path.resolve(process.cwd(), "public/uploads");
-            if (!fs.existsSync(uploadsDir)) {
-              fs.mkdirSync(uploadsDir, { recursive: true });
-            }
-            const filePath = path.join(uploadsDir, generatedFilename);
-            fs.writeFileSync(filePath, buffer);
-
-            // Also copy to dist/uploads if dist exists
-            const distUploadsDir = path.resolve(process.cwd(), "dist/uploads");
-            if (fs.existsSync(distUploadsDir)) {
-              try {
-                fs.writeFileSync(path.join(distUploadsDir, generatedFilename), buffer);
-              } catch {}
-            }
-
-            // Immediately prime the in-memory cache for 0ms latency
-            memoryUploadsCache.set(generatedFilename, { mime, buffer });
-
-            const publicUrl = `/uploads/${generatedFilename}`;
-            res.setHeader("Content-Type", "application/json");
-            res.statusCode = 200;
-            res.end(JSON.stringify({ success: true, url: publicUrl, filename: generatedFilename }));
-            return;
-          } catch (err: any) {
-            console.error("[API Middleware] Photo upload error:", err);
-            res.setHeader("Content-Type", "application/json");
-            res.statusCode = 500;
-            res.end(JSON.stringify({ error: err.message || "Failed to process photo upload" }));
-            return;
           }
         }
 
@@ -403,6 +479,7 @@ export function apiMiddlewarePlugin(): Plugin {
         // 5B. SITE CONTENT (HERO BANNERS, SITE TEXT): /api/site-content
         // ============================================================
         if (urlWithoutQuery === "/api/site-content") {
+          setAntiCacheHeaders(res);
           const publicContentPath = path.resolve(process.cwd(), "public/data/siteContent.json");
           const srcContentPath = path.resolve(process.cwd(), "src/data/siteContent.json");
 
@@ -467,6 +544,7 @@ export function apiMiddlewarePlugin(): Plugin {
         // 6. ORDERS COLLECTION & SHIPROCKET AUTO-FULFILLMENT: /api/orders
         // ============================================================
         if (urlWithoutQuery === "/api/orders") {
+          setAntiCacheHeaders(res);
           const ordersPath = path.resolve(process.cwd(), "public/data/orders.json");
           const readOrdersList = (): any[] => {
             try {
@@ -577,6 +655,98 @@ export function apiMiddlewarePlugin(): Plugin {
               return;
             }
           }
+        }
+
+        // ============================================================
+        // 6B. SINGLE ORDER ITEM: /api/orders/:id
+        // ============================================================
+        const orderItemMatch = urlWithoutQuery.match(/^\/api\/orders\/([^/]+)$/);
+        if (orderItemMatch) {
+          setAntiCacheHeaders(res);
+          const orderId = decodeURIComponent(orderItemMatch[1]);
+          const ordersPath = path.resolve(process.cwd(), "public/data/orders.json");
+
+          const readOrdersList = (): any[] => {
+            try {
+              if (fs.existsSync(ordersPath)) {
+                const data = fs.readFileSync(ordersPath, "utf-8");
+                const parsed = JSON.parse(data);
+                if (Array.isArray(parsed)) return parsed;
+              }
+            } catch {}
+            return [];
+          };
+
+          const writeOrdersList = (list: any[]) => {
+            try {
+              const dir = path.dirname(ordersPath);
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
+              const srcOrders = path.resolve(process.cwd(), "src/data/orders.json");
+              if (fs.existsSync(path.dirname(srcOrders))) {
+                fs.writeFileSync(srcOrders, JSON.stringify(list, null, 2), "utf-8");
+              }
+            } catch (err) {
+              console.error("[API Middleware] Error writing orders:", err);
+            }
+          };
+
+          let orders = readOrdersList();
+
+          if (method === "GET") {
+            const found = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+            res.setHeader("Content-Type", "application/json");
+            if (found) {
+              res.statusCode = 200;
+              res.end(JSON.stringify(found));
+            } else {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: `Order not found: ${orderId}` }));
+            }
+            return;
+          }
+
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
+            try {
+              const body = await parseJsonBody(req);
+              const now = new Date().toISOString();
+              const idx = orders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+              let updatedOrder: any;
+
+              if (idx > -1) {
+                updatedOrder = { ...orders[idx], ...body, updatedAt: now };
+                orders[idx] = updatedOrder;
+              } else {
+                updatedOrder = { ...body, id: orderId, updatedAt: now };
+                orders.unshift(updatedOrder);
+              }
+
+              writeOrdersList(orders);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, order: updatedOrder, count: orders.length }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Invalid JSON payload" }));
+              return;
+            }
+          }
+
+          if (method === "DELETE") {
+            const filtered = orders.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
+            writeOrdersList(filtered);
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, id: orderId, count: filtered.length }));
+            return;
+          }
+
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: `Method ${method} not allowed on /api/orders/${orderId}` }));
+          return;
         }
 
         // ============================================================

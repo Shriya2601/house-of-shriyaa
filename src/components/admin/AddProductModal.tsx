@@ -133,19 +133,34 @@ export default function AddProductModal({
   const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
   const [image, setImage] = useState("");
   const [hoverImage, setHoverImage] = useState("");
+  const [extraImages, setExtraImages] = useState<string[]>([]);
   const [mainImageDetails, setMainImageDetails] = useState<{ name: string; size: string } | null>(null);
   const [hoverImageDetails, setHoverImageDetails] = useState<{ name: string; size: string } | null>(null);
   const [isProcessingMain, setIsProcessingMain] = useState(false);
   const [isProcessingHover, setIsProcessingHover] = useState(false);
+  const [isProcessingExtra, setIsProcessingExtra] = useState(false);
   const [isDragOverMain, setIsDragOverMain] = useState(false);
   const [isDragOverHover, setIsDragOverHover] = useState(false);
 
   // File Input References
   const mainFileInputRef = useRef<HTMLInputElement>(null);
   const hoverFileInputRef = useRef<HTMLInputElement>(null);
+  const extraFileInputRef = useRef<HTMLInputElement>(null);
 
   const [inStock, setInStock] = useState(true);
   const [selectedBadge, setSelectedBadge] = useState("New Drop");
+
+  // Helper to immediately purge removed image from server disk & prevent caching
+  const purgeOldImage = async (url: string) => {
+    if (!url || typeof url !== "string") return;
+    try {
+      if (url.startsWith("/uploads/")) {
+        await fetch(`/api/upload?url=${encodeURIComponent(url)}`, {
+          method: "DELETE",
+        });
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     if (productToEdit) {
@@ -159,6 +174,11 @@ export default function AddProductModal({
       setDescription(productToEdit.description || "");
       setImage(productToEdit.image || "");
       setHoverImage(productToEdit.hoverImage || productToEdit.image || "");
+      const allImgs = Array.isArray(productToEdit.images) ? productToEdit.images.filter(Boolean) : [];
+      const extras = allImgs.filter(
+        (u) => u !== productToEdit.image && u !== productToEdit.hoverImage
+      );
+      setExtraImages(extras);
       setInStock(productToEdit.inStock !== false);
       setSelectedBadge(productToEdit.badges?.[0] || "New Drop");
       setMainImageDetails(productToEdit.image ? { name: "Current Product Photo", size: "Ready" } : null);
@@ -177,6 +197,7 @@ export default function AddProductModal({
       );
       setImage("");
       setHoverImage("");
+      setExtraImages([]);
       setMainImageDetails(null);
       setHoverImageDetails(null);
       setInStock(true);
@@ -267,6 +288,43 @@ export default function AddProductModal({
     }
   };
 
+  // Handle Additional Gallery Image File Select
+  const handleExtraFileChange = async (file: File) => {
+    setIsProcessingExtra(true);
+    setError(null);
+    try {
+      const { dataUrl } = await compressImageFile(file);
+      let finalUrl = dataUrl;
+      try {
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl, filename: file.name }),
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.url) {
+            finalUrl = uploadJson.url;
+          }
+        }
+      } catch (uploadErr) {
+        console.warn("Gallery upload fallback to dataUrl", uploadErr);
+      }
+
+      setExtraImages((prev) => [...prev, finalUrl]);
+    } catch (err: any) {
+      setError(err?.message || "Failed to upload gallery photo.");
+    } finally {
+      setIsProcessingExtra(false);
+    }
+  };
+
+  const handleRemoveExtraImage = (indexToRemove: number) => {
+    const targetUrl = extraImages[indexToRemove];
+    if (targetUrl) purgeOldImage(targetUrl);
+    setExtraImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -316,7 +374,11 @@ export default function AddProductModal({
       } catch {}
     }
 
-    const finalImages = [finalMainImg, finalHoverImage].filter(Boolean);
+    const finalImages = [
+      finalMainImg,
+      finalHoverImage && finalHoverImage !== finalMainImg ? finalHoverImage : null,
+      ...extraImages.filter((u) => u && u !== finalMainImg && u !== finalHoverImage),
+    ].filter(Boolean) as string[];
 
     const productPayload: Product = {
       id: prodId,
@@ -507,6 +569,7 @@ export default function AddProductModal({
                         <button
                           type="button"
                           onClick={() => {
+                            if (image) purgeOldImage(image);
                             setImage("");
                             setMainImageDetails(null);
                           }}
@@ -605,12 +668,14 @@ export default function AddProductModal({
                         <button
                           type="button"
                           onClick={() => {
-                            setHoverImage(image);
+                            if (hoverImage && hoverImage !== image) purgeOldImage(hoverImage);
+                            setHoverImage("");
                             setHoverImageDetails(null);
                           }}
-                          className="px-2.5 py-1 text-[11px] font-medium text-stone-500 hover:bg-stone-100 rounded-md transition-colors cursor-pointer"
+                          className="px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                         >
-                          <span>Reset</span>
+                          <Trash2 size={11} />
+                          <span>Remove</span>
                         </button>
                       </div>
                     </div>
@@ -647,6 +712,68 @@ export default function AddProductModal({
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* 3. Additional Gallery Photos */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
+                    <span>3. Additional Gallery Photos (Optional)</span>
+                    <span className="text-[11px] text-stone-400 font-normal">
+                      {extraImages.length} additional {extraImages.length === 1 ? "photo" : "photos"}
+                    </span>
+                  </label>
+
+                  <input
+                    ref={extraFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleExtraFileChange(f);
+                      e.target.value = "";
+                    }}
+                  />
+
+                  {extraImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2.5 mb-2.5">
+                      {extraImages.map((extraImg, idx) => (
+                        <div
+                          key={idx}
+                          className="relative group w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shadow-2xs"
+                        >
+                          <img src={extraImg} alt={`Gallery ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExtraImage(idx)}
+                            className="absolute top-1 right-1 p-1 rounded-md bg-black/60 hover:bg-red-600 text-white transition-colors cursor-pointer"
+                            title="Remove photo"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => extraFileInputRef.current?.click()}
+                    disabled={isProcessingExtra}
+                    className="w-full py-2.5 px-3 border border-dashed border-stone-300 hover:border-[#0d4f3c] hover:bg-[#faf8f5] rounded-xl text-xs text-stone-600 font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {isProcessingExtra ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin text-[#0d4f3c]" />
+                        <span>Optimizing & uploading photo...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={13} className="text-[#0d4f3c]" />
+                        <span>Add Another Gallery Photo</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             ) : (
