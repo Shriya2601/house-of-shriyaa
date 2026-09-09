@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 3000,
       allowedHosts: true as const,
-      hmr: process.env.DISABLE_HMR !== 'true',
+      hmr: false,
+      ws: false,
       watch: {
         ignored: [
           '**/src/data/**',
