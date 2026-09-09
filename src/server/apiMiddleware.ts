@@ -136,7 +136,7 @@ function setCorsHeaders(res: any) {
 }
 
 function parseJsonBody(req: any): Promise<any> {
-  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
+  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
     return Promise.resolve(req.body);
   }
   return new Promise((resolve, reject) => {
@@ -1119,9 +1119,15 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         // ============================================================
         // 7. SHIPROCKET DEDICATED ROUTES (/api/shipping/shiprocket/*)
         // ============================================================
-        if (urlWithoutQuery.startsWith("/api/shipping/shiprocket")) {
+        if (urlWithoutQuery.startsWith("/api/shipping/shiprocket") || urlWithoutQuery.startsWith("/api/shiprocket")) {
           setCorsHeaders(res);
           setAntiCacheHeaders(res);
+
+          if (method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
 
           const {
             testShiprocketAuth,
@@ -1230,46 +1236,93 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             }
           }
 
-          // C. Create Shipment / Push Order: POST /api/shipping/shiprocket/create-order
-          if (urlWithoutQuery === "/api/shipping/shiprocket/create-order" && method === "POST") {
-            try {
-              const body = await parseJsonBody(req);
-              const orderData = body.order || body;
-              const pickupOverride = body.pickupLocation;
+          // C. Create Shipment / Push Order: POST / PUT / PATCH / GET /api/shipping/shiprocket/create-order
+          const isCreateOrderRoute =
+            urlWithoutQuery === "/api/shipping/shiprocket/create-order" ||
+            urlWithoutQuery === "/api/shipping/shiprocket/create" ||
+            urlWithoutQuery === "/api/shipping/shiprocket/order" ||
+            urlWithoutQuery === "/api/shiprocket/create-order" ||
+            urlWithoutQuery === "/api/shiprocket/create";
 
-              const result = await createShiprocketOrder(orderData, pickupOverride);
+          if (isCreateOrderRoute) {
+            if (method === "OPTIONS") {
+              res.statusCode = 204;
+              res.end();
+              return;
+            }
 
-              // Update order in public/data/orders.json if present
-              const { updatePersistedOrder } = await import("./shiprocketService");
-              const updatedOrderRecord = {
-                ...orderData,
-                shiprocketOrderId: result.shiprocketOrderId,
-                shiprocketShipmentId: result.shipmentId,
-                trackingNumber: result.awbCode || orderData.trackingNumber,
-                trackingCourier: result.courierName || orderData.trackingCourier || "Shiprocket Express",
-                trackingUrl: result.trackingUrl,
-                shiprocketStatus: result.status,
-                shiprocketSyncedAt: new Date().toISOString(),
-                shiprocketError: result.error,
-              };
-              updatePersistedOrder(updatedOrderRecord);
+            if (method === "POST" || method === "PUT" || method === "PATCH") {
+              try {
+                const body = await parseJsonBody(req);
+                const orderData = body.order || body;
+                const pickupOverride = body.pickupLocation;
 
+                const result = await createShiprocketOrder(orderData, pickupOverride);
+
+                // Update order in public/data/orders.json if present
+                const { updatePersistedOrder } = await import("./shiprocketService");
+                const updatedOrderRecord = {
+                  ...orderData,
+                  shiprocketOrderId: result.shiprocketOrderId,
+                  shiprocketShipmentId: result.shipmentId,
+                  trackingNumber: result.awbCode || orderData.trackingNumber,
+                  trackingCourier: result.courierName || orderData.trackingCourier || "Shiprocket Express",
+                  trackingUrl: result.trackingUrl,
+                  shiprocketStatus: result.status,
+                  shiprocketSyncedAt: new Date().toISOString(),
+                  shiprocketError: result.error,
+                };
+                updatePersistedOrder(updatedOrderRecord);
+
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(
+                  JSON.stringify({
+                    success: result.success,
+                    shiprocket: result,
+                    order: updatedOrderRecord,
+                  })
+                );
+                return;
+              } catch (err: any) {
+                console.error("[Shiprocket API create-order error]:", err);
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(
+                  JSON.stringify({
+                    success: false,
+                    error: err.message || "Failed to process Shiprocket order dispatch",
+                    shiprocket: { success: false, error: err.message },
+                  })
+                );
+                return;
+              }
+            }
+
+            if (method === "GET") {
+              const urlObj = new URL(rawUrl, "http://localhost:3000");
+              const orderId = urlObj.searchParams.get("orderId") || urlObj.searchParams.get("id");
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(
                 JSON.stringify({
-                  success: result.success,
-                  shiprocket: result,
-                  order: updatedOrderRecord,
+                  success: true,
+                  message: "Shiprocket order creation endpoint is operational. Dispatch orders using POST with JSON payload.",
+                  orderId: orderId || null,
                 })
               );
               return;
-            } catch (err: any) {
-              res.setHeader("Content-Type", "application/json");
-              res.statusCode = 500;
-              res.end(JSON.stringify({ error: err.message }));
-              return;
             }
+
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: `HTTP ${method} received on create-order. Use POST to dispatch.`,
+              })
+            );
+            return;
           }
 
           // D. Live Tracking: GET /api/shipping/shiprocket/track
@@ -1462,6 +1515,17 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               return;
             }
           }
+
+          // Fallback handler for any unmatched Shiprocket path or method
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 200;
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: `Shiprocket endpoint ${urlWithoutQuery} (${method}) is ready. For order dispatch, use POST /api/shipping/shiprocket/create-order.`,
+            })
+          );
+          return;
         }
 
         // If request is targeting /api/*, ALWAYS handle it with JSON error, NEVER let it fall through to Vite SPA html!

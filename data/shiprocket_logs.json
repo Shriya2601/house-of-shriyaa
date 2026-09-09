@@ -2,6 +2,78 @@
   {
     "action": "CREATE_ORDER",
     "status": "FAILED",
+    "orderNumber": "TEST-1",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 1,
+    "id": "log_1788988787565_t8l6s",
+    "timestamp": "2026-09-09T21:19:47.565Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "HOS-12345",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 0,
+    "id": "log_1788988782831_v9j4k",
+    "timestamp": "2026-09-09T21:19:42.831Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "undefined",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 0,
+    "id": "log_1788988779759_znlol",
+    "timestamp": "2026-09-09T21:19:39.759Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "undefined",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 1,
+    "id": "log_1788988617684_7916o",
+    "timestamp": "2026-09-09T21:16:57.684Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "undefined",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 1,
+    "id": "log_1788988502240_050fg",
+    "timestamp": "2026-09-09T21:15:02.240Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "HOS-202609-2859",
+    "orderId": "ord_1788988499686_2859",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 1,
+    "id": "log_1788988499687_kxj0d",
+    "timestamp": "2026-09-09T21:14:59.687Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "HOS-TEST-1",
+    "orderId": "test-order-1",
+    "endpoint": "/orders/create/adhoc",
+    "errorMessage": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "durationMs": 0,
+    "id": "log_1788988451499_6bbcr",
+    "timestamp": "2026-09-09T21:14:11.499Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
     "orderNumber": "HOS-TEST",
     "orderId": "test",
     "endpoint": "/orders/create/adhoc",

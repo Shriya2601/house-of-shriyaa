@@ -1,5 +1,41 @@
 [
   {
+    "shiprocketOrderId": null,
+    "shiprocketShipmentId": null,
+    "trackingCourier": "Shiprocket Express",
+    "trackingUrl": null,
+    "shiprocketStatus": "FAILED_AUTH",
+    "shiprocketSyncedAt": "2026-09-09T21:19:47.565Z",
+    "shiprocketError": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "a": "1",
+    "orderNumber": "TEST-1"
+  },
+  {
+    "id": "ord_1788988499686_2859",
+    "orderNumber": "HOS-202609-2859",
+    "createdAt": "2026-09-09T21:14:59.686Z",
+    "updatedAt": "2026-09-09T21:14:59.686Z",
+    "orderStatus": "confirmed",
+    "paymentStatus": "Paid",
+    "shiprocketStatus": "PENDING_RETRY",
+    "shiprocketError": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.",
+    "shiprocketRetryCount": 1,
+    "shiprocketLastAttemptAt": "2026-09-09T21:14:59.687Z"
+  },
+  {
+    "id": "test-order-1",
+    "orderNumber": "HOS-TEST-1",
+    "total": 1999,
+    "items": [],
+    "shiprocketOrderId": null,
+    "shiprocketShipmentId": null,
+    "trackingCourier": "Shiprocket Express",
+    "trackingUrl": null,
+    "shiprocketStatus": "FAILED_AUTH",
+    "shiprocketSyncedAt": "2026-09-09T21:14:11.500Z",
+    "shiprocketError": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings."
+  },
+  {
     "id": "test",
     "orderNumber": "HOS-TEST",
     "items": [],

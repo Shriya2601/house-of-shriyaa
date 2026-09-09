@@ -32,8 +32,23 @@ function loadEnvFallback() {
         }
       }
     }
+
+    // Secondary fallback: data/shiprocket_config.json
+    const configPath = path.resolve(process.cwd(), "data/shiprocket_config.json");
+    if (fs.existsSync(configPath)) {
+      const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (cfg.email && !process.env.SHIPROCKET_API_EMAIL) {
+        process.env.SHIPROCKET_API_EMAIL = cfg.email.trim();
+      }
+      if (cfg.password && !process.env.SHIPROCKET_API_PASSWORD) {
+        process.env.SHIPROCKET_API_PASSWORD = cfg.password.trim();
+      }
+      if (cfg.pickupLocation && !process.env.SHIPROCKET_PICKUP_LOCATION) {
+        process.env.SHIPROCKET_PICKUP_LOCATION = cfg.pickupLocation.trim();
+      }
+    }
   } catch (err) {
-    console.warn("[Shiprocket] Notice loading .env fallback:", err);
+    console.warn("[Shiprocket] Notice loading .env/json fallback:", err);
   }
 }
 
@@ -99,6 +114,31 @@ export function updateShiprocketConfig(params: {
       newLines.push(`${k}="${v}"`);
     }
     fs.writeFileSync(envPath, newLines.join("\n") + "\n", "utf-8");
+
+    // Persist to data/shiprocket_config.json
+    try {
+      const dataDir = path.resolve(process.cwd(), "data");
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      const configJsonPath = path.resolve(dataDir, "shiprocket_config.json");
+      fs.writeFileSync(
+        configJsonPath,
+        JSON.stringify(
+          {
+            email: process.env.SHIPROCKET_API_EMAIL || "",
+            password: process.env.SHIPROCKET_API_PASSWORD || "",
+            pickupLocation: process.env.SHIPROCKET_PICKUP_LOCATION || "Home",
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+        "utf-8"
+      );
+    } catch (jsonErr) {
+      console.warn("[Shiprocket] Could not write data/shiprocket_config.json:", jsonErr);
+    }
 
     logShiprocketEvent({
       action: "CONFIG",

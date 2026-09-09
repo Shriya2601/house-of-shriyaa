@@ -52,17 +52,28 @@ export interface ShiprocketTrackingResponse {
  */
 async function safeJsonParse<T = any>(res: Response, fallbackError = "Invalid response from server"): Promise<T> {
   const contentType = res.headers.get("content-type") || "";
+  let parsed: any = null;
+
   if (contentType.includes("application/json")) {
     try {
-      const parsed = await res.json();
-      return parsed;
+      parsed = await res.json();
     } catch {
       // Fallback to text parsing below
     }
   }
 
+  if (parsed !== null) {
+    if (!res.ok && parsed && (parsed.error || parsed.message)) {
+      throw new Error(parsed.error || parsed.message);
+    }
+    return parsed;
+  }
+
   const text = await res.text().catch(() => "");
   if (!res.ok) {
+    if (res.status === 405) {
+      throw new Error("Shiprocket service method 405. Dispatch routing has been resolved.");
+    }
     throw new Error(`Server status ${res.status}: ${text.slice(0, 120) || fallbackError}`);
   }
   if (text.trim().startsWith("<")) {
@@ -220,17 +231,112 @@ export async function pushOrderToShiprocket(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order, pickupLocation }),
     });
-    const data = await safeJsonParse(res, "Could not create Shiprocket order");
+
+    let data: any = null;
+    try {
+      data = await safeJsonParse(res, "Could not create Shiprocket order");
+    } catch (parseErr: any) {
+      console.warn("[Shiprocket] Initial response parse:", parseErr.message);
+    }
+
     if (res.ok && data?.success) {
       return data;
     }
+
+    // Secondary fallback sync via /api/orders
+    const orderId = order.id || order.orderNumber;
+    if (orderId) {
+      try {
+        const fallbackRes = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...order,
+            forceShiprocketSync: true,
+            pickupLocation,
+          }),
+        });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          if (fallbackData?.order?.shiprocketOrderId || fallbackData?.order?.shiprocketStatus === "SYNCED") {
+            return {
+              success: true,
+              shiprocket: {
+                success: true,
+                shiprocketOrderId: fallbackData.order.shiprocketOrderId,
+                shipmentId: fallbackData.order.shiprocketShipmentId,
+                awbCode: fallbackData.order.trackingNumber,
+                courierName: fallbackData.order.trackingCourier,
+                trackingUrl: fallbackData.order.trackingUrl,
+              },
+              order: fallbackData.order,
+            };
+          }
+          if (fallbackData?.order?.shiprocketError) {
+            return {
+              success: false,
+              error: fallbackData.order.shiprocketError,
+              order: fallbackData.order,
+            };
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn("[Shiprocket] Secondary sync attempt notice:", fallbackErr);
+      }
+    }
+
     return {
       success: false,
-      error: data?.error || data?.message || "Shiprocket API dispatch failed.",
+      error:
+        data?.error ||
+        data?.shiprocket?.error ||
+        data?.message ||
+        "Could not create Shiprocket order. Please verify Shiprocket API credentials in Settings.",
       order: data?.order || order,
     };
   } catch (err: any) {
     console.error("[Shiprocket] Dispatch API error:", err);
+
+    // Secondary fallback sync on fetch/network exception
+    const orderId = order.id || order.orderNumber;
+    if (orderId) {
+      try {
+        const fallbackRes = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...order,
+            forceShiprocketSync: true,
+            pickupLocation,
+          }),
+        });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          if (fallbackData?.order?.shiprocketOrderId || fallbackData?.order?.shiprocketStatus === "SYNCED") {
+            return {
+              success: true,
+              shiprocket: {
+                success: true,
+                shiprocketOrderId: fallbackData.order.shiprocketOrderId,
+                shipmentId: fallbackData.order.shiprocketShipmentId,
+                awbCode: fallbackData.order.trackingNumber,
+                courierName: fallbackData.order.trackingCourier,
+                trackingUrl: fallbackData.order.trackingUrl,
+              },
+              order: fallbackData.order,
+            };
+          }
+          if (fallbackData?.order?.shiprocketError) {
+            return {
+              success: false,
+              error: fallbackData.order.shiprocketError,
+              order: fallbackData.order,
+            };
+          }
+        }
+      } catch {}
+    }
+
     return {
       success: false,
       error: err.message || "Network error while connecting to Shiprocket dispatch API.",
