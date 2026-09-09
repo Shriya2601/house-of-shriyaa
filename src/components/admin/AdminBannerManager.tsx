@@ -69,11 +69,14 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const isDirtyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize slides from store
+  // Initialize slides from store only when user has not made unsaved modifications
   useEffect(() => {
-    if (uploadingIndex !== null || isSaving) return;
+    if (isDirtyRef.current || uploadingIndex !== null || isSaving) return;
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
       // Ensure 3 slides minimum
       const merged = siteContent.heroSlides.map((s, idx) => ({
@@ -87,14 +90,15 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   const currentSlide = slides[activeSlideIndex] || slides[0];
 
-  // Update a field on the current slide
+  // Update a field on the current slide (pure state update without corrupting URLs on keystroke)
   const handleFieldChange = (field: keyof HeroSlide, value: string) => {
-    const finalVal = field === "image" ? normalizeImageUrl(value) : value;
+    setIsDirty(true);
+    isDirtyRef.current = true;
     setSlides((prev) => {
       const next = [...prev];
       next[activeSlideIndex] = {
         ...next[activeSlideIndex],
-        [field]: finalVal,
+        [field]: value,
       };
       return next;
     });
@@ -103,6 +107,8 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   // Reorder slides
   const handleMoveSlide = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= slides.length) return;
+    setIsDirty(true);
+    isDirtyRef.current = true;
     setSlides((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIdx, 1);
@@ -112,49 +118,66 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     setActiveSlideIndex(toIdx);
   };
 
-  // Image Upload Handler with client-side compression
-  const handleImageFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Core Image Compression and Upload Processor
+  const processAndUploadFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload a valid image file (JPEG, PNG, WebP, etc.).", "error");
+      return;
+    }
 
     setUploadingIndex(activeSlideIndex);
     try {
-      // Compress and convert to Base64
+      // Compress and convert to Base64 (max 1600px, high quality JPEG for universal compatibility)
       const compressedDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (event) => {
           const img = new Image();
           img.onload = () => {
-            const canvas = document.createElement("canvas");
-            const MAX_WIDTH = 1920;
-            const MAX_HEIGHT = 1080;
-            let width = img.width;
-            let height = img.height;
+            try {
+              const canvas = document.createElement("canvas");
+              const MAX_DIM = 1600;
+              let width = img.width;
+              let height = img.height;
 
-            if (width > height) {
-              if (width > MAX_WIDTH) {
-                height = Math.round((height * MAX_WIDTH) / width);
-                width = MAX_WIDTH;
+              if (width > height) {
+                if (width > MAX_DIM) {
+                  height = Math.round((height * MAX_DIM) / width);
+                  width = MAX_DIM;
+                }
+              } else {
+                if (height > MAX_DIM) {
+                  width = Math.round((width * MAX_DIM) / height);
+                  height = MAX_DIM;
+                }
               }
-            } else {
-              if (height > MAX_HEIGHT) {
-                width = Math.round((width * MAX_HEIGHT) / height);
-                height = MAX_HEIGHT;
-              }
-            }
 
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext("2d");
-            if (!ctx) {
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                resolve(event.target?.result as string);
+                return;
+              }
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = "high";
+              ctx.drawImage(img, 0, 0, width, height);
+
+              // Use image/jpeg with 0.86 quality for reliable multi-platform compression
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
+              resolve(dataUrl);
+            } catch (canvasErr) {
+              // Fallback to original dataUrl if canvas fails
               resolve(event.target?.result as string);
-              return;
             }
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL("image/webp", 0.88);
-            resolve(dataUrl);
           };
-          img.onerror = () => reject(new Error("Failed to load image file for processing"));
+          img.onerror = () => {
+            // Fallback directly to file reader output
+            if (event.target?.result) {
+              resolve(event.target.result as string);
+            } else {
+              reject(new Error("Unable to decode the selected photo file."));
+            }
+          };
           img.src = event.target?.result as string;
         };
         reader.onerror = (err) => reject(err);
@@ -179,10 +202,10 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
             uploadedUrl = resData.url;
           }
         } else {
-          console.warn(`[Banner Upload] Server returned status ${res.status}, continuing with high-quality optimized image.`);
+          console.warn(`[Banner Upload] Server returned status ${res.status}, continuing with optimized photo.`);
         }
       } catch (uploadErr) {
-        console.warn("[Banner Upload] Server upload endpoint unreachable, continuing with optimized image:", uploadErr);
+        console.warn("[Banner Upload] Server upload endpoint notice:", uploadErr);
       }
 
       // Update slide image state AND immediately persist it to disk and live website
@@ -195,15 +218,17 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           : s
       );
       setSlides(nextSlides);
+      isDirtyRef.current = false;
+      setIsDirty(false);
 
       try {
         await saveSiteContent({
           heroSlides: nextSlides,
         });
-        showToast(`Slide ${activeSlideIndex + 1} photo updated & published live to homepage!`, "success");
+        showToast(`Slide 0${activeSlideIndex + 1} photo uploaded & published live to homepage!`, "success");
       } catch (saveErr: any) {
         console.error("Auto-save banner content error:", saveErr);
-        showToast(`Slide ${activeSlideIndex + 1} image updated successfully!`, "success");
+        showToast(`Slide 0${activeSlideIndex + 1} image updated successfully!`, "success");
       }
     } catch (err: any) {
       console.error("Banner upload error:", err);
@@ -216,13 +241,53 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     }
   };
 
+  // Image Upload Handler from File Input
+  const handleImageFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processAndUploadFile(file);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processAndUploadFile(file);
+    }
+  };
+
   // Save all slides
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
+      // Normalize any raw URLs on final save
+      const normalizedSlides = slides.map((s) => ({
+        ...s,
+        image: normalizeImageUrl(s.image),
+      }));
+      setSlides(normalizedSlides);
+
       await saveSiteContent({
-        heroSlides: slides,
+        heroSlides: normalizedSlides,
       });
+      isDirtyRef.current = false;
+      setIsDirty(false);
       showToast("Homepage Hero Slideshow updated successfully! Live website refreshed.", "success");
     } catch (err: any) {
       console.error("Save site content error:", err);
@@ -243,6 +308,8 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       await saveSiteContent({
         heroSlides: DEFAULT_SLIDES,
       });
+      isDirtyRef.current = false;
+      setIsDirty(false);
       showToast("Homepage banners restored to original curated defaults.", "info");
     } catch (err: any) {
       showToast("Failed to reset: " + err.message, "error");
@@ -270,9 +337,20 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
               <ImageIcon size={18} />
             </span>
             <div>
-              <h2 className="font-serif font-bold text-lg text-[#1e1b18]">
-                Homepage Hero Slideshow & Banners
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-serif font-bold text-lg text-[#1e1b18]">
+                  Homepage Hero Slideshow & Banners
+                </h2>
+                {isDirty ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                    <AlertCircle size={10} /> Unsaved edits
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <CheckCircle2 size={10} /> Live on storefront
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-stone-500">
                 Manage the 3 rotating marquee banner images and headlines displayed on the storefront landing page.
               </p>
@@ -305,7 +383,11 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           <button
             onClick={handleSaveAll}
             disabled={isSaving}
-            className="px-4 py-2 bg-[#0d4f3c] hover:bg-[#0b3f30] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            className={`px-4 py-2 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
+              isDirty
+                ? "bg-[#0d4f3c] hover:bg-[#0b3f30] ring-2 ring-emerald-400 ring-offset-1 animate-pulse"
+                : "bg-[#0d4f3c] hover:bg-[#0b3f30]"
+            }`}
           >
             <Save size={14} />
             <span>{isSaving ? "Publishing Changes..." : "Publish Banners"}</span>
@@ -404,8 +486,18 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
               </div>
             </div>
 
-            {/* Simulated Storefront Hero Slide Card */}
-            <div className="relative rounded-lg overflow-hidden bg-stone-950 aspect-[4/5] shadow-md group">
+            {/* Simulated Storefront Hero Slide Card (Drag & Drop Zone) */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`relative rounded-lg overflow-hidden bg-stone-950 aspect-[4/5] shadow-md group cursor-pointer transition-all ${
+                isDragging
+                  ? "ring-4 ring-emerald-500 ring-offset-2 scale-[1.01]"
+                  : "hover:ring-2 hover:ring-stone-400"
+              }`}
+            >
               <img
                 src={normalizeImageUrl(currentSlide.image)}
                 alt={currentSlide.title}
@@ -416,9 +508,34 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 }}
               />
 
+              {/* Dragging Overlay */}
+              {isDragging && (
+                <div className="absolute inset-0 bg-[#0d4f3c]/85 backdrop-blur-xs flex flex-col items-center justify-center text-white z-20 animate-in fade-in duration-200">
+                  <Upload size={36} className="animate-bounce mb-2" />
+                  <p className="font-serif font-bold text-base">Drop photo to upload</p>
+                  <p className="text-xs text-stone-200">Release to immediately publish live</p>
+                </div>
+              )}
+
+              {/* Uploading Spinner Overlay */}
+              {uploadingIndex === activeSlideIndex && (
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center text-white z-20">
+                  <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                  <p className="text-xs font-semibold">Processing & publishing photo...</p>
+                </div>
+              )}
+
+              {/* Hover upload button hint */}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-none">
+                <span className="px-3.5 py-2 bg-white/95 text-stone-900 rounded-lg text-xs font-bold shadow-lg flex items-center gap-1.5 backdrop-blur-xs">
+                  <Upload size={14} className="text-[#0d4f3c]" />
+                  <span>Click or Drag photo to replace</span>
+                </span>
+              </div>
+
               {/* Gradient Overlays */}
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/40 to-transparent" />
-              <div className="absolute top-3 left-3 bg-[#0d4f3c]/90 backdrop-blur-xs text-white text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full shadow-xs">
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/40 to-transparent pointer-events-none" />
+              <div className="absolute top-3 left-3 bg-[#0d4f3c]/90 backdrop-blur-xs text-white text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full shadow-xs pointer-events-none">
                 {currentSlide.season || "FESTIVE 2026"}
               </div>
 

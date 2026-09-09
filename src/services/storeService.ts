@@ -341,13 +341,24 @@ export function cacheCategoriesLocally(cats: CategoryItem[]): void {
   } catch {}
 }
 
+export function sanitizeSiteContent(content: Partial<SiteContent>): Partial<SiteContent> {
+  if (content.announcementText) {
+    content.announcementText = content.announcementText
+      .replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "")
+      .replace(/Bespoke Shipping Across India\s*•?\s*/gi, "")
+      .trim();
+  }
+  return content;
+}
+
 export function getCachedSiteContent(): SiteContent {
   try {
     const raw = localStorage.getItem(SITE_CONTENT_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
-        return { ...defaultSiteContent, ...parsed };
+        const sanitized = sanitizeSiteContent(parsed);
+        return { ...defaultSiteContent, ...sanitized };
       }
     }
   } catch {}
@@ -356,7 +367,8 @@ export function getCachedSiteContent(): SiteContent {
 
 export function cacheSiteContentLocally(content: SiteContent): void {
   try {
-    localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(content));
+    const clean = sanitizeSiteContent({ ...content }) as SiteContent;
+    localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(clean));
   } catch {}
 }
 
@@ -494,10 +506,11 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<SiteContent> {
   const existing = getCachedSiteContent();
+  const sanitizedContent = sanitizeSiteContent({ ...content });
   const updated: SiteContent = {
     ...defaultSiteContent,
     ...existing,
-    ...content,
+    ...sanitizedContent,
     updatedAt: new Date().toISOString(),
   };
 

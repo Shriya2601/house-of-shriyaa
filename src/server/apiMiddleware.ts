@@ -135,15 +135,18 @@ function setCorsHeaders(res: any) {
   );
 }
 
-function parseJsonBody(req: Connect.IncomingMessage): Promise<any> {
+function parseJsonBody(req: any): Promise<any> {
+  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
+    return Promise.resolve(req.body);
+  }
   return new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", (chunk) => {
+    req.on("data", (chunk: any) => {
       body += chunk;
     });
     req.on("end", () => {
       if (!body.trim()) {
-        resolve({});
+        resolve(req.body || {});
         return;
       }
       try {
@@ -152,26 +155,25 @@ function parseJsonBody(req: Connect.IncomingMessage): Promise<any> {
         reject(err);
       }
     });
-    req.on("error", (err) => reject(err));
+    req.on("error", (err: any) => reject(err));
   });
 }
 
-export function apiMiddlewarePlugin(): Plugin {
-  const apiHandler: Connect.NextHandleFunction = async (req, res, next) => {
-    const rawUrl = req.url || "";
-    let parsedUrl: URL;
-    let pathname = rawUrl;
-    try {
-      parsedUrl = new URL(rawUrl, "http://localhost");
-      pathname = parsedUrl.pathname;
-    } catch {
-      parsedUrl = new URL("http://localhost" + (rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl));
-      pathname = rawUrl.split("?")[0];
-    }
-    const urlWithoutQuery = pathname.replace(/\/+$/, "") || "/";
-    const method = (req.method || "GET").toUpperCase();
+export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => {
+  const rawUrl = req.url || "";
+  let parsedUrl: URL;
+  let pathname = rawUrl;
+  try {
+    parsedUrl = new URL(rawUrl, "http://localhost");
+    pathname = parsedUrl.pathname;
+  } catch {
+    parsedUrl = new URL("http://localhost" + (rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl));
+    pathname = rawUrl.split("?")[0];
+  }
+  const urlWithoutQuery = pathname.replace(/\/+$/, "") || "/";
+  const method = (req.method || "GET").toUpperCase();
 
-    try {
+  try {
       // Direct Static Image Serving for /uploads/* and /public/uploads/*
       // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
       if (urlWithoutQuery.startsWith("/uploads/") || urlWithoutQuery.startsWith("/public/uploads/")) {
@@ -1482,6 +1484,7 @@ export function apiMiddlewarePlugin(): Plugin {
     }
   };
 
+export function apiMiddlewarePlugin(): Plugin {
   return {
     name: "api-middleware-plugin",
     configureServer(server) {

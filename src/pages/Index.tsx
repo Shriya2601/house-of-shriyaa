@@ -2320,7 +2320,9 @@ export function StoreHeader({
 
   return (
     <header className="store-header">
-      {siteContent?.announcementVisible === true && siteContent?.announcementText && (
+      {siteContent?.announcementVisible === true &&
+       siteContent?.announcementText &&
+       siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").replace(/Bespoke Shipping Across India\s*•?\s*/gi, "").trim() !== "" && (
         <div className="announcement-bar">
           <button
             data-editable="true"
@@ -2332,7 +2334,7 @@ export function StoreHeader({
               id="announcement_bar_text"
               fieldPath="announcementText"
               label="Announcement Bar"
-              text={`${siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").trim() || "Handcrafted Unstitched Heirlooms"} · ${siteContent.announcementCta || "Shop Now"}`}
+              text={`${siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").replace(/Bespoke Shipping Across India\s*•?\s*/gi, "").trim() || "Handcrafted Unstitched Heirlooms"} · ${siteContent.announcementCta || "Shop Now"}`}
             />
             <ArrowRight size={13} className="shrink-0 inline ml-1" />
           </button>
