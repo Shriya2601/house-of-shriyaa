@@ -32,7 +32,7 @@ export const ATELIER_BANK_DETAILS = {
   ifscCode: "HDFC0001234",
   accountType: "Current Account",
   branch: "Surat Ring Road, Gujarat",
-  upiId: "houseofshriya@upi",
+  upiId: "shriyapusha01-1@okaxis",
 };
 
 export default function PaymentMethodSelector({
@@ -70,16 +70,20 @@ export default function PaymentMethodSelector({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // UPI deep link
-  const upiIntentUri = `upi://pay?pa=${encodeURIComponent(
-    ATELIER_BANK_DETAILS.upiId
-  )}&pn=${encodeURIComponent(
-    ATELIER_BANK_DETAILS.accountName
-  )}&am=${totalAmount}&cu=INR&tn=${encodeURIComponent("House of Shriya Order")}`;
+  // Dynamic UPI ID & Payee Name (Ensures strictly no personal email or phone is exposed)
+  const actualUpiId = siteContent?.upiId || ATELIER_BANK_DETAILS.upiId;
+  const actualPayeeName = siteContent?.upiMerchantName || ATELIER_BANK_DETAILS.accountName;
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-    upiIntentUri
-  )}&margin=10`;
+  // UPI deep link - ONLY carries recipient VPA, merchant brand, amount & order reference
+  const upiIntentUri = `upi://pay?pa=${encodeURIComponent(
+    actualUpiId
+  )}&pn=${encodeURIComponent(
+    actualPayeeName
+  )}&am=${totalAmount}&cu=INR&tn=${encodeURIComponent("House of Shriya Couture")}`;
+
+  const qrImageUrl =
+    siteContent?.upiScannerUrl ||
+    `/uploads/house-of-shriya-official-upi-scanner.png`;
 
   // Detect card brand
   const getCardBrand = (num: string) => {

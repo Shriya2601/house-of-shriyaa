@@ -598,31 +598,66 @@ export default function CheckoutModal() {
                       </span>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-stone-200">
-                      <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs">
-                        <img
-                          src={
-                            siteContent?.upiScannerUrl ||
-                            "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=upi%3A%2F%2Fpay%3Fpa%3Dhouseofshriya%40upi%26pn%3DHouse%20of%20Shriya%20Atelier%26cu%3DINR"
-                          }
-                          alt="House of Shriya Official Payment Scanner"
-                          className="w-28 h-28 object-contain rounded"
-                        />
+                    {/* Privacy Shield: Personal Details Masked */}
+                    <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-lg p-2.5 flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1.5 text-emerald-950 font-medium">
+                        <Lock size={12} className="text-[#0d4f3c] shrink-0" />
+                        <span>
+                          <strong>Patron Privacy Shield:</strong> Personal phone & address details masked during checkout scan.
+                        </span>
                       </div>
-                      <div className="space-y-1.5 text-xs flex-1 w-full">
-                        <div className="text-[11px] font-bold text-[#0d4f3c] flex items-center gap-1">
-                          <Sparkles size={12} className="text-[#d4af37]" />
-                          <span>House of Shriya Official Verified QR</span>
-                        </div>
-                        <p className="text-[10px] text-stone-600 leading-tight">
-                          Open Google Pay, PhonePe, Paytm, CRED or BHIM to scan and pay ₹{total.toLocaleString("en-IN")}.
-                        </p>
-                        <div className="text-[10px] text-emerald-800 font-medium flex items-center gap-1">
-                          <ShieldCheck size={11} className="text-emerald-700 shrink-0" />
-                          <span>Direct atelier dispatch upon payment verification</span>
-                        </div>
+                      <div className="text-stone-500 font-mono text-[10px] hidden sm:block">
+                        {phone.trim() ? `+91 ••••••${phone.trim().slice(-4)}` : "Encrypted 🔒"}
                       </div>
                     </div>
+
+                    {(() => {
+                      const actualUpi = siteContent?.upiId || "shriyapusha01-1@okaxis";
+                      const merchantName = siteContent?.upiMerchantName || "House of Shriya";
+                      // Standard UPI intent string: strictly no email and no phone number
+                      const dynamicUpiUri = `upi://pay?pa=${encodeURIComponent(
+                        actualUpi
+                      )}&pn=${encodeURIComponent(
+                        merchantName
+                      )}&am=${total}&cu=INR&tn=House%20of%20Shriya%20Couture`;
+                      const upiQrSource =
+                        siteContent?.upiScannerUrl ||
+                        `/uploads/house-of-shriya-official-upi-scanner.png`;
+                      return (
+                        <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-stone-200">
+                          <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs relative">
+                            <img
+                              src={upiQrSource}
+                              alt="House of Shriya Official Payment Scanner"
+                              className="w-28 h-28 object-contain rounded"
+                            />
+                            <div
+                              className="absolute bottom-1 right-1 bg-emerald-700 text-white rounded-full p-0.5 shadow-xs"
+                              title="Verified Merchant QR"
+                            >
+                              <Lock size={10} />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 text-xs flex-1 w-full">
+                            <div className="text-[11px] font-bold text-[#0d4f3c] flex items-center gap-1">
+                              <Sparkles size={12} className="text-[#d4af37]" />
+                              <span>House of Shriya Verified Atelier QR</span>
+                            </div>
+                            <p className="text-[10px] text-stone-600 leading-tight">
+                              Open Google Pay, PhonePe, Paytm, CRED or BHIM to scan and pay ₹{total.toLocaleString("en-IN")}.
+                            </p>
+                            <div className="text-[10px] text-emerald-800 font-medium flex items-center gap-1">
+                              <ShieldCheck size={11} className="text-emerald-700 shrink-0" />
+                              <span>Zero Gateway Surcharge • 100% Direct Atelier Transfer</span>
+                            </div>
+                            <div className="pt-0.5 flex items-center justify-between text-[10px] text-stone-600">
+                              <span className="font-semibold text-emerald-900">Merchant: House of Shriya</span>
+                              <span className="font-mono font-bold">Amount: ₹{total.toLocaleString("en-IN")}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="space-y-1">
                       <label className="block text-[11px] font-bold text-[#1e1b18]">

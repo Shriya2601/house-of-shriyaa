@@ -334,7 +334,7 @@ export function generatePookieAnswer(query: string, allProducts: Product[]): Poo
         "• **Chanderi Cotton & Co-ords**: ₹2,699 – ₹3,499\n" +
         "• **Festive Anarkalis & Silks**: ₹3,899 – ₹4,699\n\n" +
         "✨ **Special Perks**:\n" +
-        "✓ Complimentary Free Shipping across India on all orders\n" +
+        "✓ Insured Express Courier Delivery across India\n" +
         "✓ ₹100 instant discount with Referral Code\n" +
         "✓ Save up to 32% during our active seasonal boutique sale";
     }

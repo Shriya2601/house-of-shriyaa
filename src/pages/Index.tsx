@@ -1078,12 +1078,12 @@ export function InteractiveModal({
                     <div className="space-y-2 pt-1 border-t border-[#f0e8dc]">
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] text-[#706458]">
-                          Pay via UPI to <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong>:
+                          Pay via UPI to <strong className="text-[#0d4f3c]">House of Shriya Atelier</strong> ({siteContent?.upiId || "shriyapusha01-1@okaxis"}):
                         </p>
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText("houseofshriya.order@upi");
+                            navigator.clipboard.writeText(siteContent?.upiId || "shriyapusha01-1@okaxis");
                             setCopiedUpiId(true);
                             setTimeout(() => setCopiedUpiId(false), 2000);
                           }}
@@ -1553,12 +1553,12 @@ export function InteractiveModal({
                                 <div className="mt-2 space-y-2 pt-2 border-t border-[#f0e8dc]">
                                   <div className="flex items-center justify-between text-[11px]">
                                     <span className="text-[#706458]">
-                                      UPI ID: <strong className="text-[#0d4f3c]">houseofshriya.order@upi</strong>
+                                      UPI ID: <strong className="text-[#0d4f3c]">{siteContent?.upiId || "shriyapusha01-1@okaxis"}</strong> (House of Shriya)
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        navigator.clipboard.writeText("houseofshriya.order@upi");
+                                        navigator.clipboard.writeText(siteContent?.upiId || "shriyapusha01-1@okaxis");
                                         setCopiedUpiId(true);
                                         setTimeout(() => setCopiedUpiId(false), 2000);
                                       }}
@@ -2320,7 +2320,7 @@ export function StoreHeader({
 
   return (
     <header className="store-header">
-      {siteContent?.announcementVisible !== false && (
+      {siteContent?.announcementVisible === true && siteContent?.announcementText && (
         <div className="announcement-bar">
           <button
             data-editable="true"
@@ -2332,11 +2332,7 @@ export function StoreHeader({
               id="announcement_bar_text"
               fieldPath="announcementText"
               label="Announcement Bar"
-              text={
-                siteContent?.announcementText
-                  ? `${siteContent.announcementText} · ${siteContent.announcementCta || "Shop Now"}`
-                  : "Explore Velvet Drop · Free Express Delivery on ₹1,999+"
-              }
+              text={`${siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").trim() || "Handcrafted Unstitched Heirlooms"} · ${siteContent.announcementCta || "Shop Now"}`}
             />
             <ArrowRight size={13} className="shrink-0 inline ml-1" />
           </button>

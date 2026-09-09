@@ -87,6 +87,7 @@ export interface SiteContent {
   navLinks?: NavItem[];
   upiScannerUrl?: string;
   upiMerchantName?: string;
+  upiId?: string;
   updatedAt?: string;
 }
 

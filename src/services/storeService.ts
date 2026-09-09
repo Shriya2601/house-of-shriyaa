@@ -40,9 +40,9 @@ import savedSiteContentJson from "../data/siteContent.json";
 import savedCategoriesJson from "../data/categories.json";
 
 export const defaultSiteContent: SiteContent = {
-  announcementText: "Complimentary Bespoke Shipping Across India • Handcrafted Unstitched Heirlooms",
+  announcementText: "Handcrafted Unstitched Heirlooms",
   announcementCta: "Shop Festive Edits",
-  announcementVisible: true,
+  announcementVisible: false,
   brandTagline: "Heirloom Indian Couture, Reimagined for the Modern Connoisseur",
   brandDescription:
     "Rooted in centuries-old artisanal traditions of Varanasi, Chanderi, and Bengal. Every yard of silk tells an untold tale of heritage weaving, resham zari hand embroidery, and regal silhouette artistry.",
@@ -99,7 +99,7 @@ export const defaultSiteContent: SiteContent = {
       iconName: "Crown",
     },
     {
-      title: "Pan-India Complimentary Insured Delivery",
+      title: "Pan-India Insured Delivery",
       text: "Tamper-evident luxury packaging delivered within 2-4 business days.",
       iconName: "Truck",
     },
@@ -2264,7 +2264,7 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
   const now = new Date();
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   const orderNumber =
-    orderInput.orderNumber || `HOS-ADM-${now.getFullYear().toString().slice(-2)}${randomNum}`;
+    orderInput.orderNumber || `HOS-${now.getFullYear()}-${randomNum}`;
   const orderId = orderInput.id || `order_adm_${Date.now()}_${randomNum}`;
 
   let order: Order = {

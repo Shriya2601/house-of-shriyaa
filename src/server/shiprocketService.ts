@@ -504,6 +504,9 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
   };
 }
 
+// In-flight concurrency lock to prevent duplicate order dispatches to Shiprocket
+const inFlightOrderSyncs = new Set<string>();
+
 /**
  * Send order to Shiprocket for shipment creation
  */
@@ -522,9 +525,39 @@ export async function createShiprocketOrder(
   rawResponse?: any;
   error?: string;
   requestPayload?: any;
+  alreadySynced?: boolean;
 }> {
   const orderNumber = String(order.orderNumber || order.id);
   const startTime = Date.now();
+
+  // 1. Strict Duplicate Check: If order is already synced with Shiprocket, prevent re-creation
+  if (order.shiprocketOrderId) {
+    console.log(
+      `[Shiprocket API] Order #${orderNumber} already has Shiprocket Order ID (${order.shiprocketOrderId}). Skipping duplicate creation.`
+    );
+    return {
+      success: true,
+      alreadySynced: true,
+      shiprocketOrderId: order.shiprocketOrderId,
+      shipmentId: order.shiprocketShipmentId || null,
+      awbCode: order.trackingNumber || null,
+      courierName: order.trackingCourier || "Shiprocket Express",
+      status: order.shiprocketStatus || "SYNCED",
+      trackingUrl: order.trackingNumber ? `https://shiprocket.co/tracking/${order.trackingNumber}` : null,
+    };
+  }
+
+  // 2. Concurrency Lock: Prevent simultaneous parallel dispatches of the same order
+  if (inFlightOrderSyncs.has(orderNumber)) {
+    console.warn(`[Shiprocket API] Order #${orderNumber} sync already in-flight. Preventing duplicate dispatch.`);
+    return {
+      success: false,
+      error: "Order dispatch is currently processing. Please wait a moment.",
+      status: "IN_PROGRESS",
+    };
+  }
+
+  inFlightOrderSyncs.add(orderNumber);
 
   console.log(`[Shiprocket API] ==========================================`);
   console.log(`[Shiprocket API] Processing automated dispatch for Order: ${orderNumber}`);
@@ -540,6 +573,7 @@ export async function createShiprocketOrder(
 
   // If live authentication failed, record structured log and return actionable state
   if (!token) {
+    inFlightOrderSyncs.delete(orderNumber);
     console.warn(
       `[Shiprocket API] Sync halted - Authentication failed: "${authError}". Order recorded locally for auto-retry.`
     );
@@ -676,6 +710,8 @@ export async function createShiprocketOrder(
       shipmentId: null,
       awbCode: null,
     };
+  } finally {
+    inFlightOrderSyncs.delete(orderNumber);
   }
 }
 

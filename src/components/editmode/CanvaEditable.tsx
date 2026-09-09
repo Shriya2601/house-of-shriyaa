@@ -48,8 +48,9 @@ export default function CanvaEditable({
 
   const displayText = override?.text !== undefined ? override.text : text !== undefined ? text : undefined;
   
-  // Prefer direct product src, normalize relative & shareable URLs
-  let displaySrc = normalizeImageUrl(src || override?.src || "");
+  // Prioritize active custom override src if set by user in Edit Mode, then fallback to component src
+  const rawSrc = (override?.src !== undefined && override?.src !== "") ? override.src : (src || "");
+  let displaySrc = normalizeImageUrl(rawSrc);
   if (displaySrc) {
     if (displaySrc.startsWith("/public/")) {
       displaySrc = displaySrc.replace("/public", "");

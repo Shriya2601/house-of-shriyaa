@@ -50,7 +50,7 @@ export default function OrderConfirmationView({
   const customerName = order.customer.fullName || "Valued Patron";
   const storePhone = "9501698356";
   const storePhoneDisplay = "+91 95016 98356";
-  const storeUpiId = "houseofshriya@upi";
+  const storeUpiId = siteContent?.upiId || "shriyapusha01-1@okaxis";
 
   // Build the WhatsApp message
   const itemsText = order.items
@@ -70,41 +70,52 @@ export default function OrderConfirmationView({
       ? `Bank Transfer (${order.paymentDetails.bankName || "HDFC Bank"})${order.paymentDetails.transactionReference ? ` (Ref: ${order.paymentDetails.transactionReference})` : ""}`
       : order.paymentMethod;
 
-  const fullWhatsAppMessage = `🌸 *HOUSE OF SHRIYA - ORDER CONFIRMATION* 🌸
+  const fullWhatsAppMessage = `🌸 *Namaste ${customerName} ji!* 🌸
 
-Dear ${customerName},
-Thank you for your order with House of Shriya! Your luxury unstitched ethnic ensemble order has been confirmed with our Surat Atelier.
+Thank you so very much for choosing *House of Shriya*! ✨ We are so happy to confirm that your luxury heirloom couture order has been warmly received by our Surat Atelier. 🕊️💫
 
-📋 *Order Number:* ${order.orderNumber}
-📅 *Date:* ${new Date(order.createdAt).toLocaleDateString("en-IN", {
+━━━━━━━━━━━━━━━━━━━
+📦 *ORDER SUMMARY*
+━━━━━━━━━━━━━━━━━━━
+🔖 *Order ID:* *${order.orderNumber}*
+📅 *Placed On:* ${new Date(order.createdAt).toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
   })}
 
-🛍️ *Order Items:*
+🛍️ *Your Curated Pieces:*
 ${itemsText}
 
 💰 *Total Amount:* ₹${order.total.toLocaleString("en-IN")}
 💳 *Payment Mode:* ${paymentText}
-📊 *Payment Status:* ${order.paymentStatus}
-📍 *Delivery Address:* ${order.shippingAddress.addressLine1}, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}${courierText}
+📊 *Payment Status:* ${order.paymentStatus === "Paid" ? "Verified & Paid ✅" : order.paymentStatus}
+📍 *Delivering With Love To:*
+${order.shippingAddress.addressLine1}, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}${courierText}
 
-Our master couturiers are currently inspecting and packaging your pieces with signature tissue, authentic handloom tags, and organic lavender sachets.
+━━━━━━━━━━━━━━━━━━━
+🎀 *WHAT WE'RE DOING RIGHT NOW:*
+Our master artisans are delicately steam-pressing, thread-checking, and packaging your ensembles into our signature keepsake box with dried rose petals and authentic handloom tags. 🌸📦✨
 
-Atelier WhatsApp: ${storePhoneDisplay}
-Website: www.houseofshriya.com`;
+You will receive real-time courier tracking updates as soon as your parcel departs our atelier! 🚚💨
+
+If you ever need any assistance, bespoke styling tips, or quick updates, we're always just a message away:
+💬 WhatsApp Concierge: ${storePhoneDisplay}
+🌐 Boutique: www.houseofshriya.com
+
+With love, elegance & gratitude,
+*Team House of Shriya* 💖✨`;
 
   // Dynamic WhatsApp URLs
   // 1. Direct message to Atelier support (Store owner at 9501698356)
   const storeOwnerWhatsAppUrl = `https://wa.me/91${storePhone}?text=${encodeURIComponent(
-    `Namaste House of Shriya! I just placed order ${order.orderNumber} for ₹${order.total.toLocaleString("en-IN")}.
-Customer: ${customerName} (${order.customer.phone})
-Delivery: ${order.shippingAddress.city}, ${order.shippingAddress.state} (${order.shippingAddress.pincode})
-Payment: ${order.paymentMethod} (${order.paymentStatus})
-${order.paymentDetails?.utrNumber ? `UTR / Ref: ${order.paymentDetails.utrNumber}` : ""}
-
-Please confirm my order dispatch!`
+    `🌸 *New Couture Order Received!* 🌸\n\n` +
+    `Order: *#${order.orderNumber}* (₹${order.total.toLocaleString("en-IN")})\n` +
+    `Patron: ${customerName} (+91 ${cleanPhone.slice(-10)})\n` +
+    `Delivery: ${order.shippingAddress.city}, ${order.shippingAddress.state} (${order.shippingAddress.pincode})\n` +
+    `Payment: ${order.paymentMethod} [${order.paymentStatus}]\n` +
+    `${order.paymentDetails?.utrNumber ? `UTR: ${order.paymentDetails.utrNumber}\n` : ""}` +
+    `\nKindly initiate atelier packaging & dispatch. Thank you! ✨`
   )}`;
 
   // 2. Direct link to customer's own phone with the receipt pre-filled
@@ -115,9 +126,11 @@ Please confirm my order dispatch!`
         )}`
       : `https://wa.me/?text=${encodeURIComponent(fullWhatsAppMessage)}`;
 
-  // Dynamic UPI Payment Link & QR Code
-  const upiPayUrl = `upi://pay?pa=${storeUpiId}&pn=House%20of%20Shriya&am=${order.total}&cu=INR&tn=Order%20${encodeURIComponent(order.orderNumber)}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(upiPayUrl)}`;
+  // Dynamic UPI Payment Link & QR Code (Carries only verified merchant VPA & order number)
+  const upiPayUrl = `upi://pay?pa=${encodeURIComponent(storeUpiId)}&pn=House%20of%20Shriya&am=${order.total}&cu=INR&tn=Order%20${encodeURIComponent(order.orderNumber)}`;
+  const qrCodeUrl =
+    siteContent?.upiScannerUrl ||
+    `/uploads/house-of-shriya-official-upi-scanner.png`;
 
   useEffect(() => {
     const timer = setTimeout(() => {

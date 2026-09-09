@@ -371,10 +371,11 @@ export async function pushOrderToShiprocket(
   }
 
   // Graceful fallback response
+  const uniformOrderId = String(order.orderNumber || order.id);
   return {
     success: true,
     shiprocket: {
-      order_id: `SR-${order.orderNumber || order.id}`,
+      order_id: uniformOrderId,
       shipment_id: Math.floor(10000000 + Math.random() * 90000000),
       awb_code: `HOS-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
       courier_name: "Shiprocket Express",
@@ -384,7 +385,7 @@ export async function pushOrderToShiprocket(
       ...order,
       trackingNumber: `HOS-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
       trackingCourier: "Shiprocket Express",
-      shiprocketOrderId: `SR-${order.orderNumber || order.id}`,
+      shiprocketOrderId: uniformOrderId,
       shiprocketStatus: "MANIFEST_GENERATED",
     },
   };

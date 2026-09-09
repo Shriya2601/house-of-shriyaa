@@ -29,8 +29,8 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
   const [previewOpen, setPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fallback dynamic QR if no custom scanner image uploaded yet
-  const fallbackQr = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=upi%3A%2F%2Fpay%3Fpa%3Dhouseofshriya%40upi%26pn%3DHouse%20of%20Shriya%20Atelier";
+  // Fallback verified QR if no custom scanner image uploaded yet
+  const fallbackQr = "/uploads/house-of-shriya-official-upi-scanner.png";
   const activeScanner = scannerUrl.trim() || siteContent?.upiScannerUrl || fallbackQr;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,13 +49,20 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
 
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("prefix", "scanner-qr");
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read image file"));
+        reader.readAsDataURL(file);
+      });
 
       const res = await fetch("/api/upload", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataUrl,
+          filename: `scanner-qr-${Date.now()}`,
+        }),
       });
 
       if (!res.ok) {
