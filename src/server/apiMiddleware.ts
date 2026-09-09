@@ -18,36 +18,109 @@ function setAntiCacheHeaders(res: any) {
   res.setHeader("Surrogate-Control", "no-store");
 }
 
-function getProductsFilePath(): string {
-  const publicPath = path.resolve(process.cwd(), "public/data/products.json");
-  return publicPath;
+// Active SSE clients for real-time live sync across any device or browser tab
+const activeSseClients = new Set<any>();
+
+export function broadcastSseSync(type: string, data: any) {
+  const payload = JSON.stringify({ type, data, timestamp: Date.now() });
+  for (const client of Array.from(activeSseClients)) {
+    try {
+      client.write(`event: sync\ndata: ${payload}\n\n`);
+    } catch {
+      activeSseClients.delete(client);
+    }
+  }
+}
+
+function syncDataFile(filename: string, data: any): void {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const targets = [
+    path.resolve(process.cwd(), "public/data", filename),
+    path.resolve(process.cwd(), "src/data", filename),
+    path.resolve(process.cwd(), "dist/data", filename),
+  ];
+  for (const target of targets) {
+    try {
+      // Don't create dist directory if it does not already exist
+      if (target.includes("dist") && !fs.existsSync(path.resolve(process.cwd(), "dist"))) {
+        continue;
+      }
+      const dir = path.dirname(target);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(target, jsonStr, "utf-8");
+    } catch (err) {
+      console.error(`[API Middleware] Error syncing ${target}:`, err);
+    }
+  }
+}
+
+function readDataFile(filename: string, fallback: any = []): any {
+  const targets = [
+    path.resolve(process.cwd(), "public/data", filename),
+    path.resolve(process.cwd(), "src/data", filename),
+  ];
+  for (const target of targets) {
+    if (fs.existsSync(target)) {
+      try {
+        const raw = fs.readFileSync(target, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed !== undefined && parsed !== null) return parsed;
+      } catch {}
+    }
+  }
+  return fallback;
 }
 
 function readProducts(): any[] {
-  try {
-    const filePath = getProductsFilePath();
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, "utf-8");
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (err) {
-    console.error("[API Middleware] Error reading products:", err);
-  }
-  return [];
+  const list = readDataFile("products.json", []);
+  return Array.isArray(list) ? list : [];
 }
 
 function writeProducts(products: any[]): void {
-  try {
-    const publicPath = getProductsFilePath();
-    const dir = path.dirname(publicPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(publicPath, JSON.stringify(products, null, 2), "utf-8");
-  } catch (err) {
-    console.error("[API Middleware] Error writing products:", err);
-  }
+  syncDataFile("products.json", products);
+  broadcastSseSync("products", products);
+}
+
+function readCategories(): any[] {
+  const list = readDataFile("categories.json", []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeCategories(categories: any[]): void {
+  syncDataFile("categories.json", categories);
+  broadcastSseSync("categories", categories);
+}
+
+function readSiteContent(): any {
+  const content = readDataFile("siteContent.json", {});
+  return content && typeof content === "object" ? content : {};
+}
+
+function writeSiteContent(content: any): void {
+  syncDataFile("siteContent.json", content);
+  broadcastSseSync("site_content", content);
+}
+
+function readOrdersList(): any[] {
+  const list = readDataFile("orders.json", []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeOrdersList(orders: any[]): void {
+  syncDataFile("orders.json", orders);
+  broadcastSseSync("orders", orders);
+}
+
+function readBookingsList(): any[] {
+  const list = readDataFile("bookings.json", []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeBookingsList(bookings: any[]): void {
+  syncDataFile("bookings.json", bookings);
+  broadcastSseSync("bookings", bookings);
 }
 
 function setCorsHeaders(res: any) {
@@ -202,6 +275,53 @@ export function apiMiddlewarePlugin(): Plugin {
           return;
         }
 
+        // 1B. REAL-TIME SERVER-SENT EVENTS (SSE) STREAM FOR ZERO-LATENCY CROSS-DEVICE LIVE SYNC
+        if (urlWithoutQuery === "/api/sync/events" || urlWithoutQuery === "/api/sync/events/") {
+          setCorsHeaders(res);
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+          });
+          res.write(`data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`);
+          activeSseClients.add(res);
+
+          const keepAlive = setInterval(() => {
+            try {
+              res.write(": ping\n\n");
+            } catch {
+              clearInterval(keepAlive);
+              activeSseClients.delete(res);
+            }
+          }, 15000);
+
+          req.on("close", () => {
+            clearInterval(keepAlive);
+            activeSseClients.delete(res);
+          });
+          return;
+        }
+
+        // 1C. INSTANT SYNC STATUS & CATALOG SNAPSHOT
+        if (urlWithoutQuery === "/api/sync/status" || urlWithoutQuery === "/api/sync/version") {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 200;
+          res.end(
+            JSON.stringify({
+              status: "ok",
+              timestamp: Date.now(),
+              productsCount: readProducts().length,
+              categoriesCount: readCategories().length,
+              ordersCount: readOrdersList().length,
+              bookingsCount: readBookingsList().length,
+            })
+          );
+          return;
+        }
+
         // 2. PRODUCTS COLLECTION: /api/products
         if (urlWithoutQuery === "/api/products") {
           setAntiCacheHeaders(res);
@@ -328,13 +448,7 @@ export function apiMiddlewarePlugin(): Plugin {
         // 4. CATEGORIES: /api/categories
         if (urlWithoutQuery === "/api/categories") {
           setAntiCacheHeaders(res);
-          const catPath = path.resolve(process.cwd(), "public/data/categories.json");
-          let categories: any[] = [];
-          try {
-            if (fs.existsSync(catPath)) {
-              categories = JSON.parse(fs.readFileSync(catPath, "utf-8"));
-            }
-          } catch {}
+          let categories = readCategories();
 
           if (method === "GET") {
             res.setHeader("Content-Type", "application/json");
@@ -348,13 +462,20 @@ export function apiMiddlewarePlugin(): Plugin {
               const body = await parseJsonBody(req);
               if (Array.isArray(body)) {
                 categories = body;
-              } else {
-                categories.push(body);
+              } else if (body && typeof body === "object") {
+                const idx = categories.findIndex(
+                  (c) => (body.id && c.id === body.id) || (body.name && c.name === body.name)
+                );
+                if (idx > -1) {
+                  categories[idx] = { ...categories[idx], ...body };
+                } else {
+                  categories.push({ id: body.id || `cat-${Date.now()}`, ...body });
+                }
               }
-              fs.writeFileSync(catPath, JSON.stringify(categories, null, 2), "utf-8");
+              writeCategories(categories);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
-              res.end(JSON.stringify({ success: true, count: categories.length }));
+              res.end(JSON.stringify({ success: true, count: categories.length, categories }));
               return;
             } catch (err: any) {
               res.setHeader("Content-Type", "application/json");
@@ -362,6 +483,25 @@ export function apiMiddlewarePlugin(): Plugin {
               res.end(JSON.stringify({ error: err.message }));
               return;
             }
+          }
+        }
+
+        // 4B. SINGLE CATEGORY ITEM: /api/categories/:id
+        const categoryMatch = urlWithoutQuery.match(/^\/api\/categories\/([^/]+)$/);
+        if (categoryMatch) {
+          setAntiCacheHeaders(res);
+          const catId = decodeURIComponent(categoryMatch[1]);
+          let categories = readCategories();
+
+          if (method === "DELETE") {
+            const filtered = categories.filter(
+              (c) => c.id !== catId && c.slug !== catId && c.name !== catId
+            );
+            writeCategories(filtered);
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, id: catId, count: filtered.length }));
+            return;
           }
         }
 
@@ -498,34 +638,19 @@ export function apiMiddlewarePlugin(): Plugin {
         // ============================================================
         if (urlWithoutQuery === "/api/site-content") {
           setAntiCacheHeaders(res);
-          const publicContentPath = path.resolve(process.cwd(), "public/data/siteContent.json");
-          const srcContentPath = path.resolve(process.cwd(), "src/data/siteContent.json");
 
           if (method === "GET") {
-            try {
-              if (fs.existsSync(publicContentPath)) {
-                const data = fs.readFileSync(publicContentPath, "utf-8");
-                res.setHeader("Content-Type", "application/json");
-                res.statusCode = 200;
-                res.end(data);
-                return;
-              }
-            } catch {}
+            const data = readSiteContent();
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
-            res.end(JSON.stringify({}));
+            res.end(JSON.stringify(data));
             return;
           }
 
           if (method === "POST" || method === "PUT" || method === "PATCH") {
             try {
               const body = await parseJsonBody(req);
-              let existing: any = {};
-              if (fs.existsSync(publicContentPath)) {
-                try {
-                  existing = JSON.parse(fs.readFileSync(publicContentPath, "utf-8"));
-                } catch {}
-              }
+              const existing = readSiteContent();
 
               const updated = {
                 ...existing,
@@ -533,11 +658,7 @@ export function apiMiddlewarePlugin(): Plugin {
                 updatedAt: new Date().toISOString(),
               };
 
-              const jsonFormatted = JSON.stringify(updated, null, 2);
-
-              const dir = path.dirname(publicContentPath);
-              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-              fs.writeFileSync(publicContentPath, jsonFormatted, "utf-8");
+              writeSiteContent(updated);
 
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
@@ -557,27 +678,6 @@ export function apiMiddlewarePlugin(): Plugin {
         // ============================================================
         if (urlWithoutQuery === "/api/orders") {
           setAntiCacheHeaders(res);
-          const ordersPath = path.resolve(process.cwd(), "public/data/orders.json");
-          const readOrdersList = (): any[] => {
-            try {
-              if (fs.existsSync(ordersPath)) {
-                const data = fs.readFileSync(ordersPath, "utf-8");
-                const parsed = JSON.parse(data);
-                if (Array.isArray(parsed)) return parsed;
-              }
-            } catch {}
-            return [];
-          };
-
-          const writeOrdersList = (list: any[]) => {
-            try {
-              const dir = path.dirname(ordersPath);
-              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-              fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
-            } catch (err) {
-              console.error("[API Middleware] Error writing orders:", err);
-            }
-          };
 
           if (method === "GET") {
             const orders = readOrdersList();
@@ -672,29 +772,6 @@ export function apiMiddlewarePlugin(): Plugin {
         if (orderItemMatch) {
           setAntiCacheHeaders(res);
           const orderId = decodeURIComponent(orderItemMatch[1]);
-          const ordersPath = path.resolve(process.cwd(), "public/data/orders.json");
-
-          const readOrdersList = (): any[] => {
-            try {
-              if (fs.existsSync(ordersPath)) {
-                const data = fs.readFileSync(ordersPath, "utf-8");
-                const parsed = JSON.parse(data);
-                if (Array.isArray(parsed)) return parsed;
-              }
-            } catch {}
-            return [];
-          };
-
-          const writeOrdersList = (list: any[]) => {
-            try {
-              const dir = path.dirname(ordersPath);
-              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-              fs.writeFileSync(ordersPath, JSON.stringify(list, null, 2), "utf-8");
-            } catch (err) {
-              console.error("[API Middleware] Error writing orders:", err);
-            }
-          };
-
           let orders = readOrdersList();
 
           if (method === "GET") {
@@ -827,6 +904,116 @@ export function apiMiddlewarePlugin(): Plugin {
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
             res.end(JSON.stringify({ success: true, count: logs.length, notifications: logs }));
+            return;
+          }
+        }
+
+        // ============================================================
+        // 6D. ATELIER BOOKINGS COLLECTION: /api/bookings
+        // ============================================================
+        if (urlWithoutQuery === "/api/bookings") {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+
+          if (method === "GET") {
+            const bookings = readBookingsList();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(bookings));
+            return;
+          }
+
+          if (method === "POST" || method === "PUT") {
+            try {
+              const body = await parseJsonBody(req);
+              let bookings = readBookingsList();
+              const now = new Date().toISOString();
+              const bookingId = body.id || `book_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+
+              const newBooking = {
+                ...body,
+                id: bookingId,
+                createdAt: body.createdAt || now,
+                updatedAt: now,
+                status: body.status || "confirmed",
+              };
+
+              const idx = bookings.findIndex((b) => b.id === bookingId);
+              if (idx > -1) {
+                bookings[idx] = { ...bookings[idx], ...newBooking };
+              } else {
+                bookings.unshift(newBooking);
+              }
+
+              writeBookingsList(bookings);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, booking: newBooking, count: bookings.length }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Failed to save booking" }));
+              return;
+            }
+          }
+        }
+
+        // 6E. SINGLE BOOKING ITEM: /api/bookings/:id
+        const bookingMatch = urlWithoutQuery.match(/^\/api\/bookings\/([^/]+)$/);
+        if (bookingMatch) {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+          const bookingId = decodeURIComponent(bookingMatch[1]);
+          let bookings = readBookingsList();
+
+          if (method === "GET") {
+            const found = bookings.find((b) => b.id === bookingId);
+            res.setHeader("Content-Type", "application/json");
+            if (found) {
+              res.statusCode = 200;
+              res.end(JSON.stringify(found));
+            } else {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: `Booking not found: ${bookingId}` }));
+            }
+            return;
+          }
+
+          if (method === "PUT" || method === "PATCH" || method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const now = new Date().toISOString();
+              const idx = bookings.findIndex((b) => b.id === bookingId);
+              let updatedBooking: any;
+
+              if (idx > -1) {
+                updatedBooking = { ...bookings[idx], ...body, updatedAt: now };
+                bookings[idx] = updatedBooking;
+              } else {
+                updatedBooking = { ...body, id: bookingId, updatedAt: now };
+                bookings.unshift(updatedBooking);
+              }
+
+              writeBookingsList(bookings);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, booking: updatedBooking, count: bookings.length }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
+          if (method === "DELETE") {
+            const filtered = bookings.filter((b) => b.id !== bookingId);
+            writeBookingsList(filtered);
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, id: bookingId, count: filtered.length }));
             return;
           }
         }

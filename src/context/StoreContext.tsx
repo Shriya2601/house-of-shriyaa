@@ -478,12 +478,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setProducts(e.detail);
       }
     };
+    const handleCategoriesUpdated = (e: any) => {
+      if (Array.isArray(e.detail) && e.detail.length > 0) {
+        setCategories(e.detail);
+      }
+    };
+    const handleOrdersUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setCustomerOrders(e.detail);
+      }
+    };
+    const handleBookingsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setAtelierBookings(e.detail);
+      }
+    };
+
     window.addEventListener("hos-product-deleted", handleProdDel);
     window.addEventListener("hos-product-saved", handleProdSaved);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
     window.addEventListener("hos-content-updated", handleContentUpdated);
     window.addEventListener("hos-category-deleted", handleCatDel);
     window.addEventListener("hos-category-saved", handleCatSaved);
+    window.addEventListener("hos-categories-updated", handleCategoriesUpdated);
+    window.addEventListener("hos-orders-updated", handleOrdersUpdated);
+    window.addEventListener("hos-bookings-updated", handleBookingsUpdated);
 
     return () => {
       unsubContent();
@@ -495,6 +514,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("hos-content-updated", handleContentUpdated);
       window.removeEventListener("hos-category-deleted", handleCatDel);
       window.removeEventListener("hos-category-saved", handleCatSaved);
+      window.removeEventListener("hos-categories-updated", handleCategoriesUpdated);
+      window.removeEventListener("hos-orders-updated", handleOrdersUpdated);
+      window.removeEventListener("hos-bookings-updated", handleBookingsUpdated);
     };
   }, []);
 

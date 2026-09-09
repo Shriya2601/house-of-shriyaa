@@ -138,12 +138,73 @@ const syncChannel: BroadcastChannel | null =
     ? new BroadcastChannel("hos_cross_device_channel")
     : null;
 
-export function broadcastCrossDeviceSync(type: "products" | "orders" | "categories", data?: any) {
+export function broadcastCrossDeviceSync(
+  type: "products" | "orders" | "categories" | "site_content" | "bookings",
+  data?: any
+) {
   if (syncChannel) {
     try {
       syncChannel.postMessage({ type, data, timestamp: Date.now() });
     } catch {}
   }
+}
+
+// Server-Sent Events (SSE) live sync client: keeps any device and tab in real-time sync with server files
+let sseSource: EventSource | null = null;
+let sseReconnectTimer: any = null;
+
+export function initServerLiveSync() {
+  if (typeof window === "undefined" || !("EventSource" in window)) return;
+  if (sseSource) return;
+
+  try {
+    sseSource = new EventSource("/api/sync/events");
+
+    sseSource.addEventListener("sync", (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (!payload || !payload.type) return;
+
+        if (payload.type === "products" && Array.isArray(payload.data)) {
+          const normalized = payload.data.map(ensureProductVariants);
+          cacheProductsLocally(normalized);
+          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: normalized }));
+        } else if (payload.type === "site_content" && payload.data) {
+          const merged = { ...defaultSiteContent, ...payload.data };
+          cacheSiteContentLocally(merged);
+          window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+        } else if (payload.type === "categories" && Array.isArray(payload.data)) {
+          cacheCategoriesLocally(payload.data);
+          window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: payload.data }));
+        } else if (payload.type === "orders" && Array.isArray(payload.data)) {
+          localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(payload.data));
+          window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: payload.data }));
+        } else if (payload.type === "bookings" && Array.isArray(payload.data)) {
+          localStorage.setItem("hos_atelier_bookings", JSON.stringify(payload.data));
+          window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: payload.data }));
+        }
+      } catch (err) {
+        console.warn("SSE sync payload parse notice:", err);
+      }
+    });
+
+    sseSource.onerror = () => {
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+      clearTimeout(sseReconnectTimer);
+      sseReconnectTimer = setTimeout(() => {
+        initServerLiveSync();
+      }, 4000);
+    };
+  } catch (err) {
+    console.warn("SSE init notice:", err);
+  }
+}
+
+if (typeof window !== "undefined") {
+  initServerLiveSync();
 }
 
 /* ============================================================
@@ -432,7 +493,6 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 }
 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<SiteContent> {
-  pausePolling(8);
   const existing = getCachedSiteContent();
   const updated: SiteContent = {
     ...defaultSiteContent,
@@ -615,10 +675,8 @@ export async function deleteCategory(id: string): Promise<void> {
 
   // Sync with central backend API
   try {
-    await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(current),
+    await fetch(`/api/categories/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     });
   } catch {}
 
@@ -633,10 +691,8 @@ export async function deleteCategory(id: string): Promise<void> {
   broadcastCrossDeviceSync("categories", current);
 }
 
-let pausePollingUntil = 0;
-
-export function pausePolling(seconds = 15): void {
-  pausePollingUntil = Date.now() + seconds * 1000;
+export function pausePolling(_seconds = 0): void {
+  // Real-time synchronization active without artificial polling pause
 }
 
 // Helper to append/update anti-cache timestamp parameter on uploaded images
@@ -658,10 +714,6 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   // Active sync function: fetches from central backend API with anti-cache headers
   const fetchLiveProducts = async () => {
     if (!active) return;
-    if (Date.now() < pausePollingUntil) {
-      // Polling paused after manual saves to avoid overwriting optimistic updates
-      return;
-    }
 
     try {
       const res = await fetch(`/api/products?t=${Date.now()}`, {
@@ -672,39 +724,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         const apiData = await res.json();
         if (Array.isArray(apiData) && apiData.length > 0) {
           const normalized = apiData.map(ensureProductVariants);
-          const current = getCachedProducts();
-
-          // Intelligent merge: NEVER overwrite a local product that was updated more recently!
-          const currentMap = new Map<string, Product>();
-          current.forEach((p) => currentMap.set(p.id, p));
-
-          const merged: Product[] = [];
-          for (const sProd of normalized) {
-            const localProd = currentMap.get(sProd.id);
-            if (localProd) {
-              const localTime = localProd.updatedAt ? new Date(localProd.updatedAt).getTime() : 0;
-              const serverTime = sProd.updatedAt ? new Date(sProd.updatedAt).getTime() : 0;
-              if (localTime > serverTime) {
-                // Local copy is newer, preserve local!
-                merged.push(localProd);
-                currentMap.delete(sProd.id);
-                continue;
-              }
-            }
-            merged.push(sProd);
-            currentMap.delete(sProd.id);
-          }
-          // Retain any locally added products not yet in server response
-          for (const remaining of currentMap.values()) {
-            merged.push(remaining);
-          }
-
-          const currentStr = JSON.stringify(current);
-          const newStr = JSON.stringify(merged);
-          if (currentStr !== newStr) {
-            cacheProductsLocally(merged);
-            callback(merged);
-          }
+          cacheProductsLocally(normalized);
+          callback(normalized);
           return;
         }
       }
@@ -732,8 +753,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   // 1. Initial live fetch immediately
   fetchLiveProducts();
 
-  // 2. Active background polling interval (every 7s) for seamless cross-device synchronization (Mobile, Tablet, Laptop)
-  const pollTimer = setInterval(fetchLiveProducts, 7000);
+  // 2. Active background polling interval (every 3s) for fast cross-device synchronization (Mobile, Tablet, Laptop)
+  const pollTimer = setInterval(fetchLiveProducts, 3000);
 
   // 3. Listen to window focus & visibility changes (e.g. when user switches from Mobile to Laptop or switches tabs)
   const handleFocusOrVisible = () => {
@@ -797,38 +818,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          const current = getCachedProducts();
-          const currentMap = new Map<string, Product>();
-          current.forEach((p) => currentMap.set(p.id, p));
-
-          const merged: Product[] = [];
-          for (const d of snapshot.docs) {
-            const fsProd = ensureProductVariants({ id: d.id, ...d.data() });
-            const localProd = currentMap.get(fsProd.id);
-
-            // If local product exists and has newer or matching updatedAt, preserve local!
-            if (localProd) {
-              const localTime = localProd.updatedAt ? new Date(localProd.updatedAt).getTime() : 0;
-              const fsTime = fsProd.updatedAt ? new Date(fsProd.updatedAt).getTime() : 0;
-              if (localTime >= fsTime) {
-                merged.push(localProd);
-                currentMap.delete(fsProd.id);
-                continue;
-              }
-            }
-
-            merged.push(fsProd);
-            currentMap.delete(fsProd.id);
-          }
-
-          // Retain any locally saved or server products that aren't in Firestore
-          for (const remaining of currentMap.values()) {
-            merged.push(remaining);
-          }
-
-          if (merged.length > 0) {
-            cacheProductsLocally(merged);
-            callback(merged);
+          const list = snapshot.docs.map((d) => ensureProductVariants({ id: d.id, ...d.data() }));
+          if (list.length > 0) {
+            cacheProductsLocally(list);
+            callback(list);
           }
         }
       },
@@ -857,7 +850,6 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 }
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean }> {
-  pausePolling(15);
   const id = product.id || `hos-${Date.now()}`;
 
   // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
@@ -930,7 +922,6 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  pausePolling(15);
   const current = getCachedProducts().filter((p) => p.id !== id);
   cacheProductsLocally(current);
 
@@ -1081,6 +1072,17 @@ export async function createAtelierBooking(
     localStorage.setItem("hos_atelier_bookings", JSON.stringify([booking, ...local]));
   } catch {}
 
+  // Central Server API sync
+  try {
+    await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(booking),
+    });
+  } catch (apiErr) {
+    console.warn("API booking sync notice:", apiErr);
+  }
+
   // Save to Firestore root bookings collection
   try {
     const bookingRef = doc(db, "bookings", bookingId);
@@ -1100,6 +1102,7 @@ export async function createAtelierBooking(
   }
 
   window.dispatchEvent(new CustomEvent("hos-booking-created", { detail: booking }));
+  broadcastCrossDeviceSync("bookings", booking);
   return booking;
 }
 
@@ -1109,10 +1112,31 @@ export async function fetchAtelierBookings(emailOrUid?: string): Promise<Atelier
     list = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
   } catch {}
 
+  // Fetch from server API
+  try {
+    const res = await fetch(`/api/bookings?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (res.ok) {
+      const serverList = await res.json();
+      if (Array.isArray(serverList)) {
+        list = serverList;
+        localStorage.setItem("hos_atelier_bookings", JSON.stringify(serverList));
+      }
+    }
+  } catch {}
+
   if (emailOrUid) {
+    const filterTerm = emailOrUid.trim().toLowerCase();
+    const filtered = list.filter(
+      (b) => b.email?.toLowerCase() === filterTerm || b.userId === emailOrUid
+    );
+    if (filtered.length > 0) return filtered;
+
     try {
       const colRef = collection(db, "bookings");
-      const q = query(colRef, where("email", "==", emailOrUid.trim().toLowerCase()));
+      const q = query(colRef, where("email", "==", filterTerm));
       const snap = await getDocs(q);
       const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AtelierBooking));
       const seen = new Set<string>();
@@ -2083,6 +2107,23 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
     list = local;
   } catch {}
 
+  // 1. Fetch from server API
+  try {
+    const res = await fetch(`/api/bookings?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (res.ok) {
+      const serverList = await res.json();
+      if (Array.isArray(serverList)) {
+        list = serverList;
+        localStorage.setItem("hos_atelier_bookings", JSON.stringify(serverList));
+        return list;
+      }
+    }
+  } catch {}
+
+  // 2. Firestore fallback if available
   try {
     const colRef = collection(db, "bookings");
     const snap = await getDocs(colRef);
@@ -2126,6 +2167,17 @@ export async function adminUpdateBooking(
     }
   } catch {}
 
+  // Central Server API sync
+  try {
+    await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  } catch (apiErr) {
+    console.warn("API booking update notice:", apiErr);
+  }
+
   try {
     const docRef = doc(db, "bookings", bookingId);
     await updateDoc(docRef, { ...updates, updatedAt: now });
@@ -2140,6 +2192,15 @@ export async function adminDeleteBooking(bookingId: string): Promise<void> {
     const filtered = local.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
     localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
   } catch {}
+
+  // Central Server API deletion
+  try {
+    await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+      method: "DELETE",
+    });
+  } catch (apiErr) {
+    console.warn("API booking delete notice:", apiErr);
+  }
 
   try {
     const docRef = doc(db, "bookings", bookingId);
@@ -2172,6 +2233,17 @@ export async function adminCreateAtelierBooking(
     localStorage.setItem("hos_atelier_bookings", JSON.stringify([booking, ...local]));
   } catch {}
 
+  // Central Server API sync
+  try {
+    await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(booking),
+    });
+  } catch (apiErr) {
+    console.warn("API admin booking create notice:", apiErr);
+  }
+
   try {
     const bookingRef = doc(db, "bookings", bookingId);
     await setDoc(bookingRef, booking, { merge: true });
@@ -2180,6 +2252,7 @@ export async function adminCreateAtelierBooking(
   }
 
   window.dispatchEvent(new CustomEvent("hos-booking-created", { detail: booking }));
+  broadcastCrossDeviceSync("bookings", booking);
   return booking;
 }
 
