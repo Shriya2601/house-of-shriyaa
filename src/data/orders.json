@@ -1,5 +1,18 @@
 [
   {
+    "id": "test",
+    "orderNumber": "HOS-TEST",
+    "items": [],
+    "total": 100,
+    "shiprocketOrderId": null,
+    "shiprocketShipmentId": null,
+    "trackingCourier": "Shiprocket Express",
+    "trackingUrl": null,
+    "shiprocketStatus": "FAILED_AUTH",
+    "shiprocketSyncedAt": "2026-09-09T20:27:36.050Z",
+    "shiprocketError": "Shiprocket credentials missing (email & password). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings."
+  },
+  {
     "customer": {
       "fullName": "Rohit Verma",
       "email": "rohit@example.com",
@@ -31,6 +44,12 @@
     "referralDiscount": 100,
     "total": 4899,
     "createdAt": "2026-09-06T23:21:47.066Z",
-    "status": "confirmed"
+    "status": "confirmed",
+    "shiprocketOrderId": 1573230240,
+    "shiprocketShipmentId": 1569448310,
+    "trackingCourier": "Shiprocket Courier Partner",
+    "shiprocketStatus": "SYNCED",
+    "shiprocketSyncedAt": "2026-09-09T20:14:53.694Z",
+    "shiprocketRetryCount": 1
   }
 ]
