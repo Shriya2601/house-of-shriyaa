@@ -124,16 +124,16 @@ const products: Product[] = initialProducts;
 
 const slides = [
   {
-    eyebrow: "DAILY / Festive Couture",
+    eyebrow: "NEW ARRIVAL / Contemporary Pret",
     number: "01",
-    collection: "Velvet Marigold Edit",
-    title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
-    description: "Crafted in Surat with 100% pure fabrics, classic Alia-cut silhouettes, and delicate zardozi detailing.",
-    image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
-    season: "AUTUMN/FESTIVE 2026",
-    caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
-    mood: "Emerald & Saffron Weaves",
-    ctaText: "Explore Festive Edit",
+    collection: "Festive Pret & Luxury Coordinates",
+    title: "Sage & Turquoise Handcrafted Printed Kurti Set",
+    description: "Handcrafted pure cotton-silk designer kurti tunic with traditional geometric & floral motifs, embroidered contrast placket, and effortless artisanal elegance.",
+    image: "/uploads/hero-slide-1-turq.jpg",
+    season: "SUMMER/FESTIVE 2026",
+    caption: "Bespoke Printed Kurti with Embroidered Placket",
+    mood: "Turquoise, Sage & Terracotta",
+    ctaText: "Explore Collection",
     ctaTarget: "catalog-section",
   },
   {

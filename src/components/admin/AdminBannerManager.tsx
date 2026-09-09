@@ -24,18 +24,17 @@ import { normalizeImageUrl } from "../../utils/imageUtils";
 
 const DEFAULT_SLIDES: HeroSlide[] = [
   {
-    eyebrow: "DAILY / Festive Couture",
+    eyebrow: "NEW ARRIVAL / Contemporary Pret",
     number: "01",
-    collection: "Velvet Marigold Edit",
-    title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
+    collection: "Festive Pret & Luxury Coordinates",
+    title: "Sage & Turquoise Handcrafted Printed Kurti Set",
     description:
-      "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
-    image:
-      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
-    season: "AUTUMN/FESTIVE 2026",
-    caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
-    mood: "Emerald & Saffron Weaves",
-    ctaText: "Explore Festive Edit",
+      "Handcrafted pure cotton-silk designer kurti tunic with traditional geometric & floral motifs, embroidered contrast placket, and effortless artisanal elegance.",
+    image: "/uploads/hero-slide-1-turq.jpg",
+    season: "SUMMER/FESTIVE 2026",
+    caption: "Bespoke Printed Kurti with Embroidered Placket",
+    mood: "Turquoise, Sage & Terracotta",
+    ctaText: "Explore Collection",
     ctaTarget: "catalog-section",
   },
   {
@@ -650,6 +649,11 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 <h4 className="font-serif font-bold text-base text-white leading-tight line-clamp-2">
                   {currentSlide.title}
                 </h4>
+                {currentSlide.caption && (
+                  <p className="text-[11px] text-amber-200/90 font-medium line-clamp-1">
+                    ✦ {currentSlide.caption}
+                  </p>
+                )}
                 <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
                   {currentSlide.description}
                 </p>
@@ -790,7 +794,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                   type="text"
                   value={currentSlide.eyebrow}
                   onChange={(e) => handleFieldChange("eyebrow", e.target.value)}
-                  placeholder="e.g. DAILY / Festive Couture"
+                  placeholder="e.g. NEW ARRIVAL / Contemporary Pret"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
                 />
               </div>
@@ -803,7 +807,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                   type="text"
                   value={currentSlide.collection}
                   onChange={(e) => handleFieldChange("collection", e.target.value)}
-                  placeholder="e.g. Handcrafted Heirloom"
+                  placeholder="e.g. Festive Pret & Luxury Coordinates"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
                 />
               </div>
@@ -818,35 +822,22 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 rows={3}
                 value={currentSlide.description}
                 onChange={(e) => handleFieldChange("description", e.target.value)}
-                placeholder="Crafted in Surat with 100% pure fabrics, classic Alia-cut silhouettes..."
+                placeholder="Handcrafted pure cotton-silk designer kurti tunic..."
                 className="w-full text-xs px-3.5 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c] leading-relaxed"
               />
             </div>
 
-            {/* Season, CTA Text, & Moodboard */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Card Caption & Moodboard */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Season Badge
+                  Photo Card Caption (Displayed under photo)
                 </label>
                 <input
                   type="text"
-                  value={currentSlide.season}
-                  onChange={(e) => handleFieldChange("season", e.target.value)}
-                  placeholder="e.g. AUTUMN/FESTIVE 2026"
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Button CTA Text
-                </label>
-                <input
-                  type="text"
-                  value={currentSlide.ctaText || "Explore Festive Edit"}
-                  onChange={(e) => handleFieldChange("ctaText", e.target.value)}
-                  placeholder="e.g. Explore Festive Edit"
+                  value={currentSlide.caption || ""}
+                  onChange={(e) => handleFieldChange("caption", e.target.value)}
+                  placeholder="e.g. Bespoke Printed Kurti with Embroidered Placket"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
                 />
               </div>
@@ -857,9 +848,51 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 </label>
                 <input
                   type="text"
-                  value={currentSlide.mood || "Emerald & Saffron Weaves"}
+                  value={currentSlide.mood || ""}
                   onChange={(e) => handleFieldChange("mood", e.target.value)}
-                  placeholder="e.g. Emerald & Gold Weaves"
+                  placeholder="e.g. Turquoise, Sage & Terracotta"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
+                />
+              </div>
+            </div>
+
+            {/* Season, CTA Text, & CTA Target */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Season Badge
+                </label>
+                <input
+                  type="text"
+                  value={currentSlide.season}
+                  onChange={(e) => handleFieldChange("season", e.target.value)}
+                  placeholder="e.g. SUMMER/FESTIVE 2026"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Button CTA Text
+                </label>
+                <input
+                  type="text"
+                  value={currentSlide.ctaText || "Explore Collection"}
+                  onChange={(e) => handleFieldChange("ctaText", e.target.value)}
+                  placeholder="e.g. Explore Collection"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Button Target Section / URL
+                </label>
+                <input
+                  type="text"
+                  value={currentSlide.ctaTarget || "catalog-section"}
+                  onChange={(e) => handleFieldChange("ctaTarget", e.target.value)}
+                  placeholder="e.g. catalog-section"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:border-[#0d4f3c]"
                 />
               </div>

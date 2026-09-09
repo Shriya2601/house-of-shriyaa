@@ -278,7 +278,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         }
 
         // 1. HEALTH CHECK: GET /api/health
-        if (urlWithoutQuery === "/api/health" && method === "GET") {
+        if (urlWithoutQuery === "/api/health" && (method === "GET" || method === "HEAD")) {
           setAntiCacheHeaders(res);
           res.setHeader("Content-Type", "application/json");
           res.statusCode = 200;
