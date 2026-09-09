@@ -14,11 +14,19 @@ async function startServer() {
   // Mount API & Upload handlers FIRST
   app.use(apiHandler);
 
-  // Statically serve uploads directory with caching headers
+  // Statically serve uploads directory with no-cache revalidation so updated images appear immediately
   const publicUploadsPath = path.join(process.cwd(), "public/uploads");
   const distUploadsPath = path.join(process.cwd(), "dist/uploads");
-  app.use("/uploads", express.static(publicUploadsPath, { maxAge: "1d" }));
-  app.use("/uploads", express.static(distUploadsPath, { maxAge: "1d" }));
+  const uploadStaticOptions = {
+    etag: true,
+    lastModified: true,
+    setHeaders: (res: express.Response) => {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    },
+  };
+  app.use("/uploads", express.static(publicUploadsPath, uploadStaticOptions));
+  app.use("/uploads", express.static(distUploadsPath, uploadStaticOptions));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

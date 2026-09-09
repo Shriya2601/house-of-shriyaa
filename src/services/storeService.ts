@@ -39,6 +39,56 @@ import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
 import savedCategoriesJson from "../data/categories.json";
 
+export enum OperationType {
+  CREATE = "create",
+  READ = "read",
+  UPDATE = "update",
+  DELETE = "delete",
+  LIST = "list",
+  GET = "get",
+  WRITE = "write",
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    isAnonymous?: boolean;
+    tenantId?: string | null;
+    providerInfo: { providerId: string; email?: string | null }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): FirestoreErrorInfo {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.warn("Firestore Error:", JSON.stringify(errInfo));
+  return errInfo;
+}
+
 export const defaultSiteContent: SiteContent = {
   announcementText: "Handcrafted Unstitched Heirlooms",
   announcementCta: "Shop Festive Edits",
@@ -52,34 +102,49 @@ export const defaultSiteContent: SiteContent = {
   atelierCity: "Surat, Gujarat, India",
   heroSlides: [
     {
-      eyebrow: "Autumn / Winter 2026",
+      eyebrow: "DAILY / Festive Couture",
       number: "01",
-      collection: "The Royal Awadh Edit",
-      title: "Handcrafted Zari Silk & Velvet Ensembles",
+      collection: "Velvet Marigold Edit",
+      title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
       description:
-        "Woven with 24-karat electroplated gold zari thread on pure mulberry silk. Designed for wedding ceremonies, royal sangeets, and unforgettable grand soirees.",
+        "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
       image:
-        "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&q=85&auto=format&fit=crop",
-      season: "Festive Heirloom 2026",
-      caption: "Pure Banarasi Katan Silk Unstitched Ensemble with Handcrafted Meenakari Borders",
-      mood: "Majestic • Timeless • Opulent",
-      ctaText: "Explore Collection",
-      ctaTarget: "#catalog",
+        "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+      season: "AUTUMN/FESTIVE 2026",
+      caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
+      mood: "Emerald & Saffron Weaves",
+      ctaText: "Explore Festive Edit",
+      ctaTarget: "catalog-section",
     },
     {
-      eyebrow: "The Chanderi Series",
+      eyebrow: "Timeless Indian elegance",
       number: "02",
-      collection: "Noor-E-Subah",
-      title: "Featherlight Tissue & Pure Chanderi Silks",
+      collection: "The Festive Edit",
+      title: "Grace, weave in Every Detail",
       description:
-        "Gossamer-light weaves crafted from pure munga silk and silver zari tissue. Luminous, airy, and steeped in delicate pastel sophistication.",
+        "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
       image:
-        "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=1600&q=85&auto=format&fit=crop",
-      season: "Day Soiree & Cocktail 2026",
-      caption: "Hand-block printed tissue silk dupatta with scalloped zardozi hems",
-      mood: "Subtle • Radiant • Aristocratic",
-      ctaText: "Discover Chanderi",
-      ctaTarget: "#catalog",
+        "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
+      season: "ROYAL HERITAGE 2026",
+      caption: "Pastels • Delicate Embroidery • Effortless Grace",
+      mood: "Antique Zari & Handlooms",
+      ctaText: "Discover Unstitched",
+      ctaTarget: "catalog-section",
+    },
+    {
+      eyebrow: "Daily Chic",
+      number: "03",
+      collection: "Wrap yourself in the soft elegance of muted pistachio tones and hand-painted watercolor florals, finished with",
+      title: "Grace in Every Print",
+      description:
+        "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND CONTRAST PIPING WITH LACE ON DAMAN.",
+      image:
+        "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg",
+      season: "DAILY CHIC 2026",
+      caption: "Printed Organza Dupatta Set in Sage & Pastel Rose",
+      mood: "Pastel Silks & Easy Linens",
+      ctaText: "Shop Daily Chic",
+      ctaTarget: "catalog-section",
     },
   ],
   features: [
@@ -358,7 +423,16 @@ export function getCachedSiteContent(): SiteContent {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
         const sanitized = sanitizeSiteContent(parsed);
-        return { ...defaultSiteContent, ...sanitized };
+        const merged: SiteContent = { ...defaultSiteContent, ...sanitized };
+        if (!merged.heroSlides || merged.heroSlides.length < 3) {
+          const baseSlides = defaultSiteContent.heroSlides || [];
+          const currSlides = merged.heroSlides || [];
+          merged.heroSlides = [
+            ...currSlides,
+            ...baseSlides.slice(currSlides.length),
+          ].slice(0, 3);
+        }
+        return merged;
       }
     }
   } catch {}
@@ -394,7 +468,15 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (res.ok) {
         const serverData = await res.json();
         if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
-          const merged = { ...defaultSiteContent, ...serverData };
+          const merged: SiteContent = { ...defaultSiteContent, ...serverData };
+          if (!merged.heroSlides || merged.heroSlides.length < 3) {
+            const baseSlides = defaultSiteContent.heroSlides || [];
+            const currSlides = merged.heroSlides || [];
+            merged.heroSlides = [
+              ...currSlides,
+              ...baseSlides.slice(currSlides.length),
+            ].slice(0, 3);
+          }
           currentContent = merged;
           cacheSiteContentLocally(merged);
           callback(merged);
@@ -411,7 +493,15 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (staticRes.ok) {
         const staticData = await staticRes.json();
         if (staticData && (staticData.heroSlides || Object.keys(staticData).length > 0)) {
-          const merged = { ...defaultSiteContent, ...staticData };
+          const merged: SiteContent = { ...defaultSiteContent, ...staticData };
+          if (!merged.heroSlides || merged.heroSlides.length < 3) {
+            const baseSlides = defaultSiteContent.heroSlides || [];
+            const currSlides = merged.heroSlides || [];
+            merged.heroSlides = [
+              ...currSlides,
+              ...baseSlides.slice(currSlides.length),
+            ].slice(0, 3);
+          }
           currentContent = merged;
           cacheSiteContentLocally(merged);
           callback(merged);
@@ -443,7 +533,15 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         if (snap.exists()) {
           const fsData = snap.data() as SiteContent;
           if (fsData) {
-            const merged = { ...defaultSiteContent, ...fsData };
+            const merged: SiteContent = { ...defaultSiteContent, ...fsData };
+            if (!merged.heroSlides || merged.heroSlides.length < 3) {
+              const baseSlides = defaultSiteContent.heroSlides || [];
+              const currSlides = merged.heroSlides || [];
+              merged.heroSlides = [
+                ...currSlides,
+                ...baseSlides.slice(currSlides.length),
+              ].slice(0, 3);
+            }
             currentContent = merged;
             cacheSiteContentLocally(merged);
             callback(merged);
@@ -451,10 +549,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         }
       },
       (err) => {
-        console.warn("Firestore site_content listener notice:", err);
+        handleFirestoreError(err, OperationType.GET, `site_content/${SITE_CONTENT_DOC}`);
       }
     );
-  } catch {}
+  } catch (initErr) {
+    handleFirestoreError(initErr, OperationType.GET, `site_content/${SITE_CONTENT_DOC}`);
+  }
 
   // Event & BroadcastChannel listeners
   const handleContentUpdate = (e: Event) => {
@@ -533,7 +633,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     await setDoc(docRef, updated, { merge: true });
   } catch (fsErr) {
-    console.warn("Firestore saveSiteContent notice:", fsErr);
+    handleFirestoreError(fsErr, OperationType.WRITE, `site_content/${SITE_CONTENT_DOC}`);
   }
 
   // 4. Dispatch events for 0ms reactive UI refresh across all tabs/components

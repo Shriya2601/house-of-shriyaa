@@ -14,6 +14,8 @@ import {
   Layers,
   Sparkle,
   Crown,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
@@ -24,38 +26,48 @@ const DEFAULT_SLIDES: HeroSlide[] = [
   {
     eyebrow: "DAILY / Festive Couture",
     number: "01",
-    collection: "Handcrafted Heirloom",
-    title: "Pure Handloom Silks & Unstitched Suits",
-    description: "Crafted in Surat with 100% pure fabrics, classic Alia-cut silhouettes, and delicate zardozi detailing.",
-    image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+    collection: "Velvet Marigold Edit",
+    title: "Rooh-e-Gulab Micro Velvet 9000 & Hand-Woven Katan Silk",
+    description:
+      "Crafted in Surat with 100% pure fabrics, bespoke Alia-cut silhouettes, and delicate zardozi detailing.",
+    image:
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
     season: "AUTUMN/FESTIVE 2026",
     caption: "Gul-e-Noor Emerald Alia Cut Suit Set",
     mood: "Emerald & Saffron Weaves",
     ctaText: "Explore Festive Edit",
+    ctaTarget: "catalog-section",
   },
   {
-    eyebrow: "Artisan Heirlooms",
+    eyebrow: "Timeless Indian elegance",
     number: "02",
-    collection: "Kashmir to Kashi",
-    title: "Pure Banarasi Booti & Kashmiri Tilla Embroidered Lengths",
-    description: "Unstitched regal handloom fabric lengths ready for your preferred tailor with soft butter silk lining.",
-    image: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1600&q=85",
+    collection: "The Festive Edit",
+    title: "Grace, weave in Every Detail",
+    description:
+      "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
+    image:
+      "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
     season: "ROYAL HERITAGE 2026",
-    caption: "Kashmiri Tilla Saffron Katan Weave",
+    caption: "Pastels • Delicate Embroidery • Effortless Grace",
     mood: "Antique Zari & Handlooms",
-    ctaText: "Discover Heirlooms",
+    ctaText: "Discover Unstitched",
+    ctaTarget: "catalog-section",
   },
   {
-    eyebrow: "Modern Pret & Daily Chic",
+    eyebrow: "Daily Chic",
     number: "03",
-    collection: "Mulmul & Youthful Co-ords",
-    title: "Featherlight Cotton Suits & Chic College Peplum Ensembles",
-    description: "Effortless silhouettes with deep functional pockets, breathable Bagru blocks, and modern tailored fits.",
-    image: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1600&q=85",
+    collection:
+      "Wrap yourself in the soft elegance of muted pistachio tones and hand-painted watercolor florals, finished with",
+    title: "Grace in Every Print",
+    description:
+      "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND CONTRAST PIPING WITH LACE ON DAMAN.",
+    image:
+      "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg",
     season: "DAILY CHIC 2026",
-    caption: "Lilac Blossom Breathable Chanderi Set",
+    caption: "Printed Organza Dupatta Set in Sage & Pastel Rose",
     mood: "Pastel Silks & Easy Linens",
-    ctaText: "View Daily Pret",
+    ctaText: "Shop Daily Chic",
+    ctaTarget: "catalog-section",
   },
 ];
 
@@ -78,13 +90,12 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   useEffect(() => {
     if (isDirtyRef.current || uploadingIndex !== null || isSaving) return;
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      // Ensure 3 slides minimum
       const merged = siteContent.heroSlides.map((s, idx) => ({
         ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
         ...s,
         number: `0${idx + 1}`,
       }));
-      setSlides(merged.slice(0, 3));
+      setSlides(merged);
     }
   }, [siteContent, uploadingIndex, isSaving]);
 
@@ -104,8 +115,54 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     });
   };
 
+  // Add a new slide
+  const handleAddSlide = () => {
+    const newIdx = slides.length;
+    const newSlide: HeroSlide = {
+      eyebrow: "New Collection",
+      number: `0${newIdx + 1}`,
+      collection: "Heirloom Edition",
+      title: "Handcrafted Luxury Ensemble",
+      description: "Handcrafted pure fabric unstitched ensemble tailored for royal celebrations.",
+      image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=85",
+      season: "FESTIVE 2026",
+      caption: "Bespoke Indian Couture Ensemble",
+      mood: "Artisanal Weaves & Silks",
+      ctaText: "Explore Collection",
+      ctaTarget: "catalog-section",
+    };
+    setIsDirty(true);
+    isDirtyRef.current = true;
+    setSlides((prev) => [...prev, newSlide]);
+    setActiveSlideIndex(newIdx);
+    showToast(`Added Slide 0${newIdx + 1}. Click Publish to save live.`, "info");
+  };
+
+  // Remove a slide
+  const handleDeleteSlide = (idxToDelete: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (slides.length <= 1) {
+      showToast("Cannot delete the only remaining slide.", "error");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete Slide 0${idxToDelete + 1}?`)) {
+      return;
+    }
+    setIsDirty(true);
+    isDirtyRef.current = true;
+    setSlides((prev) => {
+      const next = prev.filter((_, idx) => idx !== idxToDelete);
+      return next.map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
+    });
+    if (activeSlideIndex >= idxToDelete && activeSlideIndex > 0) {
+      setActiveSlideIndex(activeSlideIndex - 1);
+    }
+    showToast(`Deleted Slide 0${idxToDelete + 1}. Remember to click Publish Banners.`, "info");
+  };
+
   // Reorder slides
-  const handleMoveSlide = (fromIdx: number, toIdx: number) => {
+  const handleMoveSlide = (fromIdx: number, toIdx: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (toIdx < 0 || toIdx >= slides.length) return;
     setIsDirty(true);
     isDirtyRef.current = true;
@@ -396,21 +453,20 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       </div>
 
       {/* Slide Navigation Tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {slides.map((s, idx) => {
           const isActive = activeSlideIndex === idx;
           return (
-            <button
+            <div
               key={idx}
-              type="button"
               onClick={() => setActiveSlideIndex(idx)}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 flex-1 min-w-[220px] max-w-[340px] relative group ${
                 isActive
                   ? "bg-[#0d4f3c]/5 border-[#0d4f3c] shadow-xs"
                   : "bg-white border-stone-200 hover:border-stone-300"
               }`}
             >
-              <div className="relative w-16 h-12 rounded-md overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
+              <div className="relative w-14 h-11 rounded-md overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
                 <img
                   src={normalizeImageUrl(s.image)}
                   alt={s.title}
@@ -425,17 +481,50 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider ${
-                      isActive ? "text-[#0d4f3c]" : "text-stone-500"
-                    }`}
-                  >
-                    Slide 0{idx + 1}
-                  </span>
-                  {isActive && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#0d4f3c] animate-pulse" />
-                  )}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wider ${
+                        isActive ? "text-[#0d4f3c]" : "text-stone-500"
+                      }`}
+                    >
+                      Slide 0{idx + 1}
+                    </span>
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0d4f3c] animate-pulse" />
+                    )}
+                  </div>
+                  {/* Reordering Controls */}
+                  <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={(e) => handleMoveSlide(idx, idx - 1, e)}
+                      title="Move slide left"
+                      className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === slides.length - 1}
+                      onClick={(e) => handleMoveSlide(idx, idx + 1, e)}
+                      title="Move slide right"
+                      className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                    {slides.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteSlide(idx, e)}
+                        title="Delete slide"
+                        className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p className="text-xs font-semibold text-stone-800 truncate">
                   {s.title || "Untitled Banner"}
@@ -444,9 +533,19 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                   {s.collection || s.eyebrow}
                 </p>
               </div>
-            </button>
+            </div>
           );
         })}
+
+        {/* Add Slide Button */}
+        <button
+          type="button"
+          onClick={handleAddSlide}
+          className="p-3 rounded-xl border border-dashed border-stone-300 hover:border-[#0d4f3c] hover:bg-[#0d4f3c]/5 text-stone-500 hover:text-[#0d4f3c] transition-all flex items-center justify-center gap-2 text-xs font-medium cursor-pointer h-16 min-w-[130px]"
+        >
+          <Plus size={15} />
+          <span>Add Slide</span>
+        </button>
       </div>
 
       {/* Main Slide Editor Grid */}

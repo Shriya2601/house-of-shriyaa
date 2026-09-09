@@ -66,6 +66,7 @@ import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Produ
 import AdminProductManager from "../components/admin/AdminProductManager";
 import AddProductModal from "../components/admin/AddProductModal";
 import AdminBannerManager from "../components/admin/AdminBannerManager";
+import AdminContentManager from "../components/admin/AdminContentManager";
 import AdminPaymentScanner from "../components/admin/AdminPaymentScanner";
 import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
 import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
@@ -173,7 +174,7 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "payment-scanner" | "shiprocket-logs">("products");
+  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "site-content" | "payment-scanner" | "shiprocket-logs">("products");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -973,6 +974,29 @@ export default function AdminPortal() {
             </button>
 
             <button
+              id="admin-tab-site-content"
+              onClick={() => {
+                setActiveTab("site-content");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "site-content"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <FileText size={14} />
+              <span>Site Text & CMS</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "site-content" ? "bg-white/20 text-white" : "bg-stone-300 text-stone-700"
+                }`}
+              >
+                Live CMS
+              </span>
+            </button>
+
+            <button
               id="admin-tab-payment-scanner"
               onClick={() => {
                 setActiveTab("payment-scanner");
@@ -1089,6 +1113,8 @@ export default function AdminPortal() {
           />
         ) : activeTab === "banners" ? (
           <AdminBannerManager showToast={showToast} />
+        ) : activeTab === "site-content" ? (
+          <AdminContentManager showToast={showToast} />
         ) : activeTab === "payment-scanner" ? (
           <AdminPaymentScanner showToast={showToast} />
         ) : activeTab === "products" ? (

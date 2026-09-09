@@ -216,7 +216,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           const ifNoneMatch = req.headers["if-none-match"];
           if (ifNoneMatch && ifNoneMatch === etag) {
             res.setHeader("ETag", etag);
-            res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120, stale-while-revalidate=60");
+            res.setHeader("Cache-Control", "no-cache, must-revalidate");
             res.statusCode = 304;
             res.end();
             return;
@@ -243,8 +243,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           res.setHeader("Content-Type", mime);
           res.setHeader("Content-Length", buffer.length);
           res.setHeader("ETag", etag);
-          // Smart caching: 60s browser, 120s Cloudflare CDN, stale-while-revalidate for fast rendering without stuck caches
-          res.setHeader("Cache-Control", "public, max-age=60, s-maxage=120, stale-while-revalidate=60");
+          // Set no-cache, must-revalidate so updated photos reflect live immediately
+          res.setHeader("Cache-Control", "no-cache, must-revalidate");
           res.statusCode = 200;
           res.end(buffer);
           return;
@@ -675,7 +675,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           return;
         }
 
-        if (urlWithoutQuery === "/api/site-content") {
+        if (urlWithoutQuery === "/api/site-content" || urlWithoutQuery === "/api/content") {
           setAntiCacheHeaders(res);
 
           if (method === "GET") {

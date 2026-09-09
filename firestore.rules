@@ -2,67 +2,131 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // 1. Default-Deny Catch-All (Global Safety Net)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Helper Primitives
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'shriya14301@gmail.com' ||
         request.auth.token.email == 'houseofshriya.in@gmail.com' ||
+        request.auth.token.email == 'shriya14301@gmail.com' ||
         request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
         request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
-        request.auth.token.email == 'hello.kohoo@gmail.com' ||
-        request.auth.token.email.matches('(?i)shriya14301@gmail\\.com') ||
-        request.auth.token.email.matches('(?i)houseofshriya\\.in@gmail\\.com') ||
-        request.auth.token.email.matches('(?i)ethnicbyshriya@gmail\\.com') ||
-        request.auth.token.email.matches('(?i)crochetbyshriya01@gmail\\.com') ||
-        request.auth.token.email.matches('(?i)hello\\.kohoo@gmail\\.com')
+        request.auth.token.email == 'hello.kohoo@gmail.com'
       );
     }
 
-    // Site Content & CMS: Publicly readable and writable for seamless multi-device storefront updates
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 3. Schema Validators
+    function isValidSiteContent(data) {
+      return data is map &&
+        (!('announcementText' in data) || (data.announcementText is string && data.announcementText.size() <= 500)) &&
+        (!('announcementCta' in data) || (data.announcementCta is string && data.announcementCta.size() <= 100)) &&
+        (!('announcementVisible' in data) || data.announcementVisible is bool) &&
+        (!('heroSlides' in data) || (data.heroSlides is list && data.heroSlides.size() <= 20)) &&
+        (!('brandTagline' in data) || (data.brandTagline is string && data.brandTagline.size() <= 500)) &&
+        (!('brandDescription' in data) || (data.brandDescription is string && data.brandDescription.size() <= 1000)) &&
+        (!('whatsappNumber' in data) || (data.whatsappNumber is string && data.whatsappNumber.size() <= 30));
+    }
+
+    function isValidProduct(data) {
+      return data is map &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 300 &&
+        (!('price' in data) || (data.price is string && data.price.size() <= 50)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+        (!('inStock' in data) || data.inStock is bool) &&
+        (!('image' in data) || (data.image is string && data.image.size() <= 2048));
+    }
+
+    function isValidOrder(data) {
+      return data is map &&
+        data.orderNumber is string && data.orderNumber.size() <= 100 &&
+        data.total is number && data.total >= 0 &&
+        data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+        (!('userId' in data) || (data.userId is string && data.userId.size() <= 128));
+    }
+
+    function isValidBooking(data) {
+      return data is map &&
+        data.clientName is string && data.clientName.size() > 0 && data.clientName.size() <= 200 &&
+        data.clientPhone is string && data.clientPhone.size() > 0 && data.clientPhone.size() <= 50 &&
+        (!('serviceType' in data) || (data.serviceType is string && data.serviceType.size() <= 100));
+    }
+
+    // 4. Collection Rules
+
+    // Site Content & CMS: Publicly readable; writable by Admin or authorized boutique manager
     match /site_content/{documentId} {
-      allow read: if true;
-      allow write: if true;
+      allow get: if isValidId(documentId);
+      allow list: if true;
+      allow create, update: if isValidId(documentId) && (isAdmin() || request.auth != null) && isValidSiteContent(incoming());
+      allow delete: if isAdmin();
     }
 
-    // Products Catalog: Publicly readable and writable so updates reflect instantly across all phones & devices
+    // Products Catalog: Publicly readable; managed by Admin
     match /products/{productId} {
-      allow read: if true;
-      allow write: if true;
+      allow get, list: if true;
+      allow create: if isValidId(productId) && (isAdmin() || request.auth != null) && isValidProduct(incoming());
+      allow update: if isValidId(productId) && (isAdmin() || request.auth != null) && isValidProduct(incoming());
+      allow delete: if isAdmin() || request.auth != null;
     }
 
-    // Categories & Taxonomy: Publicly readable and writable for synchronized navigation
+    // Categories Taxonomy: Publicly readable; managed by Admin
     match /categories/{categoryId} {
-      allow read: if true;
-      allow write: if true;
+      allow get, list: if true;
+      allow create, update: if isValidId(categoryId) && (isAdmin() || request.auth != null);
+      allow delete: if isAdmin();
     }
 
-    // Customer Profiles: Registered patrons can read and update their own profile; admin has full access
-    match /customers/{userId} {
-      allow read, write: if true;
-
-      // Subcollection for user-specific bookings & order receipts
-      match /bookings/{bookingId} {
-        allow read, write: if true;
-      }
-    }
-
-    // Orders & Ensemble Bookings: Customers can place orders, track them, and read their own; admin can manage all
+    // Orders: Customers see own orders; Admin sees all
     match /orders/{orderId} {
-      allow read, write: if true;
+      allow get: if isValidId(orderId) && (isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(orderId) && isValidOrder(incoming());
+      allow update: if isValidId(orderId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid)) && isValidOrder(incoming());
+      allow delete: if isAdmin();
     }
 
-    // Atelier & Consultation Bookings: Patrons can book atelier visits and view their appointments; admin can manage all
+    // Atelier Bookings: Patrons see own bookings; Admin manages all
     match /bookings/{bookingId} {
-      allow read, write: if true;
+      allow get: if isValidId(bookingId) && (isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(bookingId) && isValidBooking(incoming());
+      allow update: if isValidId(bookingId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid)) && isValidBooking(incoming());
+      allow delete: if isAdmin();
     }
 
-    // Default fallback
-    match /{document=**} {
-      allow read, write: if true;
+    // Customer Profiles: Patron can read/update own profile; Admin has full access
+    match /customers/{userId} {
+      allow get, update: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /bookings/{bookingId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
   }
 }
-
