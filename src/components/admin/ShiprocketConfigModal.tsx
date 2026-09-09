@@ -1,121 +1,75 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   X,
   SlidersHorizontal,
   Mail,
   MapPin,
   Key,
-  ShieldCheck,
   AlertCircle,
-  HelpCircle,
   CheckCircle2,
   ExternalLink,
-  Eye,
-  EyeOff,
   RefreshCw,
+  Terminal,
 } from "lucide-react";
-import { testCustomCredentials } from "../../services/shiprocketClient";
+import { fetchShiprocketStatus, saveShiprocketConfig } from "../../services/shiprocketClient";
 
 interface ShiprocketConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
-  emailInput: string;
-  setEmailInput: (val: string) => void;
   pickupInput: string;
   setPickupInput: (val: string) => void;
-  passwordInput?: string;
-  setPasswordInput?: (val: string) => void;
-  onSave: (e: React.FormEvent) => void;
   status: any;
+  onRefreshStatus: () => void;
 }
 
 export default function ShiprocketConfigModal({
   isOpen,
   onClose,
-  emailInput,
-  setEmailInput,
   pickupInput,
   setPickupInput,
-  passwordInput = "",
-  setPasswordInput,
-  onSave,
   status,
+  onRefreshStatus,
 }: ShiprocketConfigModalProps) {
-  const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [localPassword, setLocalPassword] = useState(passwordInput || "H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O");
+  const [savingPickup, setSavingPickup] = useState(false);
   const [testResult, setTestResult] = useState<{
     success?: boolean;
     message?: string;
-    locations?: any[];
+    details?: any;
   } | null>(null);
-
-  useEffect(() => {
-    if (passwordInput) {
-      setLocalPassword(passwordInput);
-    } else {
-      const defaultPass = "H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O";
-      setLocalPassword(defaultPass);
-      if (setPasswordInput) setPasswordInput(defaultPass);
-    }
-  }, [passwordInput, isOpen, setPasswordInput]);
-
-  useEffect(() => {
-    if (!emailInput && setEmailInput) {
-      setEmailInput("shriyapusha01@gmail.com");
-    }
-    if (!pickupInput && setPickupInput) {
-      setPickupInput("Home");
-    }
-  }, [emailInput, pickupInput, setEmailInput, setPickupInput]);
 
   if (!isOpen) return null;
 
-  const handlePasswordChange = (val: string) => {
-    setLocalPassword(val);
-    if (setPasswordInput) {
-      setPasswordInput(val);
-    }
-  };
-
   const handleTestConnection = async () => {
-    if (!emailInput.trim()) {
-      setTestResult({ success: false, message: "Please enter your Shiprocket API User Email." });
-      return;
-    }
-    if (!localPassword.trim()) {
-      setTestResult({ success: false, message: "Please enter your Shiprocket API User Password to test connection." });
-      return;
-    }
-
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await testCustomCredentials({
-        email: emailInput.trim(),
-        password: localPassword.trim(),
-      });
+      const res = await fetchShiprocketStatus();
       setTestResult(res);
-      if (res.success && res.locations && res.locations.length > 0 && !pickupInput) {
-        setPickupInput(res.locations[0].pickup_location);
-      }
+      onRefreshStatus();
     } catch (err: any) {
-      setTestResult({ success: false, message: err.message || "Failed to reach Shiprocket API." });
+      setTestResult({
+        success: false,
+        message: err.message || "Failed to reach Shiprocket backend endpoint.",
+      });
     } finally {
       setTesting(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSavePickupLocation = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+    if (!pickupInput.trim()) return;
+    setSavingPickup(true);
     try {
-      await onSave(e);
+      await saveShiprocketConfig({ pickupLocation: pickupInput.trim() });
+      onRefreshStatus();
     } finally {
-      setSaving(false);
+      setSavingPickup(false);
     }
   };
+
+  const isConfigured = Boolean(status?.hasKey || status?.isConfigured || status?.success);
 
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -135,10 +89,10 @@ export default function ShiprocketConfigModal({
             </div>
             <div>
               <h3 className="font-serif font-bold text-base text-[#1e1b18]">
-                Shiprocket API Configuration
+                Shiprocket Environment & API Status
               </h3>
               <p className="text-xs text-stone-500">
-                Automate order sync, courier selection, and AWB generation
+                Backend environment variables and dispatch verification
               </p>
             </div>
           </div>
@@ -150,122 +104,166 @@ export default function ShiprocketConfigModal({
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        {/* Modal Body */}
+        <div className="p-5 space-y-4">
           {/* Status Indicator */}
           <div
-            className={`p-3 rounded-xl border flex items-center gap-3 text-xs ${
+            className={`p-3.5 rounded-xl border flex items-start gap-3 text-xs ${
               status?.success
                 ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                : "bg-amber-50 border-amber-200 text-amber-900"
+                : isConfigured
+                ? "bg-amber-50 border-amber-200 text-amber-900"
+                : "bg-stone-100 border-stone-200 text-stone-800"
             }`}
           >
             {status?.success ? (
-              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle size={18} className="text-amber-600 shrink-0" />
+              <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
             )}
             <div>
               <span className="font-bold block">
-                {status?.success ? "Active Shiprocket Integration" : "Configuration Status"}
+                {status?.success
+                  ? "Shiprocket API Connected & Verified"
+                  : isConfigured
+                  ? "Credentials Detected in Environment"
+                  : "Environment Variables Required"}
               </span>
-              <p className="text-[11px] mt-0.5">
-                {status?.message || "Enter your Shiprocket API credentials below to enable automated dispatch."}
+              <p className="text-[11px] mt-0.5 leading-relaxed">
+                {status?.message ||
+                  "The backend reads Shiprocket credentials securely via server environment variables."}
               </p>
             </div>
           </div>
 
-          {/* Field: API User Email */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5 flex items-center gap-1.5">
-              <Mail size={13} className="text-[#0d4f3c]" />
-              <span>Shiprocket API User Email *</span>
-            </label>
-            <input
-              type="email"
-              required
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="shriyapusha01@gmail.com"
-              className="w-full bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
-            />
-            <span className="text-[11px] text-stone-500 mt-1 block">
-              The email of the API user created in your Shiprocket dashboard.
-            </span>
-          </div>
-
-          {/* Field: API User Password */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5 flex items-center gap-1.5">
-              <Key size={13} className="text-[#0d4f3c]" />
-              <span>Shiprocket API User Password *</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={localPassword}
-                onChange={(e) => handlePasswordChange(e.target.value)}
-                placeholder="Enter Shiprocket API User password"
-                className="w-full bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 pr-10 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
-              >
-                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
+          {/* Environment Variables Inspection Card */}
+          <div className="border border-[#e5ddd3] rounded-xl overflow-hidden bg-[#faf7f2]">
+            <div className="px-3.5 py-2 bg-stone-100 border-b border-[#e5ddd3] flex items-center justify-between">
+              <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Terminal size={12} className="text-[#0d4f3c]" />
+                Backend Environment Variables
+              </span>
+              <span className="text-[10px] text-stone-500 font-mono">Server-Side Only</span>
             </div>
-            <span className="text-[11px] text-stone-500 mt-1 block">
-              Configured under Shiprocket &gt; Settings &gt; API &gt; Configure API Users.
-            </span>
+
+            <div className="p-3.5 space-y-2.5 text-xs">
+              {/* SHIPROCKET_API_EMAIL */}
+              <div className="flex items-center justify-between pb-2 border-b border-[#e5ddd3]">
+                <div className="flex items-center gap-2">
+                  <Mail size={13} className="text-stone-500" />
+                  <code className="font-mono text-[11px] font-semibold text-stone-800">
+                    SHIPROCKET_API_EMAIL
+                  </code>
+                </div>
+                <div>
+                  {status?.emailMasked ? (
+                    <span className="font-mono text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                      {status.emailMasked}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-stone-500 font-mono bg-stone-200/70 px-2 py-0.5 rounded">
+                      Not Set
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* SHIPROCKET_API_PASSWORD */}
+              <div className="flex items-center justify-between pb-2 border-b border-[#e5ddd3]">
+                <div className="flex items-center gap-2">
+                  <Key size={13} className="text-stone-500" />
+                  <code className="font-mono text-[11px] font-semibold text-stone-800">
+                    SHIPROCKET_API_PASSWORD
+                  </code>
+                </div>
+                <div>
+                  {status?.hasKey ? (
+                    <span className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-medium">
+                      Configured on Server
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-stone-500 font-mono bg-stone-200/70 px-2 py-0.5 rounded">
+                      Not Set
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* SHIPROCKET_PICKUP_LOCATION */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MapPin size={13} className="text-stone-500" />
+                  <code className="font-mono text-[11px] font-semibold text-stone-800">
+                    SHIPROCKET_PICKUP_LOCATION
+                  </code>
+                </div>
+                <div className="font-mono text-[11px] text-stone-700 bg-stone-200/70 px-2 py-0.5 rounded">
+                  {status?.details?.pickupLocationConfigured || pickupInput || "Home"}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Field: Pickup Location */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
+          {/* Pickup Location Nickname Form */}
+          <form onSubmit={handleSavePickupLocation} className="space-y-2">
+            <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-stone-700 flex items-center gap-1.5">
                 <MapPin size={13} className="text-[#0d4f3c]" />
-                <span>Pickup Location Nickname *</span>
+                <span>Pickup Location Nickname</span>
               </label>
               {status?.details?.availablePickupLocations?.length > 0 && (
-                <div className="flex items-center gap-1">
-                  {status.details.availablePickupLocations.map((loc: any, idx: number) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setPickupInput(loc.name || loc.pickup_location)}
-                      className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer font-medium"
-                    >
-                      Use "{loc.name || loc.pickup_location}"
-                    </button>
-                  ))}
-                </div>
+                <span className="text-[10px] text-stone-500">
+                  {status.details.availablePickupLocations.length} registered in Shiprocket
+                </span>
               )}
             </div>
-            <input
-              type="text"
-              required
-              value={pickupInput}
-              onChange={(e) => setPickupInput(e.target.value)}
-              placeholder="e.g. Home"
-              className="w-full bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
-            />
-            <span className="text-[11px] text-stone-500 mt-1 block">
-              Must match the exact pickup nickname registered in Shiprocket (e.g. <code className="font-mono bg-stone-100 px-1 py-0.5 rounded">Home</code>).
-            </span>
-          </div>
 
-          {/* Test Connection Button & Result */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={pickupInput}
+                onChange={(e) => setPickupInput(e.target.value)}
+                placeholder="e.g. Home or Primary"
+                className="flex-1 bg-[#fcfaf7] border border-[#d6ccc2] rounded-lg p-2.5 text-xs text-stone-800 focus:border-[#0d4f3c] focus:bg-white focus:outline-hidden"
+              />
+              <button
+                type="submit"
+                disabled={savingPickup || !pickupInput.trim()}
+                className="px-3.5 py-2 bg-[#0d4f3c] hover:bg-[#083528] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {savingPickup ? "Saving..." : "Set Nickname"}
+              </button>
+            </div>
+
+            {status?.details?.availablePickupLocations?.length > 0 && (
+              <div className="pt-1 flex flex-wrap gap-1.5">
+                {status.details.availablePickupLocations.map((loc: any, idx: number) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setPickupInput(loc.name)}
+                    className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer font-medium"
+                  >
+                    Use "{loc.name}" ({loc.city})
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="text-[11px] text-stone-500 block">
+              Matches the exact nickname registered in your Shiprocket panel under Settings &gt; Pickup Addresses.
+            </span>
+          </form>
+
+          {/* Test Live Connection Button & Result */}
           <div className="pt-1">
             <button
               type="button"
               onClick={handleTestConnection}
               disabled={testing}
-              className="w-full py-2 px-3 rounded-lg text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-3 rounded-lg text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw size={13} className={testing ? "animate-spin text-[#0d4f3c]" : ""} />
-              {testing ? "Testing Shiprocket Credentials..." : "Test Connection with Shiprocket API"}
+              {testing ? "Testing Backend Authentication..." : "Test Backend Connection to Shiprocket"}
             </button>
 
             {testResult && (
@@ -282,69 +280,57 @@ export default function ShiprocketConfigModal({
                   ) : (
                     <AlertCircle size={14} className="text-rose-700" />
                   )}
-                  <span>{testResult.success ? "Connection Verified!" : "Verification Failed"}</span>
+                  <span>
+                    {testResult.success ? "Live Connection Verified!" : "Verification Result"}
+                  </span>
                 </div>
                 <p className="mt-1 text-[11px]">{testResult.message}</p>
-                {testResult.locations && testResult.locations.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-emerald-200 text-[11px]">
-                    <span className="font-bold block mb-1">Available Pickup Addresses in Shiprocket:</span>
-                    <ul className="space-y-1">
-                      {testResult.locations.map((loc, i) => (
-                        <li key={i} className="flex items-center justify-between">
-                          <span>{loc.pickup_location} ({loc.city}, {loc.state})</span>
-                          <button
-                            type="button"
-                            onClick={() => setPickupInput(loc.pickup_location)}
-                            className="text-[#0d4f3c] underline font-semibold hover:text-[#083528]"
-                          >
-                            Use this
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
           </div>
 
-          {/* Step-by-Step Info Box */}
+          {/* Configuration Instructions */}
           <div className="bg-[#faf7f2] border border-[#e8dfd5] rounded-xl p-3.5 text-xs space-y-2">
-            <span className="font-bold text-stone-800 flex items-center gap-1.5">
-              <HelpCircle size={14} className="text-[#0d4f3c]" />
-              <span>Where to find Shiprocket API Credentials</span>
+            <span className="font-bold text-stone-800 flex items-center justify-between">
+              <span>Setting Up Environment Variables</span>
+              <a
+                href="https://app.shiprocket.in"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0d4f3c] inline-flex items-center gap-1 hover:underline text-[11px]"
+              >
+                <span>Shiprocket Panel</span>
+                <ExternalLink size={11} />
+              </a>
             </span>
             <ol className="list-decimal list-inside space-y-1 text-[11px] text-stone-600 leading-relaxed">
               <li>
-                In <a href="https://app.shiprocket.in" target="_blank" rel="noreferrer" className="text-[#0d4f3c] underline font-medium">app.shiprocket.in</a>, go to <strong>Settings &gt; API &gt; Configure API Users</strong>.
+                In Shiprocket, navigate to <strong>Settings &gt; API &gt; Configure API Users</strong>.
               </li>
               <li>
-                Click <strong>Add New User</strong> or check existing API User Email and set/view the password.
+                Note your API User Email and generate/retrieve your API User Password.
               </li>
               <li>
-                Enter the email and password above and click <strong>Save Settings</strong>. All orders will now automatically push to Shiprocket!
+                Provide <code className="font-mono bg-stone-100 px-1 py-0.5 rounded">SHIPROCKET_API_EMAIL</code> and{" "}
+                <code className="font-mono bg-stone-100 px-1 py-0.5 rounded">SHIPROCKET_API_PASSWORD</code> in your environment settings.
+              </li>
+              <li>
+                The backend automatically uses these credentials for all automated order dispatches and logs every event in the Dispatch &amp; Response Logs.
               </li>
             </ol>
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="pt-3 border-t border-[#e5ddd3] flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-stone-600 hover:text-stone-900 text-xs font-semibold cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-2 bg-[#0d4f3c] hover:bg-[#083528] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {saving ? "Verifying & Saving..." : "Save Settings"}
-            </button>
-          </div>
-        </form>
+        {/* Actions Footer */}
+        <div className="px-5 py-3 border-t border-[#e5ddd3] bg-[#fcfaf7] flex items-center justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-[#0d4f3c] hover:bg-[#083528] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

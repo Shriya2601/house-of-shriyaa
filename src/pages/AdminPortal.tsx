@@ -113,11 +113,16 @@ function ShipmentStatusBadge({
     );
   }
 
+  // Only show Synced if there is an authentic numeric/external Shiprocket order ID
+  const hasGenuineSrId =
+    Boolean(order.shiprocketOrderId) &&
+    String(order.shiprocketOrderId) !== String(order.orderNumber) &&
+    String(order.shiprocketOrderId) !== String(order.id) &&
+    !String(order.shiprocketOrderId).startsWith("HOS-");
+
   if (
-    order.shiprocketOrderId ||
-    srStatus === "synced" ||
-    srStatus === "new" ||
-    srStatus === "manifest generated"
+    hasGenuineSrId &&
+    (srStatus === "synced" || srStatus === "new" || srStatus === "manifest generated")
   ) {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -207,8 +212,6 @@ export default function AdminPortal() {
   } | null>(null);
   const [isCheckingShiprocket, setIsCheckingShiprocket] = useState<boolean>(false);
   const [isShiprocketConfigOpen, setIsShiprocketConfigOpen] = useState<boolean>(false);
-  const [shiprocketEmailInput, setShiprocketEmailInput] = useState<string>("shriyapusha01@gmail.com");
-  const [shiprocketPasswordInput, setShiprocketPasswordInput] = useState<string>("H9^bTjWJLyq$#qlD@Ck6cYBuygyybN&O");
   const [shiprocketPickupInput, setShiprocketPickupInput] = useState<string>("Home");
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
 
@@ -243,9 +246,6 @@ export default function AdminPortal() {
     try {
       const res = await fetchShiprocketStatus();
       setShiprocketStatus(res);
-      if (res.configuredEmail) {
-        setShiprocketEmailInput(res.configuredEmail);
-      }
       if (res.details?.pickupLocationConfigured) {
         setShiprocketPickupInput(res.details.pickupLocationConfigured);
       }
@@ -316,54 +316,14 @@ export default function AdminPortal() {
       if (res.success && res.data) {
         setTrackingData(res.data);
       } else {
-        setTrackingData({
-          tracking_data: {
-            shipment_track: [
-              {
-                awb_code: order.trackingNumber || `SR-${order.orderNumber}`,
-                courier_name: order.trackingCourier || "Shiprocket Express",
-                current_status: order.orderStatus === "delivered" ? "DELIVERED" : "IN TRANSIT",
-                origin: "Surat Atelier, Gujarat",
-                destination: `${order.shippingAddress?.city || "Patron"}, ${order.shippingAddress?.state || "India"}`,
-              },
-            ],
-            shipment_track_activities: [
-              {
-                date: new Date(order.createdAt || Date.now()).toISOString().replace("T", " ").slice(0, 19),
-                status: "Order Confirmed & Manifest Created",
-                activity: "Order manifested via Shiprocket",
-                location: "Surat Atelier",
-              },
-            ],
-          },
-        });
+        setTrackingData(null);
+        showToast(res.error || "No live tracking data found on Shiprocket for this order yet.", "error");
       }
     } catch (err: any) {
       console.error("Error fetching tracking:", err);
+      showToast("Could not retrieve tracking details.", "error");
     } finally {
       setIsLoadingTracking(false);
-    }
-  };
-
-  // Save Shiprocket Settings
-  const handleSaveShiprocketConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await saveShiprocketConfig({
-        email: shiprocketEmailInput.trim(),
-        pickupLocation: shiprocketPickupInput.trim(),
-        password: shiprocketPasswordInput.trim() || undefined,
-      });
-      if (res.success) {
-        showToast("Shiprocket configuration updated successfully!");
-        setIsShiprocketConfigOpen(false);
-        checkShiprocketConnection();
-        loadDashboardData();
-      } else {
-        showToast(res.error || "Failed to update configuration", "error");
-      }
-    } catch (err: any) {
-      showToast(err.message || "Failed to save settings", "error");
     }
   };
 
@@ -1363,15 +1323,36 @@ export default function AdminPortal() {
                       className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         shiprocketStatus?.success
                           ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
+                          : shiprocketStatus?.hasKey
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-stone-200 text-stone-700"
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${shiprocketStatus?.success ? "bg-emerald-600 animate-pulse" : "bg-amber-600"}`} />
-                      {shiprocketStatus?.success ? "API Connected" : "API Key Loaded"}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          shiprocketStatus?.success
+                            ? "bg-emerald-600 animate-pulse"
+                            : shiprocketStatus?.hasKey
+                            ? "bg-amber-600"
+                            : "bg-stone-500"
+                        }`}
+                      />
+                      {shiprocketStatus?.success
+                        ? "API Connected"
+                        : shiprocketStatus?.hasKey
+                        ? "Credentials in Env"
+                        : "Env Variables Needed"}
                     </span>
                   </div>
                   <p className="text-[11px] text-stone-500 mt-0.5">
-                    User: <span className="font-mono text-stone-700">{shiprocketStatus?.emailMasked || "shriya.pusha@sharepal.in"}</span> · Pickup Atelier: <span className="font-medium text-stone-700">{shiprocketPickupInput || "Primary"}</span>
+                    User:{" "}
+                    <span className="font-mono text-stone-700">
+                      {shiprocketStatus?.emailMasked || "Not Set in Env"}
+                    </span>{" "}
+                    · Pickup Atelier:{" "}
+                    <span className="font-medium text-stone-700">
+                      {shiprocketPickupInput || "Home"}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -1759,14 +1740,13 @@ export default function AdminPortal() {
         <ShiprocketConfigModal
           isOpen={isShiprocketConfigOpen}
           onClose={() => setIsShiprocketConfigOpen(false)}
-          emailInput={shiprocketEmailInput}
-          setEmailInput={setShiprocketEmailInput}
           pickupInput={shiprocketPickupInput}
           setPickupInput={setShiprocketPickupInput}
-          passwordInput={shiprocketPasswordInput}
-          setPasswordInput={setShiprocketPasswordInput}
-          onSave={handleSaveShiprocketConfig}
           status={shiprocketStatus}
+          onRefreshStatus={() => {
+            checkShiprocketConnection();
+            loadDashboardData();
+          }}
         />
       )}
     </div>

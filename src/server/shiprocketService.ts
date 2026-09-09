@@ -41,35 +41,20 @@ loadEnvFallback();
 
 export function getShiprocketConfig() {
   loadEnvFallback();
-  let email = process.env.SHIPROCKET_API_EMAIL || "";
-  let password = process.env.SHIPROCKET_API_PASSWORD || "";
-  let pickupLocation = process.env.SHIPROCKET_PICKUP_LOCATION || "Home";
-
-  // Fallback to public/data/shiprocket-config.json if not present in env
-  if (!email || !password) {
-    try {
-      const cfgPath = path.resolve(process.cwd(), "public/data/shiprocket-config.json");
-      if (fs.existsSync(cfgPath)) {
-        const json = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
-        if (json.email) email = json.email;
-        if (json.password) password = json.password;
-        if (json.pickupLocation) pickupLocation = json.pickupLocation;
-      }
-    } catch (err) {
-      console.warn("[Shiprocket] JSON config read warning:", err);
-    }
-  }
+  const email = (process.env.SHIPROCKET_API_EMAIL || "").trim();
+  const password = (process.env.SHIPROCKET_API_PASSWORD || "").trim();
+  const pickupLocation = (process.env.SHIPROCKET_PICKUP_LOCATION || "Home").trim();
 
   return {
-    email: email.trim(),
-    password: password.trim(),
-    pickupLocation: pickupLocation.trim(),
-    isConfigured: Boolean(email.trim() && password.trim()),
+    email,
+    password,
+    pickupLocation,
+    isConfigured: Boolean(email && password),
   };
 }
 
 /**
- * Update environment variables in .env file and public/data/shiprocket-config.json safely
+ * Update environment variables in .env file safely
  */
 export function updateShiprocketConfig(params: {
   email?: string;
@@ -114,23 +99,6 @@ export function updateShiprocketConfig(params: {
       newLines.push(`${k}="${v}"`);
     }
     fs.writeFileSync(envPath, newLines.join("\n") + "\n", "utf-8");
-
-    // Also persist to public/data/shiprocket-config.json
-    try {
-      const cfgPath = path.resolve(process.cwd(), "public/data/shiprocket-config.json");
-      const currentJson = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, "utf-8")) : {};
-      const updatedJson = {
-        ...currentJson,
-        email: process.env.SHIPROCKET_API_EMAIL || currentJson.email || "",
-        password: process.env.SHIPROCKET_API_PASSWORD || currentJson.password || "",
-        pickupLocation: process.env.SHIPROCKET_PICKUP_LOCATION || currentJson.pickupLocation || "Home",
-        isConfigured: Boolean(process.env.SHIPROCKET_API_EMAIL && process.env.SHIPROCKET_API_PASSWORD),
-        updatedAt: new Date().toISOString(),
-      };
-      fs.writeFileSync(cfgPath, JSON.stringify(updatedJson, null, 2), "utf-8");
-    } catch (jErr) {
-      console.warn("[Shiprocket] Notice saving JSON config:", jErr);
-    }
 
     logShiprocketEvent({
       action: "CONFIG",

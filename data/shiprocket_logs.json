@@ -1,5 +1,94 @@
 [
   {
+    "action": "RETRY_SYNC",
+    "status": "SUCCESS",
+    "orderNumber": "HOS-2026-3152",
+    "orderId": "ord_1788736907066",
+    "attemptNumber": 1,
+    "errorMessage": "Order synced on retry attempt #1. Shiprocket ID: 1573230240",
+    "id": "log_1788984893696_6bfse",
+    "timestamp": "2026-09-09T20:14:53.696Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "SUCCESS",
+    "orderNumber": "HOS-2026-3152",
+    "orderId": "ord_1788736907066",
+    "endpoint": "/orders/create/adhoc",
+    "statusCode": 200,
+    "durationMs": 785,
+    "requestPayload": {
+      "order_id": "HOS-2026-3152",
+      "order_date": "2026-09-06 23:21",
+      "pickup_location": "Home",
+      "channel_id": "",
+      "comment": "House of Shriya Atelier Order - HOS-2026-3152 (Prepaid)",
+      "billing_customer_name": "Rohit",
+      "billing_last_name": "Verma",
+      "billing_address": "123 Heritage Lane",
+      "billing_address_2": "",
+      "billing_city": "Jaipur",
+      "billing_pincode": "302001",
+      "billing_state": "Rajasthan",
+      "billing_country": "India",
+      "billing_email": "rohit@example.com",
+      "billing_phone": "9812345678",
+      "shipping_is_billing": true,
+      "order_items": [
+        {
+          "name": "Noor-E-Chanderi Unstitched Suit",
+          "sku": "hos-001",
+          "units": 1,
+          "selling_price": 4999,
+          "discount": 0,
+          "tax": 0,
+          "hsn": 5007
+        }
+      ],
+      "payment_method": "Prepaid",
+      "shipping_charges": 0,
+      "giftwrap_charges": 0,
+      "transaction_charges": 0,
+      "total_discount": 100,
+      "sub_total": 4999,
+      "length": 30,
+      "breadth": 24,
+      "height": 6,
+      "weight": 0.8
+    },
+    "responsePayload": {
+      "order_id": 1573230240,
+      "channel_order_id": "HOS-2026-3152",
+      "shipment_id": 1569448310,
+      "status": "NEW",
+      "status_code": 1,
+      "onboarding_completed_now": 0,
+      "awb_code": "",
+      "courier_company_id": "",
+      "courier_name": "",
+      "new_channel": false
+    },
+    "id": "log_1788984893694_xwzg3",
+    "timestamp": "2026-09-09T20:14:53.694Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
+    "durationMs": 519,
+    "responsePayload": {
+      "success": true,
+      "expiresInDays": 7,
+      "tokenReceived": true
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788984893428_el69h",
+    "timestamp": "2026-09-09T20:14:53.428Z"
+  },
+  {
     "action": "AUTH",
     "status": "SUCCESS",
     "statusCode": 200,

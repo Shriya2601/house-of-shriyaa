@@ -1120,6 +1120,9 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         // 7. SHIPROCKET DEDICATED ROUTES (/api/shipping/shiprocket/*)
         // ============================================================
         if (urlWithoutQuery.startsWith("/api/shipping/shiprocket")) {
+          setCorsHeaders(res);
+          setAntiCacheHeaders(res);
+
           const {
             testShiprocketAuth,
             testCustomShiprocketCredentials,

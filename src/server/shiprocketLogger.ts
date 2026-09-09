@@ -18,16 +18,40 @@ export interface ShiprocketLogEntry {
 }
 
 const MAX_LOGS = 200;
-const LOGS_FILE_PATH = path.resolve(process.cwd(), "public/data/shiprocket_logs.json");
+const SECURE_LOGS_PATH = path.resolve(process.cwd(), "data/shiprocket_logs.json");
+const LEGACY_LOGS_PATH = path.resolve(process.cwd(), "public/data/shiprocket_logs.json");
 
 let memoryLogs: ShiprocketLogEntry[] = [];
 let isLoaded = false;
 
+function sanitizePayload(payload: any): any {
+  if (!payload || typeof payload !== "object") return payload;
+  if (Array.isArray(payload)) return payload.map(sanitizePayload);
+  const sanitized: Record<string, any> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    const lk = k.toLowerCase();
+    if (lk.includes("password") || lk.includes("token") || lk.includes("secret") || lk.includes("authorization")) {
+      sanitized[k] = "***";
+    } else if (typeof v === "object") {
+      sanitized[k] = sanitizePayload(v);
+    } else {
+      sanitized[k] = v;
+    }
+  }
+  return sanitized;
+}
+
 function ensureLogsLoaded() {
   if (isLoaded) return;
   try {
-    if (fs.existsSync(LOGS_FILE_PATH)) {
-      const content = fs.readFileSync(LOGS_FILE_PATH, "utf-8");
+    const targetPath = fs.existsSync(SECURE_LOGS_PATH)
+      ? SECURE_LOGS_PATH
+      : fs.existsSync(LEGACY_LOGS_PATH)
+      ? LEGACY_LOGS_PATH
+      : null;
+
+    if (targetPath && fs.existsSync(targetPath)) {
+      const content = fs.readFileSync(targetPath, "utf-8");
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
         memoryLogs = parsed;
@@ -42,11 +66,11 @@ function ensureLogsLoaded() {
 
 function persistLogs() {
   try {
-    const dir = path.dirname(LOGS_FILE_PATH);
+    const dir = path.dirname(SECURE_LOGS_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(LOGS_FILE_PATH, JSON.stringify(memoryLogs.slice(0, MAX_LOGS), null, 2), "utf-8");
+    fs.writeFileSync(SECURE_LOGS_PATH, JSON.stringify(memoryLogs.slice(0, MAX_LOGS), null, 2), "utf-8");
   } catch (err) {
     console.warn("[Shiprocket Logger] Error persisting logs:", err);
   }
@@ -62,6 +86,8 @@ export function logShiprocketEvent(
 
   const fullEntry: ShiprocketLogEntry = {
     ...entry,
+    requestPayload: sanitizePayload(entry.requestPayload),
+    responsePayload: sanitizePayload(entry.responsePayload),
     id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: new Date().toISOString(),
   };
