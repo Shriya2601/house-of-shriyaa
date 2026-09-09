@@ -41,6 +41,20 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
     }
   }, [siteContent, isSaving]);
 
+  useEffect(() => {
+    const handleLiveSync = (e: any) => {
+      if (isDirtyRef.current || isSaving) return;
+      if (e.detail) {
+        setFormData({
+          ...defaultSiteContent,
+          ...e.detail,
+        });
+      }
+    };
+    window.addEventListener("hos-content-updated", handleLiveSync);
+    return () => window.removeEventListener("hos-content-updated", handleLiveSync);
+  }, [isSaving]);
+
   const handleChange = (field: keyof SiteContent, value: any) => {
     setIsDirty(true);
     isDirtyRef.current = true;

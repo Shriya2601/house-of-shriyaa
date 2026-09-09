@@ -1,5 +1,88 @@
 [
   {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
+    "orderNumber": "HOS-TEST-VERIFY-4911",
+    "endpoint": "/orders/create/adhoc",
+    "statusCode": 401,
+    "durationMs": 109,
+    "errorMessage": "token_expired",
+    "requestPayload": {
+      "order_id": "HOS-TEST-VERIFY-4911",
+      "order_date": "2026-09-09 22:02",
+      "pickup_location": "Home",
+      "channel_id": "",
+      "comment": "House of Shriya Atelier Order - HOS-TEST-VERIFY-4911 (Prepaid)",
+      "billing_customer_name": "Shriya",
+      "billing_last_name": "Pusha",
+      "billing_address": "1908/2 Ahluwalia street, near arna barna chowk",
+      "billing_address_2": "",
+      "billing_city": "Patiala",
+      "billing_pincode": "147001",
+      "billing_state": "Punjab",
+      "billing_country": "India",
+      "billing_email": "shriyapusha01@gmail.com",
+      "billing_phone": "9877194356",
+      "shipping_is_billing": true,
+      "order_items": [
+        {
+          "name": "Emerald Zari Suit Ensemble",
+          "sku": "hos-emerald-zari-1",
+          "units": 1,
+          "selling_price": 4999,
+          "discount": 0,
+          "tax": 0,
+          "hsn": 5007
+        }
+      ],
+      "payment_method": "Prepaid",
+      "shipping_charges": 0,
+      "giftwrap_charges": 0,
+      "transaction_charges": 0,
+      "total_discount": 0,
+      "sub_total": 4999,
+      "length": 30,
+      "breadth": 24,
+      "height": 6,
+      "weight": 0.8
+    },
+    "responsePayload": {
+      "message": "token_expired",
+      "status_code": 401
+    },
+    "id": "log_1788991355163_5cwef",
+    "timestamp": "2026-09-09T22:02:35.163Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "errorMessage": "Shiprocket Login Failed: User blocked due to too many failed login attempts.",
+    "durationMs": 239,
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788991119604_cw9y9",
+    "timestamp": "2026-09-09T21:58:39.604Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "statusCode": 403,
+    "errorMessage": "User blocked due to too many failed login attempts.",
+    "durationMs": 238,
+    "responsePayload": {
+      "message": "User blocked due to too many failed login attempts.",
+      "status_code": 403
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788991119604_pbcfo",
+    "timestamp": "2026-09-09T21:58:39.604Z"
+  },
+  {
     "action": "AUTH",
     "status": "SUCCESS",
     "statusCode": 200,

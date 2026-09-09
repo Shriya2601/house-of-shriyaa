@@ -3,7 +3,7 @@
   "announcementCta": "Explore Collection",
   "announcementVisible": false,
   "brandTagline": "Heirloom Indian couture, thoughtfully woven and made to measure in Surat.",
-  "brandDescription": "Where pretty meets effortless elegance",
+  "brandDescription": "Test Cross-Device Update",
   "contactPhone": "+91 95016 98356",
   "contactEmail": "care@houseofshriya.com",
   "whatsappNumber": "+919501698356",
@@ -100,5 +100,8 @@
       "id": "nav-5"
     }
   ],
-  "updatedAt": "2026-09-09T10:08:25.230Z"
+  "upiScannerUrl": "/uploads/house-of-shriya-official-upi-scanner.png",
+  "upiId": "shriyapusha01-1@okaxis",
+  "upiMerchantName": "House of Shriya",
+  "updatedAt": "2026-09-09T21:52:14.917Z"
 }

@@ -76,7 +76,16 @@ interface AdminBannerManagerProps {
 
 export default function AdminBannerManager({ showToast }: AdminBannerManagerProps) {
   const { siteContent } = useStore();
-  const [slides, setSlides] = useState<HeroSlide[]>(DEFAULT_SLIDES);
+  const [slides, setSlides] = useState<HeroSlide[]>(() => {
+    if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
+      return siteContent.heroSlides.map((s, idx) => ({
+        ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
+        ...s,
+        number: s.number || `0${idx + 1}`,
+      }));
+    }
+    return DEFAULT_SLIDES;
+  });
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
@@ -89,14 +98,33 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   useEffect(() => {
     if (isDirtyRef.current || uploadingIndex !== null || isSaving) return;
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      const merged = siteContent.heroSlides.map((s, idx) => ({
+      const cleanSlides = siteContent.heroSlides.map((s, idx) => ({
         ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
         ...s,
-        number: `0${idx + 1}`,
+        number: s.number || `0${idx + 1}`,
       }));
-      setSlides(merged);
+      setSlides(cleanSlides);
     }
   }, [siteContent, uploadingIndex, isSaving]);
+
+  // Listen to cross-device and live sync content events
+  useEffect(() => {
+    const handleLiveSync = (e: any) => {
+      if (isDirtyRef.current || uploadingIndex !== null || isSaving) return;
+      const updatedContent = e.detail;
+      if (updatedContent?.heroSlides && Array.isArray(updatedContent.heroSlides) && updatedContent.heroSlides.length > 0) {
+        const cleanSlides = updatedContent.heroSlides.map((s: any, idx: number) => ({
+          ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
+          ...s,
+          number: s.number || `0${idx + 1}`,
+        }));
+        setSlides(cleanSlides);
+      }
+    };
+
+    window.addEventListener("hos-content-updated", handleLiveSync);
+    return () => window.removeEventListener("hos-content-updated", handleLiveSync);
+  }, [uploadingIndex, isSaving]);
 
   const currentSlide = slides[activeSlideIndex] || slides[0];
 

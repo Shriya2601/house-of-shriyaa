@@ -263,6 +263,21 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
       return;
     }
 
+    // Direct Live Data Serving for /data/*.json
+    // Ensures mobile, tablet, and cross-device browsers never cache stale static json files
+    if (urlWithoutQuery.startsWith("/data/") && urlWithoutQuery.endsWith(".json")) {
+      const filename = path.basename(urlWithoutQuery);
+      const data = readDataFile(filename, null);
+      if (data !== null) {
+        setCorsHeaders(res);
+        setAntiCacheHeaders(res);
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 200;
+        res.end(JSON.stringify(data));
+        return;
+      }
+    }
+
     // Check if request is under /api
     if (!urlWithoutQuery.startsWith("/api")) {
       return next();
@@ -1216,6 +1231,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                   email: body.email,
                   password: body.password,
                   pickupLocation: body.pickupLocation,
+                  token: body.token,
+                  tokenExpiresAt: body.tokenExpiresAt,
                 });
                 const testRes = await testShiprocketAuth();
                 res.setHeader("Content-Type", "application/json");

@@ -157,6 +157,7 @@ export async function saveShiprocketConfig(params: {
   email?: string;
   pickupLocation?: string;
   password?: string;
+  token?: string;
 }): Promise<{ success: boolean; auth?: ShiprocketStatusResponse; error?: string }> {
   try {
     const res = await fetch("/api/shipping/shiprocket/config", {

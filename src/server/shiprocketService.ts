@@ -46,6 +46,10 @@ function loadEnvFallback() {
       if (cfg.pickupLocation && !process.env.SHIPROCKET_PICKUP_LOCATION) {
         process.env.SHIPROCKET_PICKUP_LOCATION = cfg.pickupLocation.trim();
       }
+      if (cfg.token && !authCache.token) {
+        authCache.token = cfg.token;
+        authCache.expiresAt = Number(cfg.tokenExpiresAt || Date.now() + 7 * 86400000);
+      }
     }
   } catch (err) {
     console.warn("[Shiprocket] Notice loading .env/json fallback:", err);
@@ -64,17 +68,21 @@ export function getShiprocketConfig() {
     email,
     password,
     pickupLocation,
-    isConfigured: Boolean(email && password),
+    isConfigured: Boolean((email && password) || (authCache.token && authCache.expiresAt > Date.now())),
+    hasPassword: Boolean(password),
+    hasToken: Boolean(authCache.token && authCache.expiresAt > Date.now()),
   };
 }
 
 /**
- * Update environment variables in .env file safely
+ * Update environment variables and credentials safely
  */
 export function updateShiprocketConfig(params: {
   email?: string;
   password?: string;
   pickupLocation?: string;
+  token?: string;
+  tokenExpiresAt?: number;
 }) {
   try {
     const envPath = path.resolve(process.cwd(), ".env");
@@ -105,9 +113,14 @@ export function updateShiprocketConfig(params: {
       process.env.SHIPROCKET_PICKUP_LOCATION = params.pickupLocation.trim();
     }
 
-    // Invalidate auth cache so new credentials take effect immediately
-    authCache.token = null;
-    authCache.expiresAt = 0;
+    if (params.token !== undefined && params.token.trim()) {
+      authCache.token = params.token.trim();
+      authCache.expiresAt = params.tokenExpiresAt || (Date.now() + 7 * 86400000);
+    } else if (params.password !== undefined && params.password.trim()) {
+      // If password changed and no direct token provided, invalidate token cache
+      authCache.token = null;
+      authCache.expiresAt = 0;
+    }
 
     const newLines: string[] = [];
     for (const [k, v] of Object.entries(map)) {
@@ -122,13 +135,22 @@ export function updateShiprocketConfig(params: {
         fs.mkdirSync(dataDir, { recursive: true });
       }
       const configJsonPath = path.resolve(dataDir, "shiprocket_config.json");
+      let existingCfg: any = {};
+      if (fs.existsSync(configJsonPath)) {
+        try {
+          existingCfg = JSON.parse(fs.readFileSync(configJsonPath, "utf-8"));
+        } catch {}
+      }
+
       fs.writeFileSync(
         configJsonPath,
         JSON.stringify(
           {
-            email: process.env.SHIPROCKET_API_EMAIL || "",
-            password: process.env.SHIPROCKET_API_PASSWORD || "",
-            pickupLocation: process.env.SHIPROCKET_PICKUP_LOCATION || "Home",
+            email: process.env.SHIPROCKET_API_EMAIL || existingCfg.email || "",
+            password: process.env.SHIPROCKET_API_PASSWORD || existingCfg.password || "",
+            pickupLocation: process.env.SHIPROCKET_PICKUP_LOCATION || existingCfg.pickupLocation || "Home",
+            token: authCache.token || existingCfg.token || null,
+            tokenExpiresAt: authCache.expiresAt || existingCfg.tokenExpiresAt || 0,
             updatedAt: new Date().toISOString(),
           },
           null,
@@ -163,20 +185,35 @@ export function updateShiprocketConfig(params: {
 }
 
 /**
- * Obtain or reuse cached Shiprocket JWT Token
+ * Obtain or reuse cached Shiprocket JWT Token with resilient fallback
  */
 export async function getShiprocketToken(forceRefresh = false): Promise<string> {
+  loadEnvFallback();
   const { email, password, isConfigured } = getShiprocketConfig();
+  const now = Date.now();
 
-  if (!isConfigured) {
+  // 1. If we have a cached token that is still unexpired (with 2 minute safety margin)
+  if (authCache.token && authCache.expiresAt > now + 120000) {
+    if (!forceRefresh) {
+      return authCache.token;
+    }
+    // If forceRefresh was requested, test if the existing token is active before discarding
+    try {
+      const probeRes = await fetch(`${SHIPROCKET_BASE_URL}/settings/company/pickup`, {
+        headers: { Authorization: `Bearer ${authCache.token}` },
+      });
+      if (probeRes.ok) {
+        return authCache.token;
+      }
+    } catch {
+      return authCache.token;
+    }
+  }
+
+  if (!isConfigured && !authCache.token) {
     const missing = !email && !password ? "email & password" : !email ? "email" : "password";
     const errMsg = `Shiprocket credentials missing (${missing}). Please configure SHIPROCKET_API_EMAIL and SHIPROCKET_API_PASSWORD in Admin Settings.`;
     throw new Error(errMsg);
-  }
-
-  const now = Date.now();
-  if (!forceRefresh && authCache.token && authCache.expiresAt > now) {
-    return authCache.token;
   }
 
   const startTime = Date.now();
@@ -204,6 +241,12 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
         (data.errors ? JSON.stringify(data.errors) : `Authentication failed with HTTP ${res.status}`);
       console.error(`[Shiprocket API] Login failed for ${email}:`, errMsg);
 
+      // If user is rate-limited by Shiprocket, but we have an unexpired cached token, use it!
+      if (authCache.token && authCache.expiresAt > now) {
+        console.warn("[Shiprocket API] Reusing existing unexpired token following login response:", errMsg);
+        return authCache.token;
+      }
+
       logShiprocketEvent({
         action: "AUTH",
         status: "FAILED",
@@ -214,12 +257,47 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
         requestPayload: { email, password: "***" },
       });
 
+      if (errMsg.includes("User blocked") || errMsg.includes("too many failed")) {
+        throw new Error("Shiprocket temporarily locked login due to recent attempts. The system will automatically unlock in 15-30 minutes, or you may provide a valid token.");
+      }
+
       throw new Error(`Shiprocket Login Failed: ${errMsg}`);
     }
 
     console.log(`[Shiprocket API] Successfully authenticated! Token cached for 7 days.`);
     authCache.token = data.token;
     authCache.expiresAt = now + 7 * 24 * 60 * 60 * 1000;
+
+    // Persist token to data/shiprocket_config.json so server restarts don't trigger repeated logins
+    try {
+      const dataDir = path.resolve(process.cwd(), "data");
+      const configJsonPath = path.resolve(dataDir, "shiprocket_config.json");
+      let existingCfg: any = {};
+      if (fs.existsSync(configJsonPath)) {
+        try {
+          existingCfg = JSON.parse(fs.readFileSync(configJsonPath, "utf-8"));
+        } catch {}
+      }
+      fs.writeFileSync(
+        configJsonPath,
+        JSON.stringify(
+          {
+            ...existingCfg,
+            email,
+            password,
+            pickupLocation: getShiprocketConfig().pickupLocation,
+            token: data.token,
+            tokenExpiresAt: authCache.expiresAt,
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+        "utf-8"
+      );
+    } catch (persistErr) {
+      console.warn("[Shiprocket] Notice saving token to disk:", persistErr);
+    }
 
     logShiprocketEvent({
       action: "AUTH",
@@ -238,6 +316,12 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
     console.error("[Shiprocket API] Authentication exception:", err.message);
+
+    // If we have a cached token that is still within expiry, safely fall back to it
+    if (authCache.token && authCache.expiresAt > now) {
+      console.log("[Shiprocket API] Fallback to existing unexpired token successful.");
+      return authCache.token;
+    }
 
     logShiprocketEvent({
       action: "AUTH",
@@ -263,7 +347,7 @@ export async function testShiprocketAuth(): Promise<{
   details?: any;
 }> {
   const { email, password, isConfigured, pickupLocation } = getShiprocketConfig();
-  if (!isConfigured) {
+  if (!isConfigured && !authCache.token) {
     return {
       success: false,
       message: "Missing SHIPROCKET_API_EMAIL or SHIPROCKET_API_PASSWORD in environment variables.",
@@ -273,7 +357,8 @@ export async function testShiprocketAuth(): Promise<{
   }
 
   try {
-    const token = await getShiprocketToken(true);
+    // Check with non-forcing token retrieval so we reuse the verified active token
+    const token = await getShiprocketToken(false);
     const pickupRes = await fetch(`${SHIPROCKET_BASE_URL}/settings/company/pickup`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -292,6 +377,7 @@ export async function testShiprocketAuth(): Promise<{
       configuredEmail: email,
       hasKey: true,
       details: {
+        companyName: pickupData?.data?.company_name || "House of shriya",
         pickupLocationConfigured: pickupLocation,
         availablePickupLocations: locations.map((loc: any) => ({
           name: loc.pickup_location || loc.name,
@@ -307,7 +393,7 @@ export async function testShiprocketAuth(): Promise<{
       success: false,
       message: err.message || "Failed to authenticate with Shiprocket API",
       configuredEmail: email,
-      hasKey: Boolean(password),
+      hasKey: Boolean(password || authCache.token),
     };
   }
 }
@@ -614,16 +700,42 @@ export async function createShiprocketOrder(
     console.log(`[Shiprocket API] Outgoing POST: ${SHIPROCKET_BASE_URL}/orders/create/adhoc`);
     console.log(`[Shiprocket API] Order Payload:`, JSON.stringify(payload, null, 2));
 
-    const res = await fetch(`${SHIPROCKET_BASE_URL}/orders/create/adhoc`, {
+    let currentToken = token;
+    let res = await fetch(`${SHIPROCKET_BASE_URL}/orders/create/adhoc`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${currentToken}`,
       },
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json().catch(() => ({}));
+    let data = await res.json().catch(() => ({}));
+
+    // If token expired, invalidate cache and perform one immediate retry
+    if ((res.status === 401 || data.message === "token_expired")) {
+      console.warn(`[Shiprocket API] Token expired during order creation. Attempting automatic refresh...`);
+      authCache.token = null;
+      authCache.expiresAt = 0;
+      try {
+        currentToken = await getShiprocketToken(true);
+        if (currentToken) {
+          console.log(`[Shiprocket API] Retrying order creation with fresh token...`);
+          res = await fetch(`${SHIPROCKET_BASE_URL}/orders/create/adhoc`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${currentToken}`,
+            },
+            body: JSON.stringify(payload),
+          });
+          data = await res.json().catch(() => ({}));
+        }
+      } catch (refreshErr: any) {
+        console.warn(`[Shiprocket API] Token refresh failed:`, refreshErr.message);
+      }
+    }
+
     const durationMs = Date.now() - startTime;
     console.log(`[Shiprocket API] Response HTTP status: ${res.status}`);
     console.log(`[Shiprocket API] Response body:`, JSON.stringify(data, null, 2));

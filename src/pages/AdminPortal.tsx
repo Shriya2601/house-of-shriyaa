@@ -54,6 +54,9 @@ import {
   adminFetchAllOrders,
   adminUpdateOrder,
   adminDeleteOrder,
+  ensureProductVariants,
+  cacheProductsLocally,
+  cacheSiteContentLocally,
 } from "../services/storeService";
 import {
   fetchShiprocketStatus,
@@ -168,7 +171,7 @@ function ShipmentStatusBadge({
 
 export default function AdminPortal() {
   const navigate = useNavigate();
-  const { products, setProducts, currentUser } = useStore();
+  const { products, setProducts, currentUser, setSiteContent } = useStore();
 
   // Admin Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionValid());
@@ -256,7 +259,7 @@ export default function AdminPortal() {
     }
   };
 
-  // Load bookings and orders when authenticated
+  // Load bookings, orders, products, and site content when authenticated
   const loadDashboardData = async () => {
     setDataLoading(true);
     try {
@@ -268,6 +271,35 @@ export default function AdminPortal() {
       setBookings(fetchedBookings);
       setOrders(fetchedOrders);
       checkShiprocketConnection();
+
+      // Fetch fresh live products and site-content from server with anti-cache headers
+      const [prodRes, contentRes] = await Promise.allSettled([
+        fetch(`/api/products?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        }),
+        fetch(`/api/site-content?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        }),
+      ]);
+
+      if (prodRes.status === "fulfilled" && prodRes.value.ok) {
+        const prodData = await prodRes.value.json();
+        if (Array.isArray(prodData) && prodData.length > 0) {
+          const normalized = prodData.map(ensureProductVariants);
+          setProducts(normalized);
+          cacheProductsLocally(normalized);
+        }
+      }
+
+      if (contentRes.status === "fulfilled" && contentRes.value.ok) {
+        const contentData = await contentRes.value.json();
+        if (contentData && typeof contentData === "object" && Object.keys(contentData).length > 0) {
+          setSiteContent((prev) => ({ ...prev, ...contentData }));
+          cacheSiteContentLocally(contentData);
+        }
+      }
     } catch (e) {
       console.error("Error loading admin data:", e);
       showToast("Could not load latest records. Using cached view.", "error");

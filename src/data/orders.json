@@ -1,13 +1,36 @@
 [
   {
-    "shiprocketOrderId": 1575875353,
-    "shiprocketShipmentId": 1572093348,
-    "trackingCourier": "Shiprocket Courier Partner",
-    "shiprocketStatus": "SYNCED",
-    "shiprocketSyncedAt": "2026-09-09T21:24:53.731Z",
+    "shiprocketOrderId": null,
+    "shiprocketShipmentId": null,
+    "trackingCourier": "Shiprocket Express",
+    "shiprocketStatus": "FAILED_SYNC",
+    "shiprocketSyncedAt": "2026-09-09T22:02:35.163Z",
     "a": "1",
-    "orderNumber": "TEST-1",
-    "shiprocketRetryCount": 1
+    "orderNumber": "HOS-TEST-VERIFY-4911",
+    "shiprocketRetryCount": 1,
+    "customer": {
+      "fullName": "Shriya Pusha",
+      "phone": "9877194356",
+      "email": "shriyapusha01@gmail.com"
+    },
+    "shippingAddress": {
+      "addressLine1": "1908/2 Ahluwalia street, near arna barna chowk",
+      "city": "Patiala",
+      "state": "Punjab",
+      "pincode": "147001"
+    },
+    "items": [
+      {
+        "name": "Emerald Zari Suit Ensemble",
+        "sku": "hos-emerald-zari-1",
+        "quantity": 1,
+        "unitPrice": 4999
+      }
+    ],
+    "total": 4999,
+    "paymentMethod": "Prepaid",
+    "paymentStatus": "paid",
+    "shiprocketError": "token_expired"
   },
   {
     "id": "ord_1788988499686_2859",

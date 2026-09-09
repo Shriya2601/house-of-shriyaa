@@ -423,13 +423,11 @@ export function getCachedSiteContent(): SiteContent {
       if (parsed && typeof parsed === "object") {
         const sanitized = sanitizeSiteContent(parsed);
         const merged: SiteContent = { ...defaultSiteContent, ...sanitized };
-        if (!merged.heroSlides || merged.heroSlides.length < 3) {
-          const baseSlides = defaultSiteContent.heroSlides || [];
-          const currSlides = merged.heroSlides || [];
-          merged.heroSlides = [
-            ...currSlides,
-            ...baseSlides.slice(currSlides.length),
-          ].slice(0, 3);
+        // If heroSlides was explicitly configured with slides, respect them directly without overriding
+        if (Array.isArray(sanitized.heroSlides) && sanitized.heroSlides.length > 0) {
+          merged.heroSlides = sanitized.heroSlides;
+        } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
+          merged.heroSlides = defaultSiteContent.heroSlides || [];
         }
         return merged;
       }
@@ -466,15 +464,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       });
       if (res.ok) {
         const serverData = await res.json();
-        if (serverData && (serverData.heroSlides || Object.keys(serverData).length > 0)) {
+        if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
-          if (!merged.heroSlides || merged.heroSlides.length < 3) {
-            const baseSlides = defaultSiteContent.heroSlides || [];
-            const currSlides = merged.heroSlides || [];
-            merged.heroSlides = [
-              ...currSlides,
-              ...baseSlides.slice(currSlides.length),
-            ].slice(0, 3);
+          if (Array.isArray(serverData.heroSlides) && serverData.heroSlides.length > 0) {
+            merged.heroSlides = serverData.heroSlides;
+          } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
+            merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
           currentContent = merged;
           cacheSiteContentLocally(merged);
@@ -484,22 +479,20 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       }
     } catch {}
 
-    // Fallback to static JSON file only if nothing in local cache
+    // Fallback to static JSON file if server endpoint temporarily unavailable
     try {
       const staticRes = await fetch(`/data/siteContent.json?t=${Date.now()}`, {
         cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
       if (staticRes.ok) {
         const staticData = await staticRes.json();
-        if (staticData && (staticData.heroSlides || Object.keys(staticData).length > 0)) {
+        if (staticData && typeof staticData === "object" && Object.keys(staticData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...staticData };
-          if (!merged.heroSlides || merged.heroSlides.length < 3) {
-            const baseSlides = defaultSiteContent.heroSlides || [];
-            const currSlides = merged.heroSlides || [];
-            merged.heroSlides = [
-              ...currSlides,
-              ...baseSlides.slice(currSlides.length),
-            ].slice(0, 3);
+          if (Array.isArray(staticData.heroSlides) && staticData.heroSlides.length > 0) {
+            merged.heroSlides = staticData.heroSlides;
+          } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
+            merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
           currentContent = merged;
           cacheSiteContentLocally(merged);
@@ -512,8 +505,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
   // Immediate live fetch
   fetchLiveSiteContent();
 
-  // Active background polling interval (every 5s) for instant sync on mobile phones & tablets
-  const pollTimer = setInterval(fetchLiveSiteContent, 5000);
+  // Active background polling interval (every 3s) for instant sync on mobile phones & tablets
+  const pollTimer = setInterval(fetchLiveSiteContent, 3000);
 
   // Focus & mobile visibility change (crucial for phones when resuming screen)
   const handleWakeup = () => {
@@ -531,15 +524,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       (snap) => {
         if (snap.exists()) {
           const fsData = snap.data() as SiteContent;
-          if (fsData) {
+          if (fsData && typeof fsData === "object") {
             const merged: SiteContent = { ...defaultSiteContent, ...fsData };
-            if (!merged.heroSlides || merged.heroSlides.length < 3) {
-              const baseSlides = defaultSiteContent.heroSlides || [];
-              const currSlides = merged.heroSlides || [];
-              merged.heroSlides = [
-                ...currSlides,
-                ...baseSlides.slice(currSlides.length),
-              ].slice(0, 3);
+            if (Array.isArray(fsData.heroSlides) && fsData.heroSlides.length > 0) {
+              merged.heroSlides = fsData.heroSlides;
+            } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
+              merged.heroSlides = defaultSiteContent.heroSlides || [];
             }
             currentContent = merged;
             cacheSiteContentLocally(merged);
@@ -612,6 +602,10 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     ...sanitizedContent,
     updatedAt: new Date().toISOString(),
   };
+
+  if (Array.isArray(sanitizedContent.heroSlides)) {
+    updated.heroSlides = sanitizedContent.heroSlides;
+  }
 
   // 1. Immediately cache locally
   cacheSiteContentLocally(updated);
@@ -856,11 +850,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         const staticData = await staticRes.json();
         if (Array.isArray(staticData) && staticData.length > 0) {
           const normalized = staticData.map(ensureProductVariants);
-          const current = getCachedProducts();
-          if (current.length === 0) {
-            cacheProductsLocally(normalized);
-            callback(normalized);
-          }
+          cacheProductsLocally(normalized);
+          callback(normalized);
         }
       }
     } catch {}

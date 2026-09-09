@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   QrCode,
   Upload,
@@ -28,6 +28,12 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
   const [isSaving, setIsSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (siteContent?.upiScannerUrl !== undefined && !isSaving && !isUploading) {
+      setScannerUrl(siteContent.upiScannerUrl);
+    }
+  }, [siteContent?.upiScannerUrl, isSaving, isUploading]);
 
   // Fallback verified QR if no custom scanner image uploaded yet
   const fallbackQr = "/uploads/house-of-shriya-official-upi-scanner.png";

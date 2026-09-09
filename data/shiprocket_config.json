@@ -1,6 +1,8 @@
 {
   "email": "shriyapusha01@gmail.com",
   "password": "UZ1ZNr2%vh&6S2VRQGUq3f%@j^G$$hlK",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjExODA4ODQ2LCJzb3VyY2UiOiJzci1hdXRoLWludCIsImV4cCI6MTc4OTg1NTA5MCwianRpIjoib1hDcU9KYklxSmJVMWpVMiIsImlhdCI6MTc4ODk5MTA5MCwiaXNzIjoiaHR0cHM6Ly9zci1hdXRoLnNoaXByb2NrZXQuaW4vYXV0aG9yaXplL3VzZXIiLCJuYmYiOjE3ODg5OTEwOTAsImNpZCI6MTE0ODAxNTEsInRjIjozNjAsInZlcmJvc2UiOmZhbHNlLCJ2ZW5kb3JfaWQiOjAsInZlbmRvcl9jb2RlIjoiIn0.Q4VECKyuyQB3IWQhk_YkUVI7Fe2a4GGfwBfCCIxVT2c",
+  "tokenExpiresAt": 1789855090000,
   "pickupLocation": "Home",
-  "updatedAt": "2026-09-09T21:24:46.776Z"
+  "updatedAt": "2026-09-09T22:00:00.000Z"
 }
