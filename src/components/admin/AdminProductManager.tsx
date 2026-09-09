@@ -16,6 +16,7 @@ import {
 import { Product } from "../../types";
 import { deleteProduct } from "../../services/storeService";
 import AddProductModal from "./AddProductModal";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface AdminProductManagerProps {
   products: Product[];
@@ -36,6 +37,7 @@ export default function AdminProductManager({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   // Derive unique categories
   const categories = useMemo(() => {
@@ -83,21 +85,26 @@ export default function AdminProductManager({
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (p: Product) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${p.name}"?`)) {
-      return;
-    }
+  const handleDelete = (p: Product) => {
+    setProductToDelete(p);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    const p = productToDelete;
     setDeletingId(p.id);
     try {
-      await deleteProduct(p.id);
+      // 1. Immediate UI update for instant feedback
       onProductDeleted(p.id);
+      // 2. Storage & backend API deletion
+      await deleteProduct(p.id);
       showToast(`Product "${p.name}" deleted successfully.`);
     } catch (err: any) {
       console.error("Delete error:", err);
       showToast("Failed to delete product.", "error");
     } finally {
       setDeletingId(null);
+      setProductToDelete(null);
     }
   };
 
@@ -349,6 +356,20 @@ export default function AdminProductManager({
           }}
         />
       )}
+
+      {/* Confirm Product Deletion Dialog */}
+      <ConfirmDialog
+        isOpen={!!productToDelete}
+        title="Delete Product from Catalog"
+        message={`Are you sure you want to permanently delete "${productToDelete?.name}"? This will remove the piece from your online store, catalog listings, and inventory.`}
+        confirmLabel="Delete Product"
+        cancelLabel="Keep Product"
+        isLoading={!!deletingId}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          if (!deletingId) setProductToDelete(null);
+        }}
+      />
     </div>
   );
 }

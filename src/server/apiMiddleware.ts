@@ -1122,7 +1122,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           }
 
           if (method === "DELETE") {
-            const filtered = bookings.filter((b) => b.id !== bookingId);
+            const filtered = bookings.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
             writeBookingsList(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;

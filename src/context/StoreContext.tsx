@@ -489,9 +489,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCustomerOrders(e.detail);
       }
     };
+    const handleOrderDel = (e: any) => {
+      const id = e.detail?.id || e.detail?.orderNumber;
+      if (id) {
+        setCustomerOrders((prev) =>
+          prev.filter(
+            (o) =>
+              (o.id ? o.id !== id : true) &&
+              (o.orderNumber ? o.orderNumber !== id : true)
+          )
+        );
+      }
+    };
     const handleBookingsUpdated = (e: any) => {
       if (Array.isArray(e.detail)) {
         setAtelierBookings(e.detail);
+      }
+    };
+    const handleBookingDel = (e: any) => {
+      const id = e.detail?.id || e.detail?.bookingNumber;
+      if (id) {
+        setAtelierBookings((prev) =>
+          prev.filter(
+            (b) =>
+              (b.id ? b.id !== id : true) &&
+              (b.bookingNumber ? b.bookingNumber !== id : true)
+          )
+        );
       }
     };
 
@@ -503,7 +527,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hos-category-saved", handleCatSaved);
     window.addEventListener("hos-categories-updated", handleCategoriesUpdated);
     window.addEventListener("hos-orders-updated", handleOrdersUpdated);
+    window.addEventListener("hos-order-deleted", handleOrderDel);
     window.addEventListener("hos-bookings-updated", handleBookingsUpdated);
+    window.addEventListener("hos-booking-deleted", handleBookingDel);
 
     return () => {
       unsubContent();
@@ -517,7 +543,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("hos-category-saved", handleCatSaved);
       window.removeEventListener("hos-categories-updated", handleCategoriesUpdated);
       window.removeEventListener("hos-orders-updated", handleOrdersUpdated);
+      window.removeEventListener("hos-order-deleted", handleOrderDel);
       window.removeEventListener("hos-bookings-updated", handleBookingsUpdated);
+      window.removeEventListener("hos-booking-deleted", handleBookingDel);
     };
   }, []);
 

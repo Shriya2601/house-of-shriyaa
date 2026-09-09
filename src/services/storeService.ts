@@ -889,6 +889,15 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     }
   };
 
+  const handleProductDeleted = (e: any) => {
+    const deletedId = e.detail?.id;
+    if (deletedId) {
+      const current = getCachedProducts().filter((p) => p.id !== deletedId);
+      cacheProductsLocally(current);
+      callback(current);
+    }
+  };
+
   // 5. BroadcastChannel handler for 0ms cross-tab & cross-window updates
   const handleBroadcastMessage = (event: MessageEvent) => {
     if (event.data?.type === "products") {
@@ -901,7 +910,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     window.addEventListener("online", handleFocusOrVisible);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdate);
     window.addEventListener("hos-product-saved", handleSingleProductSaved);
-    window.addEventListener("hos-product-deleted", fetchLiveProducts);
+    window.addEventListener("hos-product-deleted", handleProductDeleted);
     window.addEventListener("storage", (e) => {
       if (e.key === PRODUCTS_CACHE_KEY) {
         callback(getCachedProducts());
@@ -945,7 +954,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       window.removeEventListener("online", handleFocusOrVisible);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdate);
       window.removeEventListener("hos-product-saved", handleSingleProductSaved);
-      window.removeEventListener("hos-product-deleted", fetchLiveProducts);
+      window.removeEventListener("hos-product-deleted", handleProductDeleted);
     }
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", handleFocusOrVisible);
@@ -2294,9 +2303,10 @@ export async function adminUpdateBooking(
 }
 
 export async function adminDeleteBooking(bookingId: string): Promise<void> {
+  let filtered: AtelierBooking[] = [];
   try {
     const local: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
-    const filtered = local.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
+    filtered = local.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
     localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
   } catch {}
 
@@ -2315,6 +2325,20 @@ export async function adminDeleteBooking(bookingId: string): Promise<void> {
   } catch (e) {
     console.warn("Firestore adminDeleteBooking error:", e);
   }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("hos-booking-deleted", {
+        detail: { id: bookingId, bookingNumber: bookingId },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent("hos-bookings-updated", {
+        detail: filtered,
+      })
+    );
+  }
+  broadcastCrossDeviceSync("bookings", filtered);
 }
 
 export async function adminCreateAtelierBooking(
@@ -2445,17 +2469,16 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
 
   // 1. Fetch from server /api/orders (reads public/data/orders.json)
   try {
-    const res = await fetch("/api/orders");
+    const res = await fetch(`/api/orders?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
     if (res.ok) {
       const serverOrders = await res.json();
-      if (Array.isArray(serverOrders) && serverOrders.length > 0) {
-        const map = new Map<string, Order>();
-        for (const o of [...serverOrders, ...list]) {
-          const key = o.id || o.orderNumber;
-          if (!map.has(key)) map.set(key, o);
-        }
-        list = Array.from(map.values());
+      if (Array.isArray(serverOrders)) {
+        list = serverOrders;
         cacheOrdersLocally(list);
+        return list;
       }
     }
   } catch (apiErr) {
@@ -2558,7 +2581,16 @@ export async function adminDeleteOrder(orderId: string): Promise<void> {
 
   // 3. Broadcast real-time event
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: filtered }));
+    window.dispatchEvent(
+      new CustomEvent("hos-order-deleted", {
+        detail: { id: orderId, orderNumber: orderId },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent("hos-orders-updated", {
+        detail: filtered,
+      })
+    );
   }
   broadcastCrossDeviceSync("orders", filtered);
 }
