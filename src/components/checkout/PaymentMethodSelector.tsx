@@ -14,6 +14,7 @@ import {
   Lock,
 } from "lucide-react";
 import { PaymentMethod, OrderPaymentDetails } from "../../types";
+import { useStore } from "../../context/StoreContext";
 
 interface PaymentMethodSelectorProps {
   selectedMethod: PaymentMethod;
@@ -42,6 +43,7 @@ export default function PaymentMethodSelector({
   customerPhone,
   onPaymentDetailsChange,
 }: PaymentMethodSelectorProps) {
+  const { siteContent } = useStore();
   // UPI Sub-states
   const [upiTab, setUpiTab] = useState<"qr" | "apps" | "id">("qr");
   const [upiIdInput, setUpiIdInput] = useState("");
@@ -326,51 +328,41 @@ export default function PaymentMethodSelector({
             <div className="flex flex-col sm:flex-row items-center gap-4 bg-[#faf8f5] p-3.5 rounded-xl border border-[#ebe2d8]">
               <div className="p-2 bg-white rounded-lg border border-[#e0d7cb] shadow-xs flex flex-col items-center">
                 <img
-                  src={qrImageUrl}
-                  alt="House of Shriya UPI QR Code"
-                  className="w-36 h-36 object-contain"
+                  src={siteContent?.upiScannerUrl || qrImageUrl}
+                  alt="House of Shriya Official Payment Scanner"
+                  className="w-36 h-36 object-contain rounded-md"
                 />
-                <span className="text-[10px] text-[#6b6257] font-mono mt-1">
+                <span className="text-[10px] text-[#6b6257] font-mono mt-1 font-semibold">
                   Amount: ₹{totalAmount.toLocaleString("en-IN")}
                 </span>
               </div>
 
               <div className="space-y-2 flex-1 text-center sm:text-left">
                 <div className="space-y-1">
-                  <div className="text-xs font-bold text-[#1e1b18]">
-                    Scan with ANY UPI App
+                  <div className="text-xs font-bold text-[#1e1b18] flex items-center justify-center sm:justify-start gap-1.5">
+                    <ShieldCheck size={14} className="text-[#0d4f3c]" />
+                    <span>Official Atelier Payment Scanner</span>
                   </div>
                   <p className="text-[11px] text-[#6b6257] leading-relaxed">
-                    Open Google Pay, PhonePe, Paytm, BHIM or Cred on your mobile and scan this dynamic QR.
+                    Scan with any UPI app (Google Pay, PhonePe, Paytm, BHIM, CRED) to transfer directly to House of Shriya Atelier.
                   </p>
                 </div>
 
-                <div className="bg-white px-3 py-1.5 rounded-lg border border-[#e0d7cb] flex items-center justify-between text-xs">
-                  <span className="font-mono text-[11px] text-[#0d4f3c] font-bold truncate">
-                    {ATELIER_BANK_DETAILS.upiId}
+                <div className="bg-emerald-50/80 px-3 py-2 rounded-lg border border-emerald-200/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                    <span className="text-[11px] text-emerald-900 font-bold">
+                      Verified Merchant: House of Shriya
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-semibold bg-white/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Zero Surcharge
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(ATELIER_BANK_DETAILS.upiId, "upiId")}
-                    className="text-xs font-semibold text-[#0d4f3c] hover:underline flex items-center gap-1 cursor-pointer ml-2 shrink-0"
-                  >
-                    {copiedField === "upiId" ? (
-                      <>
-                        <Check size={12} className="text-emerald-600" />
-                        <span className="text-emerald-600">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={12} />
-                        <span>Copy VPA</span>
-                      </>
-                    )}
-                  </button>
                 </div>
 
                 <a
                   href={upiIntentUri}
-                  className="inline-flex sm:hidden items-center justify-center gap-1.5 w-full py-2 bg-[#0d4f3c] text-white rounded-lg text-xs font-bold"
+                  className="inline-flex sm:hidden items-center justify-center gap-1.5 w-full py-2 bg-[#0d4f3c] text-white rounded-lg text-xs font-bold shadow-xs active:scale-98 transition-all"
                 >
                   <span>Pay ₹{totalAmount} Directly in App</span>
                   <ExternalLink size={12} />

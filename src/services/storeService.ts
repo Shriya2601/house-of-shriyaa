@@ -698,11 +698,15 @@ export function pausePolling(_seconds = 0): void {
 // Helper to append/update anti-cache timestamp parameter on uploaded images
 function applyImageCacheBuster(url: string | undefined): string {
   if (!url || typeof url !== "string") return "";
-  if (url.startsWith("/uploads/")) {
-    if (url.includes("?v=")) return url;
-    return `${url}?v=${Date.now()}`;
+  const trimmed = url.trim();
+  if (trimmed.startsWith("/uploads/") || trimmed.startsWith("/public/uploads/")) {
+    const cleanPath = trimmed.startsWith("/public/uploads/")
+      ? trimmed.replace("/public", "")
+      : trimmed;
+    const baseUrl = cleanPath.split("?")[0];
+    return `${baseUrl}?v=${Date.now()}`;
   }
-  return url;
+  return trimmed;
 }
 
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
@@ -2393,11 +2397,25 @@ export async function adminUpdateOrder(
 
   // 1. Sync to central backend API
   try {
-    await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...updates, updatedAt: now }),
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.order) {
+        const freshOrders = getCachedOrders();
+        const fIdx = freshOrders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+        if (fIdx > -1) {
+          freshOrders[fIdx] = data.order;
+          cacheOrdersLocally(freshOrders);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: freshOrders }));
+          }
+        }
+      }
+    }
   } catch {}
 
   // 2. Sync to Firestore

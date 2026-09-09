@@ -2734,7 +2734,7 @@ function Catalog({
   query: string;
   onQueryChange: (q: string) => void;
 }) {
-  const { products: dynamicProducts, categories, siteContent } = useStore();
+  const { products: dynamicProducts, categories, siteContent, loadingCatalog } = useStore();
   const [sort, setSort] = useState("Featured Couture");
 
   const categoryPills = useMemo(() => {
@@ -2874,19 +2874,37 @@ function Catalog({
           </label>
         </div>
 
-        <div className="product-grid">
-          {visibleProducts.map((product, index) => (
-            <ProductCard
-              key={`${product.id}-${product.updatedAt || ""}-${product.image || ""}`}
-              index={index}
-              product={product}
-              isWishlisted={wishlist.has(product.id)}
-              onWishlist={onWishlist}
-            />
-          ))}
-        </div>
+        {loadingCatalog && visibleProducts.length === 0 ? (
+          <div className="product-grid" aria-label="Loading curated collection">
+            {Array.from({ length: 8 }).map((_, sIdx) => (
+              <div
+                key={`catalog-skeleton-${sIdx}`}
+                className="product-card border border-[#e8dfd5]/60 bg-white overflow-hidden shadow-sm"
+              >
+                <div className="product-image shimmer-skeleton" />
+                <div className="p-4 space-y-2.5">
+                  <div className="h-3 w-20 rounded shimmer-skeleton" />
+                  <div className="h-4 w-3/4 rounded shimmer-skeleton" />
+                  <div className="h-4 w-1/3 rounded shimmer-skeleton" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="product-grid">
+            {visibleProducts.map((product, index) => (
+              <ProductCard
+                key={`${product.id}-${product.updatedAt || ""}-${product.image || ""}`}
+                index={index}
+                product={product}
+                isWishlisted={wishlist.has(product.id)}
+                onWishlist={onWishlist}
+              />
+            ))}
+          </div>
+        )}
 
-        {visibleProducts.length === 0 && (
+        {!loadingCatalog && visibleProducts.length === 0 && (
           <div className="empty-state">
             {activeCategory === "Wishlist" ? (
               <div className="py-6 flex flex-col items-center gap-2">
@@ -2926,6 +2944,10 @@ export function ProductCard({
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [product.id, product.image, product.updatedAt]);
 
   const currentVariant = useMemo(() => {
     if (product.colorVariants && product.colorVariants.length > 0) {

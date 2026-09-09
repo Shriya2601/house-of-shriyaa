@@ -172,24 +172,30 @@ export function apiMiddlewarePlugin(): Plugin {
     const method = (req.method || "GET").toUpperCase();
 
     try {
-      // Direct Static Image Serving for /uploads/*
-    // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
-    if (urlWithoutQuery.startsWith("/uploads/")) {
-      const filename = path.basename(urlWithoutQuery);
+      // Direct Static Image Serving for /uploads/* and /public/uploads/*
+      // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
+      if (urlWithoutQuery.startsWith("/uploads/") || urlWithoutQuery.startsWith("/public/uploads/")) {
+        let rawFilename = path.basename(urlWithoutQuery);
+        let filename = rawFilename;
+        try {
+          filename = decodeURIComponent(rawFilename);
+        } catch {}
 
-      setCorsHeaders(res);
+        setCorsHeaders(res);
 
-      if (method === "OPTIONS") {
-        res.statusCode = 204;
-        res.end();
-        return;
-      }
+        if (method === "OPTIONS") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
 
-      // Check filesystem first to ensure file exists and is fresh
-      const possiblePaths = [
-        path.resolve(process.cwd(), "public/uploads", filename),
-        path.resolve(process.cwd(), "dist/uploads", filename),
-      ];
+        // Check filesystem first to ensure file exists and is fresh
+        const possiblePaths = [
+          path.resolve(process.cwd(), "public/uploads", filename),
+          path.resolve(process.cwd(), "public/uploads", rawFilename),
+          path.resolve(process.cwd(), "dist/uploads", filename),
+          path.resolve(process.cwd(), "dist/uploads", rawFilename),
+        ];
 
       let foundPath: string | null = null;
       for (const p of possiblePaths) {
@@ -855,6 +861,41 @@ export function apiMiddlewarePlugin(): Plugin {
               } else {
                 updatedOrder = { ...body, id: orderId, updatedAt: now };
                 orders.unshift(updatedOrder);
+              }
+
+              // Automatically push to Shiprocket if order is confirmed or paid and not yet synced
+              const shouldSyncShiprocket =
+                (updatedOrder.orderStatus === "confirmed" ||
+                  updatedOrder.paymentStatus === "Paid" ||
+                  body.forceShiprocketSync) &&
+                updatedOrder.shiprocketStatus !== "SYNCED";
+
+              if (shouldSyncShiprocket) {
+                try {
+                  const { createShiprocketOrder } = await import("./shiprocketService");
+                  const shiprocketResult = await createShiprocketOrder(updatedOrder, body.pickupLocation);
+
+                  if (shiprocketResult && shiprocketResult.success) {
+                    updatedOrder.shiprocketOrderId = shiprocketResult.shiprocketOrderId;
+                    updatedOrder.shiprocketShipmentId = shiprocketResult.shipmentId;
+                    updatedOrder.shiprocketStatus = "SYNCED";
+                    updatedOrder.trackingNumber = shiprocketResult.awbCode || updatedOrder.trackingNumber;
+                    updatedOrder.trackingCourier = shiprocketResult.courierName || updatedOrder.trackingCourier || "Shiprocket Express";
+                    updatedOrder.trackingUrl = shiprocketResult.trackingUrl || (updatedOrder.trackingNumber ? `https://shiprocket.co/tracking/${updatedOrder.trackingNumber}` : undefined);
+                    updatedOrder.shiprocketSyncedAt = new Date().toISOString();
+                    updatedOrder.shiprocketError = undefined;
+                    updatedOrder.shiprocketRetryCount = 0;
+                  } else {
+                    updatedOrder.shiprocketStatus = "PENDING_RETRY";
+                    updatedOrder.shiprocketError = shiprocketResult?.error || "Shiprocket sync pending verification";
+                    updatedOrder.shiprocketLastAttemptAt = new Date().toISOString();
+                  }
+
+                  const orderRefreshIdx = orders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+                  if (orderRefreshIdx > -1) orders[orderRefreshIdx] = updatedOrder;
+                } catch (srErr: any) {
+                  console.warn("[API Middleware] Shiprocket confirmation sync notice:", srErr.message);
+                }
               }
 
               writeOrdersList(orders);

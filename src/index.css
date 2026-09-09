@@ -1282,6 +1282,28 @@
     box-shadow: 0 5px 20px rgba(62, 43, 24, 0.035);
     transition: box-shadow 300ms ease, transform 300ms ease;
   }
+  @keyframes shimmerSkeleton {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .shimmer-skeleton {
+    background: linear-gradient(
+      90deg,
+      #f5efe8 0%,
+      #ebe3d8 25%,
+      #fcf9f5 50%,
+      #ebe3d8 75%,
+      #f5efe8 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmerSkeleton 1.8s ease-in-out infinite;
+  }
+
   .product-card:hover {
     transform: translateY(-3px);
     box-shadow: 0 17px 30px rgba(62, 43, 24, 0.1);
@@ -1290,7 +1312,16 @@
     position: relative;
     overflow: hidden;
     aspect-ratio: 3 / 4;
-    background: #f2ece4;
+    background: linear-gradient(
+      90deg,
+      #f5efe8 0%,
+      #ebe3d8 25%,
+      #fcf9f5 50%,
+      #ebe3d8 75%,
+      #f5efe8 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmerSkeleton 1.8s ease-in-out infinite;
     width: 100%;
   }
   .product-image > img {

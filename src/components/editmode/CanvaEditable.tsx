@@ -67,15 +67,22 @@ export default function CanvaEditable({
   };
 
   if (Component === "img" || type === "image") {
+    const finalImageSrc = displaySrc || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
     return createElement("img", {
       ...rest,
       id,
-      src: displaySrc || "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80",
+      key: `${id}_${finalImageSrc}`,
+      src: finalImageSrc,
       alt: alt || label || "",
       className,
       style: computedStyle,
       onError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
         const target = e.currentTarget;
+        if (target.src && target.src.includes("?v=") && !target.dataset.retried) {
+          target.dataset.retried = "true";
+          target.src = target.src.split("?")[0];
+          return;
+        }
         if (!target.src.includes("unsplash.com")) {
           target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
         }

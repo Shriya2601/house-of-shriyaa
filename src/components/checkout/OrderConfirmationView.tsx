@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Order, PaymentStatus } from "../../types";
 import { confirmOrderPayment } from "../../services/storeService";
+import { useStore } from "../../context/StoreContext";
 
 interface OrderConfirmationViewProps {
   order: Order;
@@ -31,6 +32,7 @@ export default function OrderConfirmationView({
   order: initialOrder,
   onClose,
 }: OrderConfirmationViewProps) {
+  const { siteContent } = useStore();
   const [order, setOrder] = useState<Order>(initialOrder);
   const [copiedAwb, setCopiedAwb] = useState(false);
   const [copiedOrderNo, setCopiedOrderNo] = useState(false);
@@ -318,7 +320,7 @@ Please confirm my order dispatch!`
               </span>
             </div>
             <p className="text-[11px] text-emerald-800 mt-1 leading-relaxed">
-              Order invoice dispatched. Click below to share your order directly to our atelier WhatsApp (<strong className="font-mono">{storePhoneDisplay}</strong>) for priority tracking.
+              Order invoice dispatched. Click below to share your order directly to our atelier WhatsApp for priority dispatch tracking.
             </p>
           </div>
         </div>
@@ -332,7 +334,7 @@ Please confirm my order dispatch!`
             className="flex-1 bg-[#25D366] text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#1faa53] transition-all shadow-sm active:scale-98"
           >
             <MessageCircle size={16} />
-            <span>Send Order to WhatsApp ({storePhoneDisplay})</span>
+            <span>Send Order to Atelier WhatsApp</span>
           </a>
 
           {cleanPhone.length >= 10 && (
@@ -430,45 +432,33 @@ Please confirm my order dispatch!`
               <div className="flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs">
                   <img
-                    src={qrCodeUrl}
-                    alt="House of Shriya UPI QR Code"
-                    className="w-24 h-24 object-contain"
+                    src={siteContent?.upiScannerUrl || qrCodeUrl}
+                    alt="House of Shriya Official Payment Scanner"
+                    className="w-24 h-24 object-contain rounded"
                   />
                 </div>
                 <div className="flex-1 min-w-0 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-stone-200">
-                    <span className="font-mono text-[11px] font-bold text-[#0d4f3c] truncate">
-                      {storeUpiId}
+                  <div className="flex items-center justify-between bg-white px-2 py-1.5 rounded border border-emerald-200">
+                    <span className="text-[11px] font-bold text-[#0d4f3c] flex items-center gap-1 truncate">
+                      <ShieldCheck size={13} className="text-emerald-700" />
+                      <span>House of Shriya Verified QR</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(storeUpiId);
-                        setCopiedUpi(true);
-                        setTimeout(() => setCopiedUpi(false), 2000);
-                      }}
-                      className="text-stone-500 hover:text-black p-1 cursor-pointer"
-                      title="Copy UPI ID"
-                    >
-                      {copiedUpi ? (
-                        <Check size={13} className="text-emerald-600" />
-                      ) : (
-                        <Copy size={13} />
-                      )}
-                    </button>
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                      Official
+                    </span>
                   </div>
 
                   {/* UPI App Quick Intent Links */}
                   <div className="grid grid-cols-2 gap-1.5">
                     <a
                       href={upiPayUrl}
-                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block"
+                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block shadow-xs"
                     >
                       ⚡ Open GPay / PhonePe
                     </a>
                     <a
                       href={upiPayUrl}
-                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block"
+                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block shadow-xs"
                     >
                       ⚡ Paytm / BHIM
                     </a>

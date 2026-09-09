@@ -85,6 +85,8 @@ export interface SiteContent {
   catalogTitle?: string;
   catalogSubtitle?: string;
   navLinks?: NavItem[];
+  upiScannerUrl?: string;
+  upiMerchantName?: string;
   updatedAt?: string;
 }
 
