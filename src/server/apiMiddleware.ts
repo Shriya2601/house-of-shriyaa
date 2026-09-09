@@ -636,6 +636,34 @@ export function apiMiddlewarePlugin(): Plugin {
         // ============================================================
         // 5B. SITE CONTENT (HERO BANNERS, SITE TEXT): /api/site-content
         // ============================================================
+        if (urlWithoutQuery === "/api/proxy-image") {
+          const rawUrl = parsedUrl.searchParams.get("url");
+          if (!rawUrl) {
+            res.statusCode = 400;
+            res.end("Missing url parameter");
+            return;
+          }
+          let resolved = rawUrl;
+          if (rawUrl.includes("eA9kgNNZCuEDbWDBS8JI")) {
+            resolved = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
+          } else if (rawUrl.includes("4UmFSGtcoZdZF37bKc3R")) {
+            resolved = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
+          } else if (rawUrl.includes("kommodo.ai/i/")) {
+            try {
+              const fetchRes = await fetch(rawUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+              if (fetchRes.ok) {
+                const html = await fetchRes.text();
+                const m = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i) ||
+                          html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/i);
+                if (m && m[1]) resolved = m[1];
+              }
+            } catch {}
+          }
+          res.writeHead(302, { Location: resolved });
+          res.end();
+          return;
+        }
+
         if (urlWithoutQuery === "/api/site-content") {
           setAntiCacheHeaders(res);
 
@@ -651,6 +679,30 @@ export function apiMiddlewarePlugin(): Plugin {
             try {
               const body = await parseJsonBody(req);
               const existing = readSiteContent();
+
+              // Auto-resolve any share links in heroSlides
+              if (Array.isArray(body.heroSlides)) {
+                for (let i = 0; i < body.heroSlides.length; i++) {
+                  const s = body.heroSlides[i];
+                  if (s && s.image && typeof s.image === "string") {
+                    if (s.image.includes("eA9kgNNZCuEDbWDBS8JI")) {
+                      s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
+                    } else if (s.image.includes("4UmFSGtcoZdZF37bKc3R")) {
+                      s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
+                    } else if (s.image.includes("kommodo.ai/i/")) {
+                      try {
+                        const fetchRes = await fetch(s.image, { headers: { "User-Agent": "Mozilla/5.0" } });
+                        if (fetchRes.ok) {
+                          const html = await fetchRes.text();
+                          const m = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i) ||
+                                    html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/i);
+                          if (m && m[1]) s.image = m[1];
+                        }
+                      } catch {}
+                    }
+                  }
+                }
+              }
 
               const updated = {
                 ...existing,

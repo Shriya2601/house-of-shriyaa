@@ -10,6 +10,7 @@ import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
 import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment } from "../services/storeService";
 import { lookupPincode } from "../utils/pincodeLookup";
+import { normalizeImageUrl } from "../utils/imageUtils";
 import { SavedAddress, Order, AtelierBooking } from "../types";
 import {
   AlertCircle,
@@ -2525,6 +2526,7 @@ export function StoreHeader({
 function Hero({ onPookie }: { onPookie: () => void }) {
   const { siteContent } = useStore();
   const [activeSlide, setActiveSlide] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
 
   const activeSlides = useMemo(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
@@ -2534,7 +2536,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
         collection: s.collection || "Handcrafted Heirloom",
         title: s.title || "Pure Handloom Silks & Unstitched Suits",
         description: s.description || "Crafted in Surat with 100% pure fabrics and delicate artisan detailing.",
-        image: s.image || imageUrls.silk,
+        image: normalizeImageUrl(s.image) || imageUrls.silk,
         season: s.season || "AUTUMN/FESTIVE 2026",
         caption: s.caption || "Atelier Handloom Couture",
         mood: s.mood || "Emerald & Gold Weaves",
@@ -2544,11 +2546,23 @@ function Hero({ onPookie }: { onPookie: () => void }) {
     return slides;
   }, [siteContent]);
 
+  useEffect(() => {
+    if (activeSlides.length <= 1 || isPaused) return;
+    const timer = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % activeSlides.length);
+    }, 5500);
+    return () => clearInterval(timer);
+  }, [activeSlides.length, isPaused]);
+
   const slideIndex = activeSlide % activeSlides.length;
   const slide = activeSlides[slideIndex] || activeSlides[0];
 
   return (
-    <section className="hero-section">
+    <section
+      className="hero-section"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+    >
       <div className="hero-glow hero-glow-left" />
       <div className="hero-glow hero-glow-right" />
       <div className="hero-dots" />

@@ -5,6 +5,7 @@ import React, {
   createElement,
 } from "react";
 import { useEditMode } from "./EditModeContext";
+import { normalizeImageUrl } from "../../utils/imageUtils";
 
 interface CanvaEditableProps {
   id: string;
@@ -45,18 +46,11 @@ export default function CanvaEditable({
 
   const displayText = override?.text !== undefined ? override.text : text !== undefined ? text : undefined;
   
-  // Prefer direct product src, normalize relative URLs
-  let displaySrc = (src || override?.src || "").trim();
+  // Prefer direct product src, normalize relative & shareable URLs
+  let displaySrc = normalizeImageUrl(src || override?.src || "");
   if (displaySrc) {
     if (displaySrc.startsWith("/public/")) {
       displaySrc = displaySrc.replace("/public", "");
-    } else if (
-      !displaySrc.startsWith("http://") &&
-      !displaySrc.startsWith("https://") &&
-      !displaySrc.startsWith("data:") &&
-      !displaySrc.startsWith("/")
-    ) {
-      displaySrc = `/${displaySrc}`;
     }
   }
 

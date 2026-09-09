@@ -17,6 +17,7 @@ import {
 import {
   defaultSiteContent,
   defaultCategories,
+  getCachedSiteContent,
   getCachedProducts,
   getCachedCategories,
   subscribeSiteContent,
@@ -116,7 +117,7 @@ interface StoreContextType {
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [siteContent, setSiteContent] = useState<SiteContent>(defaultSiteContent);
+  const [siteContent, setSiteContent] = useState<SiteContent>(() => getCachedSiteContent());
   const [products, setProducts] = useState<Product[]>(() => getCachedProducts());
   const [categories, setCategories] = useState<CategoryItem[]>(() => getCachedCategories());
   const [loadingCatalog, setLoadingCatalog] = useState(true);

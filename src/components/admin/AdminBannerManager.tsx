@@ -17,6 +17,7 @@ import {
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
 import { HeroSlide } from "../../types";
+import { normalizeImageUrl } from "../../utils/imageUtils";
 
 const DEFAULT_SLIDES: HeroSlide[] = [
   {
@@ -87,14 +88,27 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   // Update a field on the current slide
   const handleFieldChange = (field: keyof HeroSlide, value: string) => {
+    const finalVal = field === "image" ? normalizeImageUrl(value) : value;
     setSlides((prev) => {
       const next = [...prev];
       next[activeSlideIndex] = {
         ...next[activeSlideIndex],
-        [field]: value,
+        [field]: finalVal,
       };
       return next;
     });
+  };
+
+  // Reorder slides
+  const handleMoveSlide = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= slides.length) return;
+    setSlides((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next.map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
+    });
+    setActiveSlideIndex(toIdx);
   };
 
   // Image Upload Handler with client-side compression
@@ -315,7 +329,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
             >
               <div className="relative w-16 h-12 rounded-md overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
                 <img
-                  src={s.image}
+                  src={normalizeImageUrl(s.image)}
                   alt={s.title}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -392,7 +406,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
             {/* Simulated Storefront Hero Slide Card */}
             <div className="relative rounded-lg overflow-hidden bg-stone-950 aspect-[4/5] shadow-md group">
               <img
-                src={currentSlide.image}
+                src={normalizeImageUrl(currentSlide.image)}
                 alt={currentSlide.title}
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 onError={(e) => {
@@ -466,9 +480,22 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                   Edit Slide 0{activeSlideIndex + 1} Details
                 </h3>
               </div>
-              <span className="text-xs text-stone-400 font-mono">
-                Slide ID: #{currentSlide.number || `0${activeSlideIndex + 1}`}
-              </span>
+              <div className="flex items-center gap-2">
+                {activeSlideIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleMoveSlide(activeSlideIndex, 0)}
+                    className="text-xs font-semibold text-[#0d4f3c] bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md transition-colors border border-emerald-200 cursor-pointer flex items-center gap-1"
+                    title="Move this slide to be the first slide shown on your homepage"
+                  >
+                    <Crown size={12} />
+                    <span>Set as Slide #1</span>
+                  </button>
+                )}
+                <span className="text-xs text-stone-400 font-mono">
+                  Slide ID: #{currentSlide.number || `0${activeSlideIndex + 1}`}
+                </span>
+              </div>
             </div>
 
             {/* Banner Image Upload & Direct URL Box */}
@@ -480,7 +507,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
               <div className="flex flex-col sm:flex-row items-center gap-3">
                 <div className="w-20 h-14 rounded-lg overflow-hidden bg-stone-200 border border-stone-300 shrink-0">
                   <img
-                    src={currentSlide.image}
+                    src={normalizeImageUrl(currentSlide.image)}
                     alt="Preview"
                     className="w-full h-full object-cover"
                     onError={(e) => {
