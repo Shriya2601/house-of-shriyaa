@@ -22,6 +22,8 @@ interface CanvaEditableProps {
   text?: string;
   src?: string;
   alt?: string;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
+  [key: string]: any;
 }
 
 export default function CanvaEditable({

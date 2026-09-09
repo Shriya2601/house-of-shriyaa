@@ -2942,11 +2942,13 @@ export function ProductCard({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const { addToCart, startInstantCheckout } = useStore();
   const { isEditMode, isPreviewOnly, quickEditProduct } = useEditMode();
 
   useEffect(() => {
     setActiveImageIndex(0);
+    setImgLoaded(false);
   }, [product.id, product.image, product.updatedAt]);
 
   const currentVariant = useMemo(() => {
@@ -3053,7 +3055,10 @@ export function ProductCard({
         </button>
       )}
 
-      <div className="product-image">
+      <div className="product-image relative">
+        {!imgLoaded && (
+          <div className="absolute inset-0 shimmer-skeleton z-0" aria-hidden="true" />
+        )}
         <CanvaEditable
           id={`product_${product.id}_image`}
           as="img"
@@ -3062,7 +3067,8 @@ export function ProductCard({
           src={activeImage}
           alt={product.name}
           productId={product.id}
-          className="product-image-primary"
+          className={`product-image-primary transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+          onLoad={() => setImgLoaded(true)}
         />
         <img
           data-editable="true"

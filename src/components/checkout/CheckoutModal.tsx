@@ -36,6 +36,7 @@ export default function CheckoutModal() {
     placeOrder,
     currentUser,
     customerProfile,
+    siteContent,
   } = useStore();
 
   const [fullName, setFullName] = useState("");
@@ -55,6 +56,7 @@ export default function CheckoutModal() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
   const [notes, setNotes] = useState("");
+  const [upiUtrInput, setUpiUtrInput] = useState("");
 
   // Referral code state
   const [referralInput, setReferralInput] = useState("");
@@ -277,6 +279,14 @@ export default function CheckoutModal() {
           pincode: pincode.trim(),
         },
         paymentMethod,
+        paymentDetails: paymentMethod === "Instant UPI / NetBanking" ? {
+          methodType: "upi",
+          utrNumber: upiUtrInput.trim() || undefined,
+          transactionReference: upiUtrInput.trim() || undefined,
+        } : undefined,
+        paymentStatus: (paymentMethod === "Instant UPI / NetBanking" && upiUtrInput.trim())
+          ? "Payment Verification Pending"
+          : "Pending",
         notes: notes.trim(),
         referralCode: appliedReferral?.code,
         referralDiscount: appliedReferral?.discount,
@@ -574,6 +584,63 @@ export default function CheckoutModal() {
                     </div>
                   </label>
                 </div>
+
+                {/* Instant UPI Scanner Box */}
+                {paymentMethod === "Instant UPI / NetBanking" && (
+                  <div className="bg-[#faf8f5] border border-[#0d4f3c]/30 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#1e1b18] flex items-center gap-1.5">
+                        <QrCode size={14} className="text-[#0d4f3c]" />
+                        <span>Official Payment Scanner (Zero Gateway Fee)</span>
+                      </span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Lock size={10} /> Verified Atelier QR
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-stone-200">
+                      <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs">
+                        <img
+                          src={
+                            siteContent?.upiScannerUrl ||
+                            "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=upi%3A%2F%2Fpay%3Fpa%3Dhouseofshriya%40upi%26pn%3DHouse%20of%20Shriya%20Atelier%26cu%3DINR"
+                          }
+                          alt="House of Shriya Official Payment Scanner"
+                          className="w-28 h-28 object-contain rounded"
+                        />
+                      </div>
+                      <div className="space-y-1.5 text-xs flex-1 w-full">
+                        <div className="text-[11px] font-bold text-[#0d4f3c] flex items-center gap-1">
+                          <Sparkles size={12} className="text-[#d4af37]" />
+                          <span>House of Shriya Official Verified QR</span>
+                        </div>
+                        <p className="text-[10px] text-stone-600 leading-tight">
+                          Open Google Pay, PhonePe, Paytm, CRED or BHIM to scan and pay ₹{total.toLocaleString("en-IN")}.
+                        </p>
+                        <div className="text-[10px] text-emerald-800 font-medium flex items-center gap-1">
+                          <ShieldCheck size={11} className="text-emerald-700 shrink-0" />
+                          <span>Direct atelier dispatch upon payment verification</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-[#1e1b18]">
+                        12-Digit UPI Reference Number / UTR
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 423891029384 (Optional now, can also submit after placing)"
+                        value={upiUtrInput}
+                        onChange={(e) => setUpiUtrInput(e.target.value.replace(/[^\d\w]/g, ""))}
+                        className="w-full text-xs px-3 py-2 bg-white border border-[#d6ccc2] rounded-lg font-mono focus:outline-hidden focus:border-[#0d4f3c]"
+                      />
+                      <p className="text-[10px] text-stone-500">
+                        Entering your UTR accelerates order dispatch and live courier assignment.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Referral Code / Privilege Code */}

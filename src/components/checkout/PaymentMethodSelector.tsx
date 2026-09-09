@@ -28,11 +28,11 @@ interface PaymentMethodSelectorProps {
 export const ATELIER_BANK_DETAILS = {
   accountName: "House of Shriya Atelier",
   bankName: "HDFC Bank",
-  accountNumber: "50200084729103",
+  accountNumber: "•••• •••• •••• 9103",
   ifscCode: "HDFC0001234",
   accountType: "Current Account",
-  branch: "Mall Road, Patiala, Punjab - 147001",
-  upiId: "shriyapusha01@okhdfcbank",
+  branch: "Surat Ring Road, Gujarat",
+  upiId: "houseofshriya@upi",
 };
 
 export default function PaymentMethodSelector({

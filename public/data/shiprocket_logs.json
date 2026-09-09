@@ -3,6 +3,23 @@
     "action": "AUTH",
     "status": "SUCCESS",
     "statusCode": 200,
+    "durationMs": 261,
+    "responsePayload": {
+      "success": true,
+      "expiresInDays": 7,
+      "tokenReceived": true
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1788967197140_0oiet",
+    "timestamp": "2026-09-09T15:19:57.140Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "SUCCESS",
+    "statusCode": 200,
     "durationMs": 220,
     "responsePayload": {
       "success": true,

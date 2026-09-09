@@ -37,6 +37,7 @@ import {
   Settings,
   Image as ImageIcon,
   Server,
+  QrCode,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -65,6 +66,7 @@ import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Produ
 import AdminProductManager from "../components/admin/AdminProductManager";
 import AddProductModal from "../components/admin/AddProductModal";
 import AdminBannerManager from "../components/admin/AdminBannerManager";
+import AdminPaymentScanner from "../components/admin/AdminPaymentScanner";
 import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
 import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
 import ShiprocketLogsView from "../components/admin/ShiprocketLogsView";
@@ -171,7 +173,7 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "shiprocket-logs">("products");
+  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "payment-scanner" | "shiprocket-logs">("products");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -465,10 +467,17 @@ export default function AdminPortal() {
   ) => {
     try {
       await adminUpdateOrder(order.id, { orderStatus: newStatus });
+      const updatedOrder = { ...order, orderStatus: newStatus };
       setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, orderStatus: newStatus } : o))
+        prev.map((o) => (o.id === order.id ? updatedOrder : o))
       );
       showToast(`Order ${order.orderNumber} status changed to ${newStatus}.`);
+
+      // Auto-sync order to Shiprocket as soon as confirmed if not already pushed
+      if (newStatus === "confirmed" && !order.shiprocketOrderId) {
+        showToast(`Syncing confirmed order #${order.orderNumber} to Shiprocket...`);
+        handlePushToShiprocket(updatedOrder);
+      }
     } catch {
       showToast("Failed to update order status.", "error");
     }
@@ -480,10 +489,17 @@ export default function AdminPortal() {
   ) => {
     try {
       await adminUpdateOrder(order.id, { paymentStatus: newPaymentStatus });
+      const updatedOrder = { ...order, paymentStatus: newPaymentStatus };
       setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, paymentStatus: newPaymentStatus } : o))
+        prev.map((o) => (o.id === order.id ? updatedOrder : o))
       );
       showToast(`Payment for ${order.orderNumber} marked as ${newPaymentStatus}.`);
+
+      // If marked as Paid and confirmed, auto push to Shiprocket if not yet pushed
+      if (newPaymentStatus === "Paid" && order.orderStatus === "confirmed" && !order.shiprocketOrderId) {
+        showToast(`Payment verified. Syncing order #${order.orderNumber} to Shiprocket...`);
+        handlePushToShiprocket(updatedOrder);
+      }
     } catch {
       showToast("Failed to update payment status.", "error");
     }
@@ -957,6 +973,29 @@ export default function AdminPortal() {
             </button>
 
             <button
+              id="admin-tab-payment-scanner"
+              onClick={() => {
+                setActiveTab("payment-scanner");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "payment-scanner"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <QrCode size={14} />
+              <span>Payment Scanner</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "payment-scanner" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800 font-bold"
+                }`}
+              >
+                UPI QR
+              </span>
+            </button>
+
+            <button
               id="admin-tab-shiprocket-logs"
               onClick={() => {
                 setActiveTab("shiprocket-logs");
@@ -1050,6 +1089,8 @@ export default function AdminPortal() {
           />
         ) : activeTab === "banners" ? (
           <AdminBannerManager showToast={showToast} />
+        ) : activeTab === "payment-scanner" ? (
+          <AdminPaymentScanner showToast={showToast} />
         ) : activeTab === "products" ? (
           <AdminProductManager
             products={products}
@@ -1477,6 +1518,21 @@ export default function AdminPortal() {
                             <span className="text-[10px] text-stone-500 block mt-0.5">
                               {order.paymentMethod || "UPI"}
                             </span>
+                            {order.paymentDetails?.utrNumber && (
+                              <div
+                                className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded cursor-pointer hover:bg-emerald-100"
+                                onClick={() => handleCopy(`utr-${order.id}`, order.paymentDetails!.utrNumber!)}
+                                title="Click to copy UPI Reference / UTR Number"
+                              >
+                                <QrCode size={10} className="text-emerald-700" />
+                                <span>Ref: {order.paymentDetails.utrNumber}</span>
+                                {copiedId === `utr-${order.id}` ? (
+                                  <Check size={9} className="text-emerald-700 ml-0.5" />
+                                ) : (
+                                  <Copy size={9} className="text-stone-400 ml-0.5" />
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           {/* Status */}

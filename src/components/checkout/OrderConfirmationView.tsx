@@ -50,7 +50,7 @@ export default function OrderConfirmationView({
   const customerName = order.customer.fullName || "Valued Patron";
   const storePhone = "9501698356";
   const storePhoneDisplay = "+91 95016 98356";
-  const storeUpiId = "9501698356@upi";
+  const storeUpiId = "houseofshriya@upi";
 
   // Build the WhatsApp message
   const itemsText = order.items
@@ -429,56 +429,48 @@ Please confirm my order dispatch!`
               </div>
 
               {/* QR Code and Quick Links */}
-              <div className="flex items-center gap-3">
-                <div className="bg-white p-1.5 rounded-lg border border-stone-300 shrink-0 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-stone-200">
+                <div className="bg-white p-2 rounded-lg border border-stone-300 shrink-0 shadow-xs">
                   <img
                     src={siteContent?.upiScannerUrl || qrCodeUrl}
                     alt="House of Shriya Official Payment Scanner"
-                    className="w-24 h-24 object-contain rounded"
+                    className="w-32 h-32 object-contain rounded"
                   />
                 </div>
-                <div className="flex-1 min-w-0 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between bg-white px-2 py-1.5 rounded border border-emerald-200">
+                <div className="flex-1 min-w-0 space-y-2 text-xs w-full">
+                  <div className="flex items-center justify-between bg-emerald-50/80 px-2.5 py-1.5 rounded-lg border border-emerald-200">
                     <span className="text-[11px] font-bold text-[#0d4f3c] flex items-center gap-1 truncate">
-                      <ShieldCheck size={13} className="text-emerald-700" />
+                      <ShieldCheck size={14} className="text-emerald-700" />
                       <span>House of Shriya Verified QR</span>
                     </span>
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                    <span className="text-[10px] bg-[#0d4f3c] text-white px-2 py-0.5 rounded-full font-bold">
                       Official
                     </span>
                   </div>
 
+                  <p className="text-[11px] text-stone-600 leading-tight">
+                    Scan with Google Pay, PhonePe, Paytm, CRED or BHIM to complete payment of <strong>₹{order.total.toLocaleString("en-IN")}</strong>.
+                  </p>
+
                   {/* UPI App Quick Intent Links */}
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                     <a
                       href={upiPayUrl}
-                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block shadow-xs"
+                      className="bg-[#0d4f3c] hover:bg-[#083528] text-white py-1.5 px-2 rounded-lg text-[10px] font-bold text-center truncate block shadow-xs transition-colors"
                     >
-                      ⚡ Open GPay / PhonePe
+                      ⚡ Pay via UPI App
                     </a>
                     <a
-                      href={upiPayUrl}
-                      className="bg-white hover:bg-stone-50 border border-stone-200 text-[#1e1b18] py-1 px-1.5 rounded text-[10px] font-bold text-center truncate block shadow-xs"
+                      href={storeOwnerWhatsAppUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-[#25D366] hover:bg-[#20b858] text-white py-1.5 px-2 rounded-lg text-[10px] font-bold text-center truncate block shadow-xs transition-colors"
                     >
-                      ⚡ Paytm / BHIM
+                      💬 Send Receipt on WA
                     </a>
                   </div>
                 </div>
               </div>
-
-              {/* Bank Transfer Details Accordion */}
-              <details className="text-[11px] text-[#5a544c] cursor-pointer">
-                <summary className="font-semibold text-[#0d4f3c] hover:underline flex items-center gap-1">
-                  <Building2 size={12} />
-                  <span>View Atelier Bank Account (NEFT / IMPS)</span>
-                </summary>
-                <div className="mt-2 p-2.5 bg-white rounded-lg border border-stone-200 space-y-1 font-mono text-[10px]">
-                  <div><strong>Account Name:</strong> House of Shriya Atelier</div>
-                  <div><strong>Account Number:</strong> 50200088916244</div>
-                  <div><strong>IFSC Code:</strong> HDFC0000240</div>
-                  <div><strong>Bank:</strong> HDFC Bank, Surat Ring Road</div>
-                </div>
-              </details>
             </div>
 
             {/* Customer Payment Confirmation / UTR Submission Form */}
