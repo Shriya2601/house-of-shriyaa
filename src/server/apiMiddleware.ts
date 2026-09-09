@@ -159,10 +159,13 @@ function parseJsonBody(req: Connect.IncomingMessage): Promise<any> {
 export function apiMiddlewarePlugin(): Plugin {
   const apiHandler: Connect.NextHandleFunction = async (req, res, next) => {
     const rawUrl = req.url || "";
+    let parsedUrl: URL;
     let pathname = rawUrl;
     try {
-      pathname = new URL(rawUrl, "http://localhost").pathname;
+      parsedUrl = new URL(rawUrl, "http://localhost");
+      pathname = parsedUrl.pathname;
     } catch {
+      parsedUrl = new URL("http://localhost" + (rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl));
       pathname = rawUrl.split("?")[0];
     }
     const urlWithoutQuery = pathname.replace(/\/+$/, "") || "/";

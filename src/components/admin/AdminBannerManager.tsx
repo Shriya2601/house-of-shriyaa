@@ -13,6 +13,7 @@ import {
   Eye,
   Layers,
   Sparkle,
+  Crown,
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
