@@ -43,13 +43,19 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      showToast("Please upload a valid image file (PNG, JPG, WEBP)", "error");
+    const isImage =
+      (file.type && file.type.startsWith("image/")) ||
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+
+    if (!isImage) {
+      showToast("Please upload a valid image file (PNG, JPG, WEBP, AVIF)", "error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
-      showToast("Image size must be under 8MB", "error");
+    if (file.size > 15 * 1024 * 1024) {
+      showToast("Image size must be under 15MB", "error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
@@ -61,6 +67,9 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
         reader.onerror = () => reject(new Error("Failed to read image file"));
         reader.readAsDataURL(file);
       });
+
+      // Instant preview
+      setScannerUrl(dataUrl);
 
       const res = await fetch("/api/upload", {
         method: "POST",

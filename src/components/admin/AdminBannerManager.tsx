@@ -204,8 +204,13 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   // Core Image Compression and Upload Processor
   const processAndUploadFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      showToast("Please upload a valid image file (JPEG, PNG, WebP, etc.).", "error");
+    const isImage =
+      (file.type && file.type.startsWith("image/")) ||
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+
+    if (!isImage) {
+      showToast("Please upload a valid image file (JPEG, PNG, WebP, AVIF).", "error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
@@ -267,6 +272,18 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         reader.onerror = (err) => reject(err);
         reader.readAsDataURL(file);
       });
+
+      // Instantly show local photo with 0ms delay on admin screen
+      setSlides((prev) =>
+        prev.map((s, idx) =>
+          idx === activeSlideIndex
+            ? {
+                ...s,
+                image: compressedDataUrl,
+              }
+            : s
+        )
+      );
 
       // Attempt server upload to /api/upload for permanent file storage
       let uploadedUrl = compressedDataUrl;
@@ -331,6 +348,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     if (file) {
       processAndUploadFile(file);
     }
+    e.target.value = "";
   };
 
   // Drag and drop handlers

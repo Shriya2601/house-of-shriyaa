@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Package,
@@ -12,9 +12,11 @@ import {
   Tag,
   CheckCircle2,
   XCircle,
+  Camera,
+  RefreshCw,
 } from "lucide-react";
 import { Product } from "../../types";
-import { deleteProduct } from "../../services/storeService";
+import { deleteProduct, saveProduct } from "../../services/storeService";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -38,6 +40,93 @@ export default function AdminProductManager({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+
+  // Quick photo upload state directly from product list
+  const [uploadingProductId, setUploadingProductId] = useState<string | null>(null);
+  const quickFileInputRef = useRef<HTMLInputElement>(null);
+  const [targetProductForPhoto, setTargetProductForPhoto] = useState<Product | null>(null);
+
+  const handleQuickUploadClick = (p: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTargetProductForPhoto(p);
+    if (quickFileInputRef.current) {
+      quickFileInputRef.current.value = "";
+      quickFileInputRef.current.click();
+    }
+  };
+
+  const handleQuickPhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetProductForPhoto) return;
+
+    const isImage =
+      (file.type && file.type.startsWith("image/")) ||
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+    if (!isImage) {
+      showToast("Please choose a valid image file (JPG, PNG, WebP).", "error");
+      return;
+    }
+
+    const p = targetProductForPhoto;
+    setUploadingProductId(p.id);
+
+    try {
+      // 1. Read file as base64 dataUrl
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read image file"));
+        reader.readAsDataURL(file);
+      });
+
+      // 2. Optimistically update product photo in UI with 0ms latency
+      const optimisticProduct: Product = {
+        ...p,
+        image: dataUrl,
+        hoverImage: p.hoverImage === p.image ? dataUrl : p.hoverImage || dataUrl,
+        images: Array.isArray(p.images) && p.images.length > 0 ? [dataUrl, ...p.images.slice(1)] : [dataUrl],
+        updatedAt: new Date().toISOString(),
+      };
+      onProductUpdated(optimisticProduct);
+
+      // 3. Upload to server for clean web /uploads/ URL
+      let finalUrl = dataUrl;
+      try {
+        const upRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl, filename: `prod-${p.id}` }),
+        });
+        if (upRes.ok) {
+          const upJson = await upRes.json();
+          if (upJson.url) finalUrl = upJson.url;
+        }
+      } catch (upErr) {
+        console.warn("Direct upload fallback to dataUrl", upErr);
+      }
+
+      // 4. Save and persist permanently across store and database
+      const updatedProduct: Product = {
+        ...p,
+        image: finalUrl,
+        hoverImage: p.hoverImage === p.image ? finalUrl : p.hoverImage || finalUrl,
+        images: Array.isArray(p.images) && p.images.length > 0 ? [finalUrl, ...p.images.slice(1)] : [finalUrl],
+        updatedAt: new Date().toISOString(),
+      };
+
+      const res = await saveProduct(updatedProduct);
+      const savedProd = res?.product || updatedProduct;
+      onProductUpdated(savedProd);
+      showToast(`Photo for "${p.name}" updated successfully!`, "success");
+    } catch (err: any) {
+      console.error("Quick photo upload error:", err);
+      showToast(err?.message || "Failed to update product photo.", "error");
+    } finally {
+      setUploadingProductId(null);
+      setTargetProductForPhoto(null);
+      if (quickFileInputRef.current) quickFileInputRef.current.value = "";
+    }
+  };
 
   // Derive unique categories
   const categories = useMemo(() => {
@@ -222,18 +311,40 @@ export default function AdminProductManager({
                       {/* Product details */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={displayImg}
-                            alt={p.name}
-                            className="w-11 h-11 object-cover rounded-lg border border-stone-200 shrink-0 bg-stone-100"
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              if (!target.src.includes("unsplash")) {
-                                target.src =
-                                  "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
-                              }
-                            }}
-                          />
+                          <div className="relative group/thumb w-11 h-11 shrink-0">
+                            <img
+                              src={displayImg}
+                              alt={p.name}
+                              className="w-11 h-11 object-cover rounded-lg border border-stone-200 bg-stone-100"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                if (!target.src.includes("unsplash")) {
+                                  target.src =
+                                    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickUploadClick(p, e)}
+                              disabled={uploadingProductId === p.id}
+                              className={`absolute inset-0 rounded-lg flex flex-col items-center justify-center text-white transition-opacity cursor-pointer ${
+                                uploadingProductId === p.id
+                                  ? "bg-black/60 opacity-100"
+                                  : "bg-black/50 opacity-0 group-hover/thumb:opacity-100"
+                              }`}
+                              title="Click to change photo immediately"
+                            >
+                              {uploadingProductId === p.id ? (
+                                <RefreshCw size={13} className="animate-spin text-white" />
+                              ) : (
+                                <>
+                                  <Camera size={13} />
+                                  <span className="text-[8px] font-bold mt-0.5 leading-none">Photo</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                           <div>
                             <p className="font-serif font-bold text-stone-900 line-clamp-1 group-hover:text-[#0d4f3c] transition-colors">
                               {p.name}
@@ -356,6 +467,15 @@ export default function AdminProductManager({
           }}
         />
       )}
+
+      {/* Hidden File Input for Direct Row Photo Uploads */}
+      <input
+        ref={quickFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/jpg,image/avif"
+        className="hidden"
+        onChange={handleQuickPhotoFile}
+      />
 
       {/* Confirm Product Deletion Dialog */}
       <ConfirmDialog

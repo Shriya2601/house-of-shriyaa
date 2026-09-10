@@ -1,5 +1,15 @@
 [
   {
+    "product": {
+      "id": "hos-001",
+      "name": "Gulabi Zari Chanderi Silk Suit",
+      "price": 8499,
+      "image": "/uploads/test-photo-png-1789063839752-8849.png"
+    },
+    "id": "hos-1789063845228",
+    "updatedAt": "2026-09-10T18:10:45.228Z"
+  },
+  {
     "id": "hos-003",
     "name": "Updated Cream & Rust Botanical Suit Set TEST",
     "price": "₹899",

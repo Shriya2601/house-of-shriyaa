@@ -56,8 +56,12 @@ async function compressImageFile(
   quality = 0.85
 ): Promise<{ dataUrl: string; sizeText: string }> {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("Please choose a valid image file (JPG, PNG, or WebP)."));
+    const isImage =
+      (file.type && file.type.startsWith("image/")) ||
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+
+    if (!isImage) {
+      reject(new Error("Please choose a valid image file (JPG, PNG, WebP, or AVIF)."));
       return;
     }
 
@@ -225,8 +229,15 @@ export default function AddProductModal({
     setError(null);
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      let finalUrl = dataUrl;
-      // Immediately upload file to server to obtain clean web URL /uploads/...
+      // Instant visual preview so admin sees the photo in 0ms
+      setImage(dataUrl);
+      setMainImageDetails({ name: file.name, size: sizeText });
+      if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
+        setHoverImage(dataUrl);
+        setHoverImageDetails({ name: file.name, size: sizeText });
+      }
+
+      // Concurrently persist to server for permanent URL
       try {
         const uploadRes = await fetch("/api/upload", {
           method: "POST",
@@ -236,24 +247,20 @@ export default function AddProductModal({
         if (uploadRes.ok) {
           const uploadJson = await uploadRes.json();
           if (uploadJson.url) {
-            finalUrl = uploadJson.url;
+            setImage(uploadJson.url);
+            if (!hoverImage || hoverImage === dataUrl || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
+              setHoverImage(uploadJson.url);
+            }
           }
         }
       } catch (uploadErr) {
         console.warn("Direct upload fallback to dataUrl", uploadErr);
       }
-
-      setImage(finalUrl);
-      setMainImageDetails({ name: file.name, size: sizeText });
-      // If hover image isn't set yet, or was matching previous/original image, update it to the new image
-      if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
-        setHoverImage(finalUrl);
-        setHoverImageDetails({ name: file.name, size: sizeText });
-      }
     } catch (err: any) {
       setError(err?.message || "Failed to process photo from device.");
     } finally {
       setIsProcessingMain(false);
+      if (mainFileInputRef.current) mainFileInputRef.current.value = "";
     }
   };
 
@@ -263,7 +270,10 @@ export default function AddProductModal({
     setError(null);
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      let finalUrl = dataUrl;
+      // Instant visual preview
+      setHoverImage(dataUrl);
+      setHoverImageDetails({ name: file.name, size: sizeText });
+
       try {
         const uploadRes = await fetch("/api/upload", {
           method: "POST",
@@ -273,19 +283,17 @@ export default function AddProductModal({
         if (uploadRes.ok) {
           const uploadJson = await uploadRes.json();
           if (uploadJson.url) {
-            finalUrl = uploadJson.url;
+            setHoverImage(uploadJson.url);
           }
         }
       } catch (uploadErr) {
         console.warn("Direct hover upload fallback to dataUrl", uploadErr);
       }
-
-      setHoverImage(finalUrl);
-      setHoverImageDetails({ name: file.name, size: sizeText });
     } catch (err: any) {
       setError(err?.message || "Failed to process secondary photo.");
     } finally {
       setIsProcessingHover(false);
+      if (hoverFileInputRef.current) hoverFileInputRef.current.value = "";
     }
   };
 
@@ -317,6 +325,7 @@ export default function AddProductModal({
       setError(err?.message || "Failed to upload gallery photo.");
     } finally {
       setIsProcessingExtra(false);
+      if (extraFileInputRef.current) extraFileInputRef.current.value = "";
     }
   };
 
@@ -439,8 +448,8 @@ export default function AddProductModal({
     };
 
     try {
-      await saveProduct(productPayload);
-      onSuccess(productPayload);
+      const res = await saveProduct(productPayload);
+      onSuccess(res?.product || productPayload);
       onClose();
     } catch (err: any) {
       console.error("Save product error:", err);
@@ -551,18 +560,29 @@ export default function AddProductModal({
                   <input
                     ref={mainFileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    accept="image/png,image/jpeg,image/webp,image/jpg,image/avif"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) handleMainFileChange(f);
+                      e.target.value = "";
                     }}
                   />
 
                   {image ? (
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
-                        <img src={image} alt="Main Suit" className="w-full h-full object-cover" />
+                        <img
+                          src={image}
+                          alt="Main Suit"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes("unsplash")) {
+                              target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+                            }
+                          }}
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-stone-900 truncate">
@@ -652,18 +672,29 @@ export default function AddProductModal({
                   <input
                     ref={hoverFileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    accept="image/png,image/jpeg,image/webp,image/jpg,image/avif"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) handleHoverFileChange(f);
+                      e.target.value = "";
                     }}
                   />
 
                   {hoverImage && hoverImage !== image ? (
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
-                        <img src={hoverImage} alt="Hover Detail" className="w-full h-full object-cover" />
+                        <img
+                          src={hoverImage}
+                          alt="Hover Detail"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes("unsplash")) {
+                              target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+                            }
+                          }}
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-stone-900 truncate">

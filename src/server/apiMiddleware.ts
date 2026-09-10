@@ -309,6 +309,15 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         } catch (readErr) {
           console.warn("[Uploads Server] Read error:", readErr);
         }
+      } else if (memoryUploadsCache.has(filename)) {
+        // Instant response from memory cache if disk write is pending or path difference
+        const cached = memoryUploadsCache.get(filename)!;
+        res.setHeader("Content-Type", cached.mime);
+        res.setHeader("Content-Length", cached.buffer.length);
+        res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        res.statusCode = 200;
+        res.end(cached.buffer);
+        return;
       }
 
       // Fallback: If not found, evict from memory cache and return 404 with strict NO-CACHE
@@ -445,14 +454,18 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               } else if (Array.isArray(body.products)) {
                 products = body.products;
               } else if (typeof body === "object" && body !== null) {
+                const incomingProd =
+                  body.product && typeof body.product === "object" && !Array.isArray(body.product)
+                    ? body.product
+                    : body;
                 const product = {
-                  ...body,
-                  id: body.id || `hos-${Date.now()}`,
+                  ...incomingProd,
+                  id: incomingProd.id || `hos-${Date.now()}`,
                   updatedAt: new Date().toISOString(),
                 };
                 const idx = products.findIndex((p) => p.id === product.id);
                 if (idx > -1) {
-                  products[idx] = { ...product, id: product.id, updatedAt: new Date().toISOString() };
+                  products[idx] = { ...products[idx], ...product, id: product.id, updatedAt: new Date().toISOString() };
                 } else {
                   products.unshift(product);
                 }
@@ -701,23 +714,34 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 return;
               }
 
-              // Extract mime type and base64 buffer
+              // Extract mime type and base64 buffer robustly
               let ext = "jpg";
               let mime = "image/jpeg";
               let base64Data = rawData;
-              const matches = rawData.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
-              if (matches) {
-                const detectedSub = matches[1].toLowerCase();
-                if (detectedSub.includes("png")) { ext = "png"; mime = "image/png"; }
-                else if (detectedSub.includes("webp")) { ext = "webp"; mime = "image/webp"; }
-                else if (detectedSub.includes("gif")) { ext = "gif"; mime = "image/gif"; }
-                else if (detectedSub.includes("jpeg") || detectedSub.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
-                base64Data = matches[2];
+
+              if (rawData.includes(",")) {
+                const parts = rawData.split(",");
+                const header = parts[0].toLowerCase();
+                if (header.includes("png")) { ext = "png"; mime = "image/png"; }
+                else if (header.includes("webp")) { ext = "webp"; mime = "image/webp"; }
+                else if (header.includes("gif")) { ext = "gif"; mime = "image/gif"; }
+                else if (header.includes("svg")) { ext = "svg"; mime = "image/svg+xml"; }
+                else if (header.includes("jpeg") || header.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
+                base64Data = parts.slice(1).join(",");
+              } else if (body.filename) {
+                const fExt = path.extname(body.filename).toLowerCase();
+                if (fExt === ".png") { ext = "png"; mime = "image/png"; }
+                else if (fExt === ".webp") { ext = "webp"; mime = "image/webp"; }
+                else if (fExt === ".gif") { ext = "gif"; mime = "image/gif"; }
+                else if (fExt === ".svg") { ext = "svg"; mime = "image/svg+xml"; }
               }
 
+              // Strip whitespace and newlines from base64 string
+              base64Data = base64Data.replace(/[\r\n\s]+/g, "");
               const buffer = Buffer.from(base64Data, "base64");
               const safePrefix = (body.filename || "upload")
                 .toLowerCase()
+                .replace(/\.[a-z0-9]+$/i, "") // strip existing extension so we don't end up with name.jpg.jpg
                 .replace(/[^a-z0-9_-]/g, "-")
                 .slice(0, 24) || "upload";
               const timestamp = Date.now();
