@@ -32,16 +32,21 @@ export function broadcastSseSync(type: string, data: any) {
   }
 }
 
-const memoryDataCache: Record<string, any> = {};
+interface MemoryCacheItem {
+  data: any;
+  mtimeMs: number;
+}
+
+const memoryDataCache: Record<string, MemoryCacheItem> = {};
 
 function syncDataFile(filename: string, data: any): void {
-  memoryDataCache[filename] = data;
   const jsonStr = JSON.stringify(data, null, 2);
   const targets = [
     path.resolve(process.cwd(), "public/data", filename),
     path.resolve(process.cwd(), "src/data", filename),
     path.resolve(process.cwd(), "dist/data", filename),
   ];
+  let latestMtime = Date.now();
   for (const target of targets) {
     try {
       // Don't create dist directory if it does not already exist
@@ -53,16 +58,18 @@ function syncDataFile(filename: string, data: any): void {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(target, jsonStr, "utf-8");
+      try {
+        const s = fs.statSync(target);
+        if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
+      } catch {}
     } catch (err) {
       console.error(`[API Middleware] Error syncing ${target}:`, err);
     }
   }
+  memoryDataCache[filename] = { data, mtimeMs: latestMtime };
 }
 
 function readDataFile(filename: string, fallback: any = []): any {
-  if (memoryDataCache[filename] !== undefined) {
-    return memoryDataCache[filename];
-  }
   const targets = [
     path.resolve(process.cwd(), "public/data", filename),
     path.resolve(process.cwd(), "src/data", filename),
@@ -71,15 +78,22 @@ function readDataFile(filename: string, fallback: any = []): any {
   for (const target of targets) {
     if (fs.existsSync(target)) {
       try {
+        const stat = fs.statSync(target);
+        const cached = memoryDataCache[filename];
+        if (cached && cached.mtimeMs >= stat.mtimeMs) {
+          return cached.data;
+        }
         const raw = fs.readFileSync(target, "utf-8");
         const parsed = JSON.parse(raw);
         if (parsed !== undefined && parsed !== null) {
-          memoryDataCache[filename] = parsed;
+          memoryDataCache[filename] = { data: parsed, mtimeMs: stat.mtimeMs };
           return parsed;
         }
       } catch {}
     }
   }
+  const cached = memoryDataCache[filename];
+  if (cached) return cached.data;
   return fallback;
 }
 
@@ -458,22 +472,48 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                   body.product && typeof body.product === "object" && !Array.isArray(body.product)
                     ? body.product
                     : body;
+                const prodId = incomingProd.id || body.id || `hos-${Date.now()}`;
                 const product = {
                   ...incomingProd,
-                  id: incomingProd.id || `hos-${Date.now()}`,
+                  id: prodId,
                   updatedAt: new Date().toISOString(),
                 };
+                delete (product as any).product;
+
                 const idx = products.findIndex((p) => p.id === product.id);
                 if (idx > -1) {
-                  products[idx] = { ...products[idx], ...product, id: product.id, updatedAt: new Date().toISOString() };
+                  const existing = products[idx];
+                  const merged = { ...existing, ...product, id: product.id, updatedAt: new Date().toISOString() };
+                  // If product.image is provided, ALWAYS ensure colorVariants[0] and images[0] reflect the new image
+                  if (product.image) {
+                    merged.image = product.image;
+                    merged.images = Array.isArray(merged.images) && merged.images.length > 0
+                      ? [product.image, ...merged.images.filter((img: string) => img !== product.image)]
+                      : [product.image];
+                    if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
+                      const v0 = merged.colorVariants[0];
+                      merged.colorVariants[0] = {
+                        ...v0,
+                        image: product.image,
+                        hoverImage: product.hoverImage || v0.hoverImage || product.image,
+                        images: Array.isArray(v0.images) && v0.images.length > 0
+                          ? [product.image, ...v0.images.filter((img: string) => img !== product.image)]
+                          : [product.image],
+                      };
+                    }
+                  }
+                  products[idx] = merged;
                 } else {
+                  if (product.image && (!Array.isArray(product.images) || product.images.length === 0)) {
+                    product.images = [product.image];
+                  }
                   products.unshift(product);
                 }
                 unrecordDeletedId("products", product.id);
                 writeProducts(products);
                 res.setHeader("Content-Type", "application/json");
                 res.statusCode = 200;
-                res.end(JSON.stringify({ success: true, product, count: products.length }));
+                res.end(JSON.stringify({ success: true, product: products[idx > -1 ? idx : 0], count: products.length }));
                 return;
               }
 
@@ -837,9 +877,9 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 for (let i = 0; i < body.heroSlides.length; i++) {
                   const s = body.heroSlides[i];
                   if (s && s.image && typeof s.image === "string") {
-                    if (s.image.includes("eA9kgNNZCuEDbWDBS8JI")) {
+                    if (s.image.includes("kommodo.ai/i/eA9kgNNZCuEDbWDBS8JI")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
-                    } else if (s.image.includes("4UmFSGtcoZdZF37bKc3R")) {
+                    } else if (s.image.includes("kommodo.ai/i/4UmFSGtcoZdZF37bKc3R")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
                     } else if (s.image.includes("kommodo.ai/i/")) {
                       try {

@@ -2963,6 +2963,18 @@ export function ProductCard({
   }, [product.colorVariants, selectedVariantIndex]);
 
   const productImages = useMemo(() => {
+    if (selectedVariantIndex === 0 && product.image) {
+      if (currentVariant && Array.isArray(currentVariant.images) && currentVariant.images.length > 0) {
+        const valid = currentVariant.images.filter(Boolean);
+        return [product.image, ...valid.filter((img) => img !== product.image)];
+      }
+      if (Array.isArray(product.images) && product.images.length > 0) {
+        const valid = product.images.filter(Boolean);
+        return [product.image, ...valid.filter((img) => img !== product.image)];
+      }
+      return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
+    }
+
     if (currentVariant) {
       if (Array.isArray(currentVariant.images) && currentVariant.images.length > 0) {
         const valid = currentVariant.images.filter(Boolean);
@@ -2981,7 +2993,9 @@ export function ProductCard({
     return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
   }, [currentVariant, selectedVariantIndex, product.images, product.image, product.hoverImage]);
 
-  const activeImage = productImages[activeImageIndex] || (selectedVariantIndex === 0 ? product.image : productImages[0]);
+  const activeImage = selectedVariantIndex === 0 && product.image && activeImageIndex === 0
+    ? product.image
+    : (productImages[activeImageIndex] || product.image || productImages[0]);
 
   const handleOpenDetails = () => {
     const colorParam = currentVariant?.colorName ? `?color=${encodeURIComponent(currentVariant.colorName)}` : "";

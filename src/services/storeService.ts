@@ -461,9 +461,9 @@ export function ensureProductVariants(product: any): Product {
     cleanImages = [primaryImg, hoverImg].filter(Boolean);
   }
 
-  // Ensure primary image is present
-  if (cleanImages.length > 0 && !cleanImages.includes(primaryImg)) {
-    cleanImages[0] = primaryImg;
+  // Ensure primary image is always at index 0 of cleanImages
+  if (primaryImg) {
+    cleanImages = [primaryImg, ...cleanImages.filter((img) => img !== primaryImg)];
   }
 
   let variants: ColorVariant[] = [];
@@ -481,6 +481,7 @@ export function ensureProductVariants(product: any): Product {
       }
 
       return {
+        ...v,
         id: v.id || `var-${product.id || "prod"}-${idx + 1}`,
         colorName: v.colorName || product.color || "Royal Emerald",
         colorHex: v.colorHex || product.colorHex || "#0d4f3c",
@@ -490,8 +491,8 @@ export function ensureProductVariants(product: any): Product {
         description: v.description || product.description || "",
         fabricType: v.fabricType || product.fabricType || "Pure Silk",
         images: vImages,
-        image: vImages[0] || primaryImg,
-        hoverImage: vImages[1] || vImages[0] || hoverImg,
+        image: idx === 0 ? primaryImg : (vImages[0] || v.image || primaryImg),
+        hoverImage: idx === 0 ? hoverImg : (vImages[1] || vImages[0] || v.hoverImage || hoverImg),
         inStock: v.inStock !== false,
       };
     });
@@ -1245,13 +1246,13 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     .map(applyImageCacheBuster);
 
   const updatedVariants = Array.isArray(product.colorVariants)
-    ? product.colorVariants.map((v) => ({
+    ? product.colorVariants.map((v, idx) => ({
         ...v,
-        image: applyImageCacheBuster(v.image || cleanImage),
-        hoverImage: applyImageCacheBuster(v.hoverImage || cleanHover),
-        images: Array.isArray(v.images) && v.images.length > 0
-          ? v.images.map(applyImageCacheBuster)
-          : cleanImages,
+        image: idx === 0 ? cleanImage : applyImageCacheBuster(v.image || cleanImage),
+        hoverImage: idx === 0 ? cleanHover : applyImageCacheBuster(v.hoverImage || cleanHover),
+        images: idx === 0
+          ? [cleanImage, ...(Array.isArray(v.images) ? v.images.slice(1).map(applyImageCacheBuster) : [cleanHover])]
+          : (Array.isArray(v.images) && v.images.length > 0 ? v.images.map(applyImageCacheBuster) : cleanImages),
       }))
     : undefined;
 

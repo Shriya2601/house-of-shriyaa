@@ -1,21 +1,171 @@
 [
   {
-    "product": {
-      "id": "hos-001",
-      "name": "Gulabi Zari Chanderi Silk Suit",
-      "price": 8499,
-      "image": "/uploads/test-photo-png-1789063839752-8849.png"
-    },
-    "id": "hos-1789063845228",
-    "updatedAt": "2026-09-10T18:10:45.228Z"
+    "id": "hos-001",
+    "reviews": "38",
+    "tags": [
+      "Party Wear",
+      "Festive Wear"
+    ],
+    "savings": "Save 25%",
+    "originalPrice": "₹1000",
+    "price": "₹750",
+    "inStock": true,
+    "updatedAt": "2026-09-10T18:34:24.760Z",
+    "activeWishlist": true,
+    "createdAt": "2026-09-03T06:47:37.021Z",
+    "rating": "4.9",
+    "fabricType": "Satin ",
+    "images": [
+      "/uploads/hos-001-img-0-1788707076763-589.webp",
+      "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
+      "/uploads/hos-001-img-1-1788707076763-948.webp",
+      "/uploads/hos-001-img-2-1788707076764-576.webp"
+    ],
+    "color": "Ivory/Cream with Royal Blue Floral Print & Blue Dupatta",
+    "badges": [
+      "Bestseller",
+      "New Drop",
+      "Stitched & Unstitched"
+    ],
+    "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
+    "category": "Satin Wear",
+    "image": "/uploads/hos-001-img-0-1788707076763-589.webp",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
+    "name": "Ivory & Royal Blue Floral Satin Suit Set",
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-001-0",
+        "colorName": "Ivory/Cream with Royal Blue Floral Print & Blue Dupatta",
+        "colorHex": "#0d4f3c",
+        "price": "₹750",
+        "originalPrice": "₹1000",
+        "savings": "Save 25%",
+        "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
+        "fabricType": "Satin ",
+        "images": [
+          "/uploads/hos-001-img-0-1788707076763-589.webp",
+          "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
+          "/uploads/hos-001-img-1-1788707076763-948.webp",
+          "/uploads/hos-001-img-2-1788707076764-576.webp"
+        ],
+        "image": "/uploads/hos-001-img-0-1788707076763-589.webp",
+        "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
+        "inStock": true
+      }
+    ]
+  },
+  {
+    "id": "hos-002",
+    "activeWishlist": false,
+    "inStock": true,
+    "createdAt": "2026-09-03T06:47:37.603Z",
+    "description": "A stylish black and off-white chevron printed tunic featuring vibrant pink peony motifs along the hemline. Paired with matching wide-leg for a sleek, contemporary look",
+    "hoverImage": "/uploads/hos-002-img-1-1788707076766-877.webp",
+    "price": "₹750",
+    "updatedAt": "2026-09-06T11:33:25.658Z",
+    "originalPrice": "₹1000",
+    "fabricType": "Satin",
+    "savings": "Save 25%",
+    "rating": "4.8",
+    "reviews": "29",
+    "tags": [
+      "Festive Wear",
+      "Party Wear"
+    ],
+    "name": "Black Chevron & Pink Tunic Set",
+    "badges": [
+      "Bestseller",
+      "Unstitched Fabric"
+    ],
+    "images": [
+      "/uploads/hos-002-img-0-1788707076765-189.webp",
+      "/uploads/hos-002-img-1-1788707076766-877.webp",
+      "/uploads/hos-002-img-2-1788707076766-396.webp"
+    ],
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "image": "/uploads/hos-002-img-0-1788707076765-189.webp",
+    "category": "Satin Wear",
+    "color": "Monochrome Chevron & Rose silk blend",
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-002-0",
+        "colorName": "Monochrome Chevron & Rose silk blend",
+        "colorHex": "#0d4f3c",
+        "price": "₹750",
+        "originalPrice": "₹1000",
+        "savings": "Save 25%",
+        "description": "A stylish black and off-white chevron printed tunic featuring vibrant pink peony motifs along the hemline. Paired with matching wide-leg for a sleek, contemporary look",
+        "fabricType": "Satin",
+        "images": [
+          "/uploads/hos-002-img-0-1788707076765-189.webp",
+          "/uploads/hos-002-img-1-1788707076766-877.webp",
+          "/uploads/hos-002-img-2-1788707076766-396.webp"
+        ],
+        "image": "/uploads/hos-002-img-0-1788707076765-189.webp",
+        "hoverImage": "/uploads/hos-002-img-1-1788707076766-877.webp",
+        "inStock": true
+      }
+    ]
   },
   {
     "id": "hos-003",
-    "name": "Updated Cream & Rust Botanical Suit Set TEST",
-    "price": "₹899",
-    "category": "Satin Wear",
+    "hoverImage": "/uploads/hos-003-hover-1788707076768-382.webp",
+    "savings": "Save 25%",
+    "reviews": "19",
+    "fabricType": "Satin",
     "inStock": true,
-    "updatedAt": "2026-09-10T13:06:46.878Z"
+    "tags": [
+      "Seasonal Drop",
+      "Party Wear",
+      "Festive Wear"
+    ],
+    "rating": "5.0",
+    "price": "₹750",
+    "category": "Satin Wear",
+    "description": "An elegant sleeveless cream suit set featuring rich rust and olive floral motifs. Complete with pleated bottoms and a sheer matching dupatta with intricate printed borders",
+    "badges": [
+      "New Drop",
+      "Seasonal Drop"
+    ],
+    "originalPrice": "₹1000",
+    "updatedAt": "2026-09-06T11:33:37.074Z",
+    "image": "/uploads/hos-003-img-0-1788707076769-402.webp",
+    "images": [
+      "/uploads/hos-003-img-0-1788707076769-402.webp"
+    ],
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "createdAt": "2026-09-03T06:47:37.919Z",
+    "color": "Beige base with rust orange, terracotta,and green floral prints",
+    "name": "Cream & Rust Botanical Floral Printed Suit Set",
+    "activeWishlist": false,
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-003-0",
+        "colorName": "Beige base with rust orange, terracotta,and green floral prints",
+        "colorHex": "#0d4f3c",
+        "price": "₹750",
+        "originalPrice": "₹1000",
+        "savings": "Save 25%",
+        "description": "An elegant sleeveless cream suit set featuring rich rust and olive floral motifs. Complete with pleated bottoms and a sheer matching dupatta with intricate printed borders",
+        "fabricType": "Satin",
+        "images": [
+          "/uploads/hos-003-img-0-1788707076769-402.webp"
+        ],
+        "image": "/uploads/hos-003-img-0-1788707076769-402.webp",
+        "hoverImage": "/uploads/hos-003-hover-1788707076768-382.webp",
+        "inStock": true
+      }
+    ]
   },
   {
     "id": "hos-004",
@@ -227,6 +377,60 @@
         ],
         "image": "/uploads/hos-007-img-0-1788707076778-220.jpg",
         "hoverImage": "/uploads/hos-007-hover-1788707076777-774.jpg",
+        "inStock": true
+      }
+    ]
+  },
+  {
+    "id": "hos-008",
+    "originalPrice": "₹2,499",
+    "activeWishlist": false,
+    "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
+    "badges": [
+      "Pure Mulmul",
+      "Summer Edit"
+    ],
+    "price": "₹1,799",
+    "fabricType": "Pure Mulmul",
+    "tags": [
+      "Cotton Suits",
+      "Daily Wear Suits"
+    ],
+    "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
+    "savings": "Save 28%",
+    "reviews": "26",
+    "name": "Sage Garden Mulmul Breezy Stitched Kurti Pant",
+    "updatedAt": "2026-09-06T11:34:22.383Z",
+    "createdAt": "2026-09-03T06:47:33.123Z",
+    "category": "Cotton Suits",
+    "rating": "4.8",
+    "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "inStock": true,
+    "color": "Sage Green",
+    "images": [
+      "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
+    ],
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-008-0",
+        "colorName": "Sage Green",
+        "colorHex": "#0d4f3c",
+        "price": "₹1,799",
+        "originalPrice": "₹2,499",
+        "savings": "Save 28%",
+        "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
+        "fabricType": "Pure Mulmul",
+        "images": [
+          "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+          "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
+        ],
+        "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+        "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
         "inStock": true
       }
     ]

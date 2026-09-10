@@ -85,6 +85,19 @@ export default function AdminProductManager({
         image: dataUrl,
         hoverImage: p.hoverImage === p.image ? dataUrl : p.hoverImage || dataUrl,
         images: Array.isArray(p.images) && p.images.length > 0 ? [dataUrl, ...p.images.slice(1)] : [dataUrl],
+        colorVariants: Array.isArray(p.colorVariants) && p.colorVariants.length > 0
+          ? [
+              {
+                ...p.colorVariants[0],
+                image: dataUrl,
+                hoverImage: p.hoverImage === p.image ? dataUrl : p.colorVariants[0].hoverImage || dataUrl,
+                images: Array.isArray(p.colorVariants[0].images) && p.colorVariants[0].images.length > 0
+                  ? [dataUrl, ...p.colorVariants[0].images.slice(1)]
+                  : [dataUrl],
+              },
+              ...p.colorVariants.slice(1),
+            ]
+          : undefined,
         updatedAt: new Date().toISOString(),
       };
       onProductUpdated(optimisticProduct);
@@ -111,6 +124,19 @@ export default function AdminProductManager({
         image: finalUrl,
         hoverImage: p.hoverImage === p.image ? finalUrl : p.hoverImage || finalUrl,
         images: Array.isArray(p.images) && p.images.length > 0 ? [finalUrl, ...p.images.slice(1)] : [finalUrl],
+        colorVariants: Array.isArray(p.colorVariants) && p.colorVariants.length > 0
+          ? [
+              {
+                ...p.colorVariants[0],
+                image: finalUrl,
+                hoverImage: p.hoverImage === p.image ? finalUrl : p.colorVariants[0].hoverImage || finalUrl,
+                images: Array.isArray(p.colorVariants[0].images) && p.colorVariants[0].images.length > 0
+                  ? [finalUrl, ...p.colorVariants[0].images.slice(1)]
+                  : [finalUrl],
+              },
+              ...p.colorVariants.slice(1),
+            ]
+          : undefined,
         updatedAt: new Date().toISOString(),
       };
 

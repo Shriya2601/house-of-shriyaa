@@ -114,6 +114,18 @@ export default function ProductDetails() {
   const productImages = useMemo(() => {
     if (!currentColorVariant) return [product?.image || FALLBACK_IMAGE];
 
+    if (selectedColorIndex === 0 && product?.image) {
+      if (Array.isArray(currentColorVariant.images) && currentColorVariant.images.length > 0) {
+        const valid = currentColorVariant.images.filter(Boolean);
+        return [product.image, ...valid.filter((img) => img !== product.image)];
+      }
+      if (Array.isArray(product.images) && product.images.length > 0) {
+        const valid = product.images.filter(Boolean);
+        return [product.image, ...valid.filter((img) => img !== product.image)];
+      }
+      return [product.image, ...(product.hoverImage && product.hoverImage !== product.image ? [product.hoverImage] : [])].filter(Boolean);
+    }
+
     // Check if variant has its own images array
     if (Array.isArray(currentColorVariant.images) && currentColorVariant.images.length > 0) {
       const valid = currentColorVariant.images.filter(Boolean);
