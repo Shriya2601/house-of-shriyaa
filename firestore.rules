@@ -27,6 +27,8 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'houseofshriya.in@gmail.com' ||
+        request.auth.token.email == 'shriyapusha2001@gmail.com' ||
+        request.auth.token.email == 'shriyapusha01@gmail.com' ||
         request.auth.token.email == 'shriya14301@gmail.com' ||
         request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
         request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
@@ -42,37 +44,37 @@ service cloud.firestore {
     // 3. Schema Validators
     function isValidSiteContent(data) {
       return data is map &&
-        (!('announcementText' in data) || (data.announcementText is string && data.announcementText.size() <= 500)) &&
-        (!('announcementCta' in data) || (data.announcementCta is string && data.announcementCta.size() <= 100)) &&
+        (!('announcementText' in data) || (data.announcementText is string && data.announcementText.size() <= 2000)) &&
+        (!('announcementCta' in data) || (data.announcementCta is string && data.announcementCta.size() <= 500)) &&
         (!('announcementVisible' in data) || data.announcementVisible is bool) &&
-        (!('heroSlides' in data) || (data.heroSlides is list && data.heroSlides.size() <= 20)) &&
-        (!('brandTagline' in data) || (data.brandTagline is string && data.brandTagline.size() <= 500)) &&
-        (!('brandDescription' in data) || (data.brandDescription is string && data.brandDescription.size() <= 1000)) &&
-        (!('whatsappNumber' in data) || (data.whatsappNumber is string && data.whatsappNumber.size() <= 30));
+        (!('heroSlides' in data) || (data.heroSlides is list && data.heroSlides.size() <= 50)) &&
+        (!('brandTagline' in data) || (data.brandTagline is string && data.brandTagline.size() <= 2000)) &&
+        (!('brandDescription' in data) || (data.brandDescription is string && data.brandDescription.size() <= 5000)) &&
+        (!('whatsappNumber' in data) || (data.whatsappNumber is string && data.whatsappNumber.size() <= 100));
     }
 
     function isValidProduct(data) {
       return data is map &&
-        data.name is string && data.name.size() > 0 && data.name.size() <= 300 &&
-        (!('price' in data) || (data.price is string && data.price.size() <= 50)) &&
-        (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 500 &&
+        (!('price' in data) || (data.price is string && data.price.size() <= 100)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 200)) &&
         (!('inStock' in data) || data.inStock is bool) &&
-        (!('image' in data) || (data.image is string && data.image.size() <= 2048));
+        (!('image' in data) || data.image is string);
     }
 
     function isValidOrder(data) {
       return data is map &&
-        data.orderNumber is string && data.orderNumber.size() <= 100 &&
+        data.orderNumber is string && data.orderNumber.size() <= 200 &&
         data.total is number && data.total >= 0 &&
-        data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+        data.items is list && data.items.size() <= 200 &&
         (!('userId' in data) || (data.userId is string && data.userId.size() <= 128));
     }
 
     function isValidBooking(data) {
       return data is map &&
-        data.clientName is string && data.clientName.size() > 0 && data.clientName.size() <= 200 &&
-        data.clientPhone is string && data.clientPhone.size() > 0 && data.clientPhone.size() <= 50 &&
-        (!('serviceType' in data) || (data.serviceType is string && data.serviceType.size() <= 100));
+        data.clientName is string && data.clientName.size() > 0 && data.clientName.size() <= 300 &&
+        data.clientPhone is string && data.clientPhone.size() > 0 && data.clientPhone.size() <= 100 &&
+        (!('serviceType' in data) || (data.serviceType is string && data.serviceType.size() <= 200));
     }
 
     // 4. Collection Rules

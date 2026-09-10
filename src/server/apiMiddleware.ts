@@ -120,7 +120,10 @@ function writeProducts(products: any[]): void {
 
 function readCategories(): any[] {
   const list = readDataFile("categories.json", []);
-  return Array.isArray(list) ? list : [];
+  const deleted = getDeletedIds("categories");
+  return (Array.isArray(list) ? list : []).filter(
+    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug)) && (!c.name || !deleted.has(c.name))
+  );
 }
 
 function writeCategories(categories: any[]): void {
@@ -141,9 +144,16 @@ function writeSiteContent(content: any): void {
 function readOrdersList(): any[] {
   const list = readDataFile("orders.json", []);
   const deleted = getDeletedIds("orders");
-  return (Array.isArray(list) ? list : []).filter(
-    (o) => o && (!o.id || !deleted.has(o.id)) && (!o.orderNumber || !deleted.has(o.orderNumber))
-  );
+  return (Array.isArray(list) ? list : [])
+    .map((o) => {
+      if (o && !o.id && o.orderNumber) {
+        o.id = `ord_${o.orderNumber.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}`;
+      }
+      return o;
+    })
+    .filter(
+      (o) => o && (!o.id || !deleted.has(o.id)) && (!o.orderNumber || !deleted.has(o.orderNumber))
+    );
 }
 
 function writeOrdersList(orders: any[]): void {
@@ -154,9 +164,16 @@ function writeOrdersList(orders: any[]): void {
 function readBookingsList(): any[] {
   const list = readDataFile("bookings.json", []);
   const deleted = getDeletedIds("bookings");
-  return (Array.isArray(list) ? list : []).filter(
-    (b) => b && (!b.id || !deleted.has(b.id)) && (!b.bookingNumber || !deleted.has(b.bookingNumber))
-  );
+  return (Array.isArray(list) ? list : [])
+    .map((b) => {
+      if (b && !b.id && b.bookingNumber) {
+        b.id = `book_${b.bookingNumber.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}`;
+      }
+      return b;
+    })
+    .filter(
+      (b) => b && (!b.id || !deleted.has(b.id)) && (!b.bookingNumber || !deleted.has(b.bookingNumber))
+    );
 }
 
 function writeBookingsList(bookings: any[]): void {
@@ -422,6 +439,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 } else {
                   products.unshift(product);
                 }
+                unrecordDeletedId("products", product.id);
                 writeProducts(products);
                 res.setHeader("Content-Type", "application/json");
                 res.statusCode = 200;
@@ -450,6 +468,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               if (delId) {
                 let products = readProducts();
                 const filtered = products.filter((p) => p.id !== delId);
+                recordDeletedId("products", delId);
                 writeProducts(filtered);
                 res.setHeader("Content-Type", "application/json");
                 res.statusCode = 200;
@@ -503,6 +522,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               } else {
                 products.unshift(product);
               }
+              unrecordDeletedId("products", productId);
               writeProducts(products);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
@@ -518,6 +538,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
 
           if (method === "DELETE") {
             const filtered = products.filter((p) => p.id !== productId);
+            recordDeletedId("products", productId);
             writeProducts(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
@@ -557,6 +578,9 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 } else {
                   categories.push({ id: body.id || `cat-${Date.now()}`, ...body });
                 }
+                if (body.id) unrecordDeletedId("categories", body.id);
+                if (body.slug) unrecordDeletedId("categories", body.slug);
+                if (body.name) unrecordDeletedId("categories", body.name);
               }
               writeCategories(categories);
               res.setHeader("Content-Type", "application/json");
@@ -583,6 +607,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             const filtered = categories.filter(
               (c) => c.id !== catId && c.slug !== catId && c.name !== catId
             );
+            recordDeletedId("categories", catId);
             writeCategories(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
@@ -892,6 +917,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               } else {
                 existingOrders.unshift(order);
               }
+              unrecordDeletedId("orders", order.id);
+              if (order.orderNumber) unrecordDeletedId("orders", order.orderNumber);
               writeOrdersList(existingOrders);
 
               res.setHeader("Content-Type", "application/json");
@@ -985,6 +1012,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 }
               }
 
+              unrecordDeletedId("orders", orderId);
+              if (updatedOrder.orderNumber) unrecordDeletedId("orders", updatedOrder.orderNumber);
               writeOrdersList(orders);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
@@ -999,7 +1028,13 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           }
 
           if (method === "DELETE") {
+            const found = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
             const filtered = orders.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
+            recordDeletedId("orders", orderId);
+            if (found) {
+              if (found.id) recordDeletedId("orders", found.id);
+              if (found.orderNumber) recordDeletedId("orders", found.orderNumber);
+            }
             writeOrdersList(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
@@ -1128,6 +1163,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 bookings.unshift(newBooking);
               }
 
+              unrecordDeletedId("bookings", bookingId);
+              if (newBooking.bookingNumber) unrecordDeletedId("bookings", newBooking.bookingNumber);
               writeBookingsList(bookings);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
@@ -1179,6 +1216,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               }
 
               writeBookingsList(bookings);
+              unrecordDeletedId("bookings", bookingId);
+              if (updatedBooking.bookingNumber) unrecordDeletedId("bookings", updatedBooking.bookingNumber);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(JSON.stringify({ success: true, booking: updatedBooking, count: bookings.length }));
@@ -1192,7 +1231,13 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           }
 
           if (method === "DELETE") {
+            const found = bookings.find((b) => b.id === bookingId || b.bookingNumber === bookingId);
             const filtered = bookings.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
+            recordDeletedId("bookings", bookingId);
+            if (found) {
+              if (found.id) recordDeletedId("bookings", found.id);
+              if (found.bookingNumber) recordDeletedId("bookings", found.bookingNumber);
+            }
             writeBookingsList(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;

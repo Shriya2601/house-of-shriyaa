@@ -196,6 +196,39 @@ const PRODUCTS_CACHE_KEY = "hos_products_cache";
 const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
+// Local deleted items tracking to prevent stale snapshots/re-fetches from reviving deleted items
+export function getLocallyDeletedIds(type: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(`hos_deleted_${type}`);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function recordLocallyDeletedId(type: string, id: string): void {
+  if (typeof window === "undefined" || !id) return;
+  try {
+    const current = getLocallyDeletedIds(type);
+    current.add(id);
+    localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
+export function unrecordLocallyDeletedId(type: string, id: string): void {
+  if (typeof window === "undefined" || !id) return;
+  try {
+    const current = getLocallyDeletedIds(type);
+    if (current.has(id)) {
+      current.delete(id);
+      localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(Array.from(current)));
+    }
+  } catch {}
+}
+
 // Multi-tab / cross-device broadcast channel for 0ms instantaneous synchronization
 const syncChannel: BroadcastChannel | null =
   typeof window !== "undefined" && "BroadcastChannel" in window
@@ -529,6 +562,15 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         if (snap.exists()) {
           const fsData = snap.data() as SiteContent;
           if (fsData && typeof fsData === "object") {
+            const localContent = getCachedSiteContent();
+            const localTime = new Date(localContent?.updatedAt || 0).getTime();
+            const fsTime = new Date(fsData.updatedAt || 0).getTime();
+
+            // Do not let older/stale remote snapshot overwrite newer local updates
+            if (localTime > fsTime && localContent) {
+              return;
+            }
+
             const merged: SiteContent = { ...defaultSiteContent, ...fsData };
             if (Array.isArray(fsData.heroSlides) && fsData.heroSlides.length > 0) {
               merged.heroSlides = fsData.heroSlides;
@@ -663,8 +705,10 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-          cacheCategoriesLocally(data);
-          callback(data);
+          const deleted = getLocallyDeletedIds("categories");
+          const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
+          cacheCategoriesLocally(filtered);
+          callback(filtered);
           return;
         }
       }
@@ -678,8 +722,10 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
       if (staticRes.ok) {
         const data = await staticRes.json();
         if (Array.isArray(data) && data.length > 0) {
-          cacheCategoriesLocally(data);
-          callback(data);
+          const deleted = getLocallyDeletedIds("categories");
+          const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
+          cacheCategoriesLocally(filtered);
+          callback(filtered);
         }
       }
     } catch {}
@@ -703,10 +749,36 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
       colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          const fsList = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CategoryItem));
-          fsList.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(fsList);
-          callback(fsList);
+          const deleted = getLocallyDeletedIds("categories");
+          const fsList = snapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
+            .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+
+          const current = getCachedCategories().filter((c) => !deleted.has(c.id));
+          const currentMap = new Map(current.map((c) => [c.id, c]));
+          const merged: CategoryItem[] = [];
+          const seen = new Set<string>();
+
+          for (const fsItem of fsList) {
+            seen.add(fsItem.id);
+            const localItem = currentMap.get(fsItem.id);
+            if (localItem && (localItem as any).updatedAt && (fsItem as any).updatedAt) {
+              const localTime = new Date((localItem as any).updatedAt).getTime();
+              const fsTime = new Date((fsItem as any).updatedAt).getTime();
+              merged.push(localTime > fsTime ? localItem : fsItem);
+            } else {
+              merged.push(fsItem);
+            }
+          }
+          for (const localItem of current) {
+            if (!seen.has(localItem.id) && !deleted.has(localItem.id)) {
+              merged.push(localItem);
+            }
+          }
+
+          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(merged);
+          callback(merged);
         }
       },
       () => {}
@@ -759,6 +831,10 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
 }
 
 export async function saveCategory(category: CategoryItem): Promise<void> {
+  unrecordLocallyDeletedId("categories", category.id);
+  if (category.slug) unrecordLocallyDeletedId("categories", category.slug);
+  if (category.name) unrecordLocallyDeletedId("categories", category.name);
+
   const current = getCachedCategories();
   const idx = current.findIndex((c) => c.id === category.id);
   const updated = idx > -1 ? [...current] : [category, ...current];
@@ -786,8 +862,15 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  const current = getCachedCategories().filter((c) => c.id !== id);
-  cacheCategoriesLocally(current);
+  recordLocallyDeletedId("categories", id);
+  const current = getCachedCategories();
+  const target = current.find((c) => c.id === id);
+  if (target) {
+    if (target.slug) recordLocallyDeletedId("categories", target.slug);
+    if (target.name) recordLocallyDeletedId("categories", target.name);
+  }
+  const filtered = current.filter((c) => c.id !== id);
+  cacheCategoriesLocally(filtered);
 
   // Sync with central backend API
   try {
@@ -802,9 +885,9 @@ export async function deleteCategory(id: string): Promise<void> {
   } catch {}
 
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: current }));
+    window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: filtered }));
   }
-  broadcastCrossDeviceSync("categories", current);
+  broadcastCrossDeviceSync("categories", filtered);
 }
 
 export function pausePolling(_seconds = 0): void {
@@ -843,7 +926,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       if (res.ok) {
         const apiData = await res.json();
         if (Array.isArray(apiData)) {
-          const normalized = apiData.map(ensureProductVariants);
+          const deleted = getLocallyDeletedIds("products");
+          const normalized = apiData
+            .map(ensureProductVariants)
+            .filter((p) => p && p.id && !deleted.has(p.id));
           cacheProductsLocally(normalized);
           callback(normalized);
           return;
@@ -859,7 +945,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       if (staticRes.ok) {
         const staticData = await staticRes.json();
         if (Array.isArray(staticData)) {
-          const normalized = staticData.map(ensureProductVariants);
+          const deleted = getLocallyDeletedIds("products");
+          const normalized = staticData
+            .map(ensureProductVariants)
+            .filter((p) => p && p.id && !deleted.has(p.id));
           cacheProductsLocally(normalized);
           callback(normalized);
         }
@@ -944,10 +1033,37 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => ensureProductVariants({ id: d.id, ...d.data() }));
-          if (list.length > 0) {
-            cacheProductsLocally(list);
-            callback(list);
+          const deleted = getLocallyDeletedIds("products");
+          const fsList = snapshot.docs
+            .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
+            .filter((p) => p && p.id && !deleted.has(p.id));
+
+          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
+          const currentMap = new Map(current.map((p) => [p.id, p]));
+          const merged: Product[] = [];
+          const seen = new Set<string>();
+
+          for (const fsItem of fsList) {
+            seen.add(fsItem.id);
+            const localItem = currentMap.get(fsItem.id);
+            if (localItem) {
+              const localTime = new Date(localItem.updatedAt || 0).getTime();
+              const fsTime = new Date(fsItem.updatedAt || 0).getTime();
+              merged.push(localTime > fsTime ? localItem : fsItem);
+            } else {
+              merged.push(fsItem);
+            }
+          }
+
+          for (const localItem of current) {
+            if (!seen.has(localItem.id) && !deleted.has(localItem.id)) {
+              merged.push(localItem);
+            }
+          }
+
+          if (merged.length > 0) {
+            cacheProductsLocally(merged);
+            callback(merged);
           }
         }
       },
@@ -977,6 +1093,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean; product?: Product }> {
   const id = product.id || `hos-${Date.now()}`;
+  unrecordLocallyDeletedId("products", id);
 
   // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
   const cleanImage = applyImageCacheBuster(product.image);
@@ -1048,6 +1165,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  recordLocallyDeletedId("products", id);
   const current = getCachedProducts().filter((p) => p.id !== id);
   cacheProductsLocally(current);
 
@@ -1370,9 +1488,12 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
       if (res.ok) {
         const apiData = await res.json();
         if (Array.isArray(apiData)) {
-          const sorted = [...apiData].sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
+          const deleted = getLocallyDeletedIds("orders");
+          const sorted = [...apiData]
+            .filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber))
+            .sort(
+              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+            );
           const current = getCachedOrders();
           if (JSON.stringify(current) !== JSON.stringify(sorted)) {
             cacheOrdersLocally(sorted);
@@ -1391,9 +1512,12 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
       if (staticRes.ok) {
         const staticData = await staticRes.json();
         if (Array.isArray(staticData)) {
-          const sorted = [...staticData].sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
+          const deleted = getLocallyDeletedIds("orders");
+          const sorted = [...staticData]
+            .filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber))
+            .sort(
+              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+            );
           const current = getCachedOrders();
           if (JSON.stringify(current) !== JSON.stringify(sorted)) {
             cacheOrdersLocally(sorted);
@@ -2227,10 +2351,13 @@ export async function adminLogout(): Promise<void> {
 }
 
 export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
+  const deleted = getLocallyDeletedIds("bookings");
   let list: AtelierBooking[] = [];
   try {
     const local = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
-    list = local;
+    list = (Array.isArray(local) ? local : []).filter(
+      (b: any) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber)
+    );
   } catch {}
 
   // 1. Fetch from server API
@@ -2242,8 +2369,13 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
     if (res.ok) {
       const serverList = await res.json();
       if (Array.isArray(serverList)) {
-        list = serverList;
-        localStorage.setItem("hos_atelier_bookings", JSON.stringify(serverList));
+        list = serverList
+          .map((b: any) => ({
+            ...b,
+            id: b.id || `book_${(b.bookingNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
+          }))
+          .filter((b: AtelierBooking) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
+        localStorage.setItem("hos_atelier_bookings", JSON.stringify(list));
         return list;
       }
     }
@@ -2254,19 +2386,27 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
     const colRef = collection(db, "bookings");
     const snap = await getDocs(colRef);
     if (!snap.empty) {
-      const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AtelierBooking));
-      const seen = new Set<string>();
-      const combined: AtelierBooking[] = [];
-      for (const b of [...remote, ...list]) {
-        const key = b.bookingNumber || b.id;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(b);
+      const remote = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as AtelierBooking))
+        .filter((b) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
+      const map = new Map<string, AtelierBooking>();
+      for (const b of remote) {
+        map.set(b.id || b.bookingNumber, b);
+      }
+      for (const b of list) {
+        const key = b.id || b.bookingNumber;
+        const rem = map.get(key);
+        if (rem) {
+          const localTime = new Date(b.updatedAt || 0).getTime();
+          const remTime = new Date(rem.updatedAt || 0).getTime();
+          map.set(key, localTime >= remTime ? b : rem);
+        } else {
+          map.set(key, b);
         }
       }
-      combined.sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-      );
+      const combined = Array.from(map.values())
+        .filter((b) => !deleted.has(b.id) && !deleted.has(b.bookingNumber))
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       try {
         localStorage.setItem("hos_atelier_bookings", JSON.stringify(combined));
       } catch {}
@@ -2283,39 +2423,65 @@ export async function adminUpdateBooking(
   bookingId: string,
   updates: Partial<AtelierBooking>
 ): Promise<void> {
+  unrecordLocallyDeletedId("bookings", bookingId);
   const now = new Date().toISOString();
+  let updatedBooking: AtelierBooking | null = null;
   try {
     const local: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
     const idx = local.findIndex((b) => b.id === bookingId || b.bookingNumber === bookingId);
     if (idx > -1) {
-      local[idx] = { ...local[idx], ...updates, updatedAt: now };
+      updatedBooking = { ...local[idx], ...updates, updatedAt: now };
+      local[idx] = updatedBooking;
       localStorage.setItem("hos_atelier_bookings", JSON.stringify(local));
     }
   } catch {}
 
   // Central Server API sync
   try {
-    await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+    const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ ...updates, updatedAt: now }),
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.booking) {
+        updatedBooking = data.booking;
+      }
+    }
   } catch (apiErr) {
     console.warn("API booking update notice:", apiErr);
   }
 
-  try {
-    const docRef = doc(db, "bookings", bookingId);
-    await updateDoc(docRef, { ...updates, updatedAt: now });
-  } catch (e) {
-    console.warn("Firestore adminUpdateBooking error:", e);
+  if (updatedBooking) {
+    if (updatedBooking.bookingNumber) unrecordLocallyDeletedId("bookings", updatedBooking.bookingNumber);
+    try {
+      const docRef = doc(db, "bookings", bookingId);
+      await setDoc(docRef, updatedBooking, { merge: true });
+    } catch (e) {
+      console.warn("Firestore adminUpdateBooking error:", e);
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("hos-booking-updated", {
+        detail: updatedBooking || { id: bookingId, ...updates },
+      })
+    );
   }
 }
 
 export async function adminDeleteBooking(bookingId: string): Promise<void> {
+  recordLocallyDeletedId("bookings", bookingId);
   let filtered: AtelierBooking[] = [];
   try {
     const local: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+    const target = local.find((b) => b.id === bookingId || b.bookingNumber === bookingId);
+    if (target) {
+      if (target.id) recordLocallyDeletedId("bookings", target.id);
+      if (target.bookingNumber) recordLocallyDeletedId("bookings", target.bookingNumber);
+    }
     filtered = local.filter((b) => b.id !== bookingId && b.bookingNumber !== bookingId);
     localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
   } catch {}
@@ -2475,7 +2641,8 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
 }
 
 export async function adminFetchAllOrders(): Promise<Order[]> {
-  let list: Order[] = getCachedOrders();
+  const deleted = getLocallyDeletedIds("orders");
+  let list: Order[] = getCachedOrders().filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
 
   // 1. Fetch from server /api/orders (reads public/data/orders.json)
   try {
@@ -2486,7 +2653,12 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
     if (res.ok) {
       const serverOrders = await res.json();
       if (Array.isArray(serverOrders)) {
-        list = serverOrders;
+        list = serverOrders
+          .map((o: any) => ({
+            ...o,
+            id: o.id || `ord_${(o.orderNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
+          }))
+          .filter((o: Order) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
         cacheOrdersLocally(list);
         return list;
       }
@@ -2500,16 +2672,28 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
     const colRef = collection(db, "orders");
     const snap = await getDocs(colRef);
     if (!snap.empty) {
-      const remote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+      const remote = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Order))
+        .filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
+
       const map = new Map<string, Order>();
-      for (const o of [...remote, ...list]) {
-        const key = o.id || o.orderNumber;
-        if (!map.has(key)) map.set(key, o);
+      for (const o of remote) {
+        map.set(o.id || o.orderNumber, o);
       }
-      list = Array.from(map.values());
-      list.sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-      );
+      for (const o of list) {
+        const key = o.id || o.orderNumber;
+        const rem = map.get(key);
+        if (rem) {
+          const localTime = new Date(o.updatedAt || 0).getTime();
+          const remTime = new Date(rem.updatedAt || 0).getTime();
+          map.set(key, localTime >= remTime ? o : rem);
+        } else {
+          map.set(key, o);
+        }
+      }
+      list = Array.from(map.values())
+        .filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber))
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       cacheOrdersLocally(list);
     }
   } catch (e) {
@@ -2523,13 +2707,20 @@ export async function adminUpdateOrder(
   orderId: string,
   updates: Partial<Order>
 ): Promise<void> {
+  unrecordLocallyDeletedId("orders", orderId);
   const now = new Date().toISOString();
   const current = getCachedOrders();
   const idx = current.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+  let updatedOrder: Order;
   if (idx > -1) {
-    current[idx] = { ...current[idx], ...updates, updatedAt: now };
-    cacheOrdersLocally(current);
+    updatedOrder = { ...current[idx], ...updates, updatedAt: now };
+    current[idx] = updatedOrder;
+  } else {
+    updatedOrder = { id: orderId, orderNumber: orderId, ...updates, updatedAt: now } as Order;
+    current.unshift(updatedOrder);
   }
+  if (updatedOrder.orderNumber) unrecordLocallyDeletedId("orders", updatedOrder.orderNumber);
+  cacheOrdersLocally(current);
 
   // 1. Sync to central backend API
   try {
@@ -2541,14 +2732,12 @@ export async function adminUpdateOrder(
     if (res.ok) {
       const data = await res.json();
       if (data && data.order) {
+        updatedOrder = data.order;
         const freshOrders = getCachedOrders();
         const fIdx = freshOrders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
         if (fIdx > -1) {
-          freshOrders[fIdx] = data.order;
+          freshOrders[fIdx] = updatedOrder;
           cacheOrdersLocally(freshOrders);
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: freshOrders }));
-          }
         }
       }
     }
@@ -2557,20 +2746,27 @@ export async function adminUpdateOrder(
   // 2. Sync to Firestore
   try {
     const docRef = doc(db, "orders", orderId);
-    await updateDoc(docRef, { ...updates, updatedAt: now });
+    await setDoc(docRef, updatedOrder, { merge: true });
   } catch (e) {
     console.warn("Firestore adminUpdateOrder error:", e);
   }
 
   // 3. Broadcast real-time event
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: { orderId, ...updates } }));
+    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updatedOrder }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: current }));
   }
-  broadcastCrossDeviceSync("orders");
+  broadcastCrossDeviceSync("orders", current);
 }
 
 export async function adminDeleteOrder(orderId: string): Promise<void> {
+  recordLocallyDeletedId("orders", orderId);
   const current = getCachedOrders();
+  const target = current.find((o) => o.id === orderId || o.orderNumber === orderId);
+  if (target) {
+    if (target.id) recordLocallyDeletedId("orders", target.id);
+    if (target.orderNumber) recordLocallyDeletedId("orders", target.orderNumber);
+  }
   const filtered = current.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
   cacheOrdersLocally(filtered);
 
