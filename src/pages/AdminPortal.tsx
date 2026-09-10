@@ -61,7 +61,9 @@ import {
   cacheProductsLocally,
   cacheSiteContentLocally,
   getCachedProducts,
+  getCachedOrders,
   getLocallyDeletedIds,
+  unrecordLocallyDeletedId,
   mergeEntitiesByTimestamp,
 } from "../services/storeService";
 import {
@@ -363,6 +365,8 @@ export default function AdminPortal() {
     const handleOrderSaved = (e: any) => {
       const order = e.detail;
       if (order?.id || order?.orderNumber) {
+        unrecordLocallyDeletedId("orders", order.id);
+        if (order.orderNumber) unrecordLocallyDeletedId("orders", order.orderNumber);
         setOrders((prev) => {
           const id = order.id;
           const num = order.orderNumber;
@@ -390,9 +394,17 @@ export default function AdminPortal() {
       }
     };
 
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "hos_orders" || e.key === "hos_placed_orders") {
+        setOrders(getCachedOrders());
+      }
+    };
+
     const handleBookingSaved = (e: any) => {
       const b = e.detail;
       if (b?.id || b?.bookingNumber) {
+        unrecordLocallyDeletedId("bookings", b.id);
+        if (b.bookingNumber) unrecordLocallyDeletedId("bookings", b.bookingNumber);
         setBookings((prev) => {
           const id = b.id;
           const num = b.bookingNumber;
@@ -425,6 +437,7 @@ export default function AdminPortal() {
     window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
     window.addEventListener("hos-content-updated", handleContentUpdated);
 
+    window.addEventListener("hos-order-created", handleOrderSaved);
     window.addEventListener("hos-order-updated", handleOrderSaved);
     window.addEventListener("hos-order-placed", handleOrderSaved);
     window.addEventListener("hos-order-deleted", handleOrderDeleted);
@@ -434,6 +447,7 @@ export default function AdminPortal() {
     window.addEventListener("hos-booking-updated", handleBookingSaved);
     window.addEventListener("hos-booking-deleted", handleBookingDeleted);
     window.addEventListener("hos-bookings-updated", handleBookingsUpdated);
+    window.addEventListener("storage", handleStorageChange);
 
     return () => {
       window.removeEventListener("hos-product-saved", handleProductSaved);
@@ -441,6 +455,7 @@ export default function AdminPortal() {
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
       window.removeEventListener("hos-content-updated", handleContentUpdated);
 
+      window.removeEventListener("hos-order-created", handleOrderSaved);
       window.removeEventListener("hos-order-updated", handleOrderSaved);
       window.removeEventListener("hos-order-placed", handleOrderSaved);
       window.removeEventListener("hos-order-deleted", handleOrderDeleted);
@@ -450,6 +465,7 @@ export default function AdminPortal() {
       window.removeEventListener("hos-booking-updated", handleBookingSaved);
       window.removeEventListener("hos-booking-deleted", handleBookingDeleted);
       window.removeEventListener("hos-bookings-updated", handleBookingsUpdated);
+      window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
 
@@ -685,18 +701,21 @@ export default function AdminPortal() {
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       const q = searchQuery.toLowerCase().trim();
+      const custName = o.customer?.fullName || (o.customer as any)?.name || "";
       const matchesSearch =
         !q ||
         o.orderNumber?.toLowerCase().includes(q) ||
-        o.customer?.fullName?.toLowerCase().includes(q) ||
+        o.id?.toLowerCase().includes(q) ||
+        custName.toLowerCase().includes(q) ||
         o.customer?.email?.toLowerCase().includes(q) ||
         o.customer?.phone?.includes(q) ||
-        o.items?.some((i) => i.productName?.toLowerCase().includes(q));
+        o.items?.some((i: any) => (i.productName || i.name)?.toLowerCase().includes(q));
 
       const matchesStatus =
         statusFilter === "all" ||
         o.orderStatus?.toLowerCase() === statusFilter.toLowerCase() ||
-        o.paymentStatus?.toLowerCase() === statusFilter.toLowerCase();
+        o.paymentStatus?.toLowerCase() === statusFilter.toLowerCase() ||
+        (statusFilter === "confirmed" && !o.orderStatus);
 
       return matchesSearch && matchesStatus;
     });
@@ -1665,7 +1684,7 @@ export default function AdminPortal() {
                                   <div key={idx} className="flex items-center gap-1.5 text-[11px]">
                                     <span className="w-1.5 h-1.5 rounded-full bg-[#0d4f3c]" />
                                     <span className="font-medium text-stone-800 truncate">
-                                      {item.productName}
+                                      {item.productName || (item as any).name || "Custom Atelier Ensemble"}
                                     </span>
                                     <span className="text-stone-400">×{item.quantity}</span>
                                   </div>
@@ -1863,12 +1882,24 @@ export default function AdminPortal() {
           setType={setAddType}
           products={products}
           onBookingCreated={(newB) => {
-            setBookings((prev) => [newB, ...prev]);
+            unrecordLocallyDeletedId("bookings", newB.id);
+            if (newB.bookingNumber) unrecordLocallyDeletedId("bookings", newB.bookingNumber);
+            setBookings((prev) => [newB, ...prev.filter((b) => b.id !== newB.id && b.bookingNumber !== newB.bookingNumber)]);
+            setActiveTab("bookings");
+            setStatusFilter("all");
+            setSearchQuery("");
             showToast(`Atelier appointment ${newB.bookingNumber} created successfully!`);
+            loadDashboardData();
           }}
           onOrderCreated={(newO) => {
-            setOrders((prev) => [newO, ...prev]);
+            unrecordLocallyDeletedId("orders", newO.id);
+            if (newO.orderNumber) unrecordLocallyDeletedId("orders", newO.orderNumber);
+            setOrders((prev) => [newO, ...prev.filter((o) => o.id !== newO.id && o.orderNumber !== newO.orderNumber)]);
+            setActiveTab("orders");
+            setStatusFilter("all");
+            setSearchQuery("");
             showToast(`Couture order ${newO.orderNumber} booked successfully!`);
+            loadDashboardData();
           }}
         />
       )}
@@ -2036,12 +2067,14 @@ function AddNewRecordModal({
             {
               productId: selectedProd?.id || `custom_${Date.now()}`,
               productName: customItemName || selectedProd?.name || "Bespoke Silk Ensemble",
+              name: customItemName || selectedProd?.name || "Bespoke Silk Ensemble",
               productImage:
                 selectedProd?.image ||
                 "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=600",
               color: selectedProd?.color || "Custom Royal Shade",
               size: "Unstitched 3-Piece Ensemble",
               unitPrice: unitPrice,
+              price: unitPrice,
               quantity: quantity,
               totalPrice: calculatedTotal,
             },

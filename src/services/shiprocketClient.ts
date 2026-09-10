@@ -71,10 +71,7 @@ async function safeJsonParse<T = any>(res: Response, fallbackError = "Invalid re
 
   const text = await res.text().catch(() => "");
   if (!res.ok) {
-    if (res.status === 405) {
-      throw new Error("Shiprocket service method 405. Dispatch routing has been resolved.");
-    }
-    throw new Error(`Server status ${res.status}: ${text.slice(0, 120) || fallbackError}`);
+    throw new Error(text.slice(0, 120) || `Shiprocket service notice (HTTP ${res.status}): ${fallbackError}`);
   }
   if (text.trim().startsWith("<")) {
     throw new Error("Shiprocket service endpoint is synchronizing. Please retry in a few moments.");

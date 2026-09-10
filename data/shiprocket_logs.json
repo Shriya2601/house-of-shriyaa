@@ -2,6 +2,90 @@
   {
     "action": "CREATE_ORDER",
     "status": "FAILED",
+    "orderNumber": "HOS-TEST-DEBUG-9999",
+    "orderId": "ord_1789078606862_6937",
+    "endpoint": "/orders/create/adhoc",
+    "statusCode": 401,
+    "durationMs": 992,
+    "errorMessage": "token_expired",
+    "requestPayload": {
+      "order_id": "HOS-TEST-DEBUG-9999",
+      "order_date": "2026-09-10 22:16",
+      "pickup_location": "1908/2 ahluwalia street, near arna barna chowk, patiala",
+      "channel_id": "",
+      "comment": "House of Shriya Atelier Order - HOS-TEST-DEBUG-9999 (Prepaid)",
+      "billing_customer_name": "Debug",
+      "billing_last_name": "Tester",
+      "billing_address": "Test Street",
+      "billing_address_2": "",
+      "billing_city": "Patiala",
+      "billing_pincode": "147001",
+      "billing_state": "Punjab",
+      "billing_country": "India",
+      "billing_email": "test@debug.com",
+      "billing_phone": "9876543210",
+      "shipping_is_billing": true,
+      "order_items": [
+        {
+          "name": "Suit",
+          "sku": "hos-001",
+          "units": 1,
+          "selling_price": 4999,
+          "discount": 0,
+          "tax": 0,
+          "hsn": 5007
+        }
+      ],
+      "payment_method": "Prepaid",
+      "shipping_charges": 0,
+      "giftwrap_charges": 0,
+      "transaction_charges": 0,
+      "total_discount": 0,
+      "sub_total": 4999,
+      "length": 30,
+      "breadth": 24,
+      "height": 6,
+      "weight": 0.8
+    },
+    "responsePayload": {
+      "message": "token_expired",
+      "status_code": 401
+    },
+    "id": "log_1789078607855_qd9jf",
+    "timestamp": "2026-09-10T22:16:47.855Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "errorMessage": "Shiprocket Login Failed: Invalid email and password combination",
+    "durationMs": 479,
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1789078607854_fceji",
+    "timestamp": "2026-09-10T22:16:47.854Z"
+  },
+  {
+    "action": "AUTH",
+    "status": "FAILED",
+    "statusCode": 403,
+    "errorMessage": "Invalid email and password combination",
+    "durationMs": 478,
+    "responsePayload": {
+      "message": "Invalid email and password combination",
+      "status_code": 403
+    },
+    "requestPayload": {
+      "email": "shriyapusha01@gmail.com",
+      "password": "***"
+    },
+    "id": "log_1789078607854_j0fs8",
+    "timestamp": "2026-09-10T22:16:47.854Z"
+  },
+  {
+    "action": "CREATE_ORDER",
+    "status": "FAILED",
     "orderNumber": "HOS-TEST-VERIFY-4911",
     "endpoint": "/orders/create/adhoc",
     "statusCode": 401,

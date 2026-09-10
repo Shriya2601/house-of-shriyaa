@@ -1,5 +1,38 @@
 [
   {
+    "orderNumber": "HOS-TEST-DEBUG-9999",
+    "customer": {
+      "fullName": "Debug Tester",
+      "email": "test@debug.com",
+      "phone": "9876543210"
+    },
+    "shippingAddress": {
+      "addressLine1": "Test Street",
+      "city": "Patiala",
+      "state": "Punjab",
+      "pincode": "147001"
+    },
+    "items": [
+      {
+        "productId": "hos-001",
+        "name": "Suit",
+        "price": 4999,
+        "quantity": 1
+      }
+    ],
+    "total": 4999,
+    "paymentMethod": "Prepaid",
+    "paymentStatus": "Paid",
+    "id": "ord_1789078606862_6937",
+    "createdAt": "2026-09-10T22:16:46.862Z",
+    "updatedAt": "2026-09-10T22:16:46.862Z",
+    "orderStatus": "confirmed",
+    "shiprocketStatus": "PENDING_RETRY",
+    "shiprocketError": "token_expired",
+    "shiprocketRetryCount": 1,
+    "shiprocketLastAttemptAt": "2026-09-10T22:16:47.856Z"
+  },
+  {
     "id": "ord_1788988499686_2859",
     "orderNumber": "HOS-202609-2859",
     "createdAt": "2026-09-09T21:14:59.686Z",
@@ -40,30 +73,6 @@
     "total": 4999,
     "totalAmount": 4999,
     "paymentMethod": "Prepaid"
-  },
-  {
-    "id": "test-order-1",
-    "orderNumber": "HOS-TEST-1",
-    "total": 1999,
-    "items": [],
-    "shiprocketOrderId": 1575875358,
-    "shiprocketShipmentId": 1572093353,
-    "trackingCourier": "Shiprocket Courier Partner",
-    "shiprocketStatus": "SYNCED",
-    "shiprocketSyncedAt": "2026-09-09T21:24:54.534Z",
-    "shiprocketRetryCount": 1
-  },
-  {
-    "id": "test",
-    "orderNumber": "HOS-TEST",
-    "items": [],
-    "total": 100,
-    "shiprocketOrderId": 1575875359,
-    "shiprocketShipmentId": 1572093354,
-    "trackingCourier": "Shiprocket Courier Partner",
-    "shiprocketStatus": "SYNCED",
-    "shiprocketSyncedAt": "2026-09-09T21:24:55.027Z",
-    "shiprocketRetryCount": 1
   },
   {
     "customer": {

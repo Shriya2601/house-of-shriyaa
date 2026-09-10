@@ -150,10 +150,12 @@ export interface OrderPaymentDetails {
 export interface OrderItem {
   productId: string;
   productName: string;
+  name?: string;
   productImage: string;
   color: string;
   size: string;
   unitPrice: number;
+  price?: number;
   quantity: number;
   totalPrice: number;
 }

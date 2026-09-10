@@ -1523,19 +1523,50 @@ export function getCachedOrders(): Order[] {
   const deleted = getLocallyDeletedIds("orders");
   try {
     const saved = localStorage.getItem(ORDERS_CACHE_KEY);
+    const placed = localStorage.getItem("hos_placed_orders");
+    const mergedMap = new Map<string, Order>();
+
     if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
-      }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          for (const o of parsed) {
+            if (o && !deleted.has(o.id) && !deleted.has(o.orderNumber)) {
+              mergedMap.set(o.orderNumber || o.id, o);
+            }
+          }
+        }
+      } catch {}
     }
+
+    if (placed) {
+      try {
+        const parsedPlaced = JSON.parse(placed);
+        if (Array.isArray(parsedPlaced)) {
+          for (const o of parsedPlaced) {
+            if (o && !deleted.has(o.id) && !deleted.has(o.orderNumber)) {
+              const key = o.orderNumber || o.id;
+              if (!mergedMap.has(key)) {
+                mergedMap.set(key, o);
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    return result;
   } catch {}
   return [];
 }
 
 export function cacheOrdersLocally(orders: Order[]) {
   try {
-    localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(orders));
+    const raw = JSON.stringify(orders);
+    localStorage.setItem(ORDERS_CACHE_KEY, raw);
+    localStorage.setItem("hos_placed_orders", raw);
   } catch {}
 }
 
@@ -1548,6 +1579,9 @@ export async function createRealOrder(
   const orderNumber = `HOS-${datePrefix}-${randomSuffix}`;
   const orderId = `ord_${Date.now()}_${randomSuffix}`;
 
+  unrecordLocallyDeletedId("orders", orderId);
+  unrecordLocallyDeletedId("orders", orderNumber);
+
   let fullOrder: Order = {
     ...orderInput,
     id: orderId,
@@ -1559,6 +1593,18 @@ export async function createRealOrder(
     totalAmount: orderInput.total,
     customerAddress: orderInput.shippingAddress,
   };
+
+  // Immediate local cache update for 0ms UI reactivity
+  const current = getCachedOrders();
+  const nextOrders = [fullOrder, ...current.filter((o) => o.id !== orderId && o.orderNumber !== orderNumber)];
+  cacheOrdersLocally(nextOrders);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-created", { detail: fullOrder }));
+    window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: fullOrder }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextOrders }));
+  }
+  broadcastCrossDeviceSync("orders", fullOrder);
 
   // Dispatch to server /api/orders for automatic Shiprocket fulfillment
   try {
@@ -1583,14 +1629,17 @@ export async function createRealOrder(
           shiprocketSyncedAt: data.order.shiprocketSyncedAt || fullOrder.shiprocketSyncedAt,
           shiprocketError: data.order.shiprocketError || fullOrder.shiprocketError,
         };
+        const fresh = getCachedOrders();
+        const fIdx = fresh.findIndex((o) => o.id === orderId || o.orderNumber === orderNumber);
+        if (fIdx > -1) {
+          fresh[fIdx] = fullOrder;
+          cacheOrdersLocally(fresh);
+        }
       }
     }
   } catch (apiErr) {
     console.warn("Backend /api/orders dispatch notice:", apiErr);
   }
-
-  const current = getCachedOrders();
-  cacheOrdersLocally([fullOrder, ...current]);
 
   try {
     const docRef = doc(db, "orders", orderId);
@@ -2948,7 +2997,22 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
     updatedAt: now.toISOString(),
   };
 
-  // Push to server /api/orders for automatic Shiprocket fulfillment
+  unrecordLocallyDeletedId("orders", orderId);
+  unrecordLocallyDeletedId("orders", orderNumber);
+
+  // 1. Immediately cache order locally for 0ms admin UI responsiveness
+  const current = getCachedOrders();
+  const nextOrders = [order, ...current.filter((o) => o.id !== orderId && o.orderNumber !== orderNumber)];
+  cacheOrdersLocally(nextOrders);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-created", { detail: order }));
+    window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: order }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextOrders }));
+  }
+  broadcastCrossDeviceSync("orders", order);
+
+  // 2. Push to server /api/orders for automatic Shiprocket fulfillment
   try {
     const res = await fetch("/api/orders", {
       method: "POST",
@@ -2970,23 +3034,33 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
           shiprocketSyncedAt: data.order.shiprocketSyncedAt || order.shiprocketSyncedAt,
           shiprocketError: data.order.shiprocketError || order.shiprocketError,
         };
+        const fresh = getCachedOrders();
+        const fIdx = fresh.findIndex((o) => o.id === orderId || o.orderNumber === orderNumber);
+        if (fIdx > -1) {
+          fresh[fIdx] = order;
+          cacheOrdersLocally(fresh);
+        }
       }
     }
   } catch (err) {
     console.warn("Backend order creation notice:", err);
   }
 
-  const current = getCachedOrders();
-  cacheOrdersLocally([order, ...current]);
-
   try {
     const docRef = doc(db, "orders", orderId);
-    await setDoc(docRef, order, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(order), { merge: true });
   } catch (e) {
     console.warn("Firestore adminCreateOrder error:", e);
   }
 
-  window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: order }));
+  unrecordLocallyDeletedId("orders", orderId);
+  unrecordLocallyDeletedId("orders", orderNumber);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-created", { detail: order }));
+    window.dispatchEvent(new CustomEvent("hos-order-placed", { detail: order }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: getCachedOrders() }));
+  }
   return order;
 }
 
@@ -3015,6 +3089,23 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
   } catch (apiErr) {
     console.warn("Backend orders fetch notice:", apiErr);
   }
+
+  // 1b. Fallback to static orders.json
+  try {
+    const staticRes = await fetch(`/data/orders.json?t=${Date.now()}`, { cache: "no-store" });
+    if (staticRes.ok) {
+      const staticOrders = await staticRes.json();
+      if (Array.isArray(staticOrders)) {
+        const normalized = staticOrders
+          .map((o: any) => ({
+            ...o,
+            id: o.id || `ord_${(o.orderNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
+          }))
+          .filter((o: Order) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
+        list = mergeEntitiesByTimestamp(list, normalized, deleted, (o) => o.id, (o) => o.orderNumber);
+      }
+    }
+  } catch {}
 
   // 2. Fetch from Firestore if configured
   try {

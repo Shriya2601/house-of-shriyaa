@@ -1035,11 +1035,27 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 paymentStatus: body.paymentStatus || (body.paymentMethod?.includes("Cash") ? "Pending" : "Paid"),
               };
 
-              // Automatically trigger Shiprocket shipment creation
+              // Persist order IMMEDIATELY so client receives instant confirmation and order is safely on disk
+              let existingOrders = readOrdersList();
+              const existingIdx = existingOrders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
+              if (existingIdx > -1) {
+                existingOrders[existingIdx] = { ...existingOrders[existingIdx], ...order };
+              } else {
+                existingOrders.unshift(order);
+              }
+              unrecordDeletedId("orders", order.id);
+              if (order.orderNumber) unrecordDeletedId("orders", order.orderNumber);
+              writeOrdersList(existingOrders);
+              broadcastSseSync("orders", existingOrders);
+
+              // Automatically trigger Shiprocket shipment creation (with safeguard to prevent request blocking)
               let shiprocketResult: any = null;
               try {
                 const { createShiprocketOrder } = await import("./shiprocketService");
-                shiprocketResult = await createShiprocketOrder(order);
+                shiprocketResult = await Promise.race([
+                  createShiprocketOrder(order),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error("Shiprocket request timeout")), 6000)),
+                ]);
 
                 if (shiprocketResult && shiprocketResult.success) {
                   order.shiprocketOrderId = shiprocketResult.shiprocketOrderId;
@@ -1057,25 +1073,29 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                   order.shiprocketRetryCount = 1;
                   order.shiprocketLastAttemptAt = new Date().toISOString();
                 }
+
+                // Re-save with Shiprocket details and broadcast updated state
+                existingOrders = readOrdersList();
+                const uIdx = existingOrders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
+                if (uIdx > -1) {
+                  existingOrders[uIdx] = { ...existingOrders[uIdx], ...order };
+                  writeOrdersList(existingOrders);
+                  broadcastSseSync("orders", existingOrders);
+                }
               } catch (srErr: any) {
-                console.error("[API Middleware] Shiprocket auto-dispatch error:", srErr.message);
+                console.warn("[API Middleware] Shiprocket auto-dispatch notice:", srErr.message);
                 order.shiprocketStatus = "PENDING_RETRY";
                 order.shiprocketError = srErr.message;
                 order.shiprocketRetryCount = 1;
                 order.shiprocketLastAttemptAt = new Date().toISOString();
+                existingOrders = readOrdersList();
+                const uIdx = existingOrders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
+                if (uIdx > -1) {
+                  existingOrders[uIdx] = { ...existingOrders[uIdx], ...order };
+                  writeOrdersList(existingOrders);
+                  broadcastSseSync("orders", existingOrders);
+                }
               }
-
-              // Persist order
-              const existingOrders = readOrdersList();
-              const existingIdx = existingOrders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
-              if (existingIdx > -1) {
-                existingOrders[existingIdx] = { ...existingOrders[existingIdx], ...order };
-              } else {
-                existingOrders.unshift(order);
-              }
-              unrecordDeletedId("orders", order.id);
-              if (order.orderNumber) unrecordDeletedId("orders", order.orderNumber);
-              writeOrdersList(existingOrders);
 
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
@@ -1171,6 +1191,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               unrecordDeletedId("orders", orderId);
               if (updatedOrder.orderNumber) unrecordDeletedId("orders", updatedOrder.orderNumber);
               writeOrdersList(orders);
+              broadcastSseSync("orders", orders);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(JSON.stringify({ success: true, order: updatedOrder, count: orders.length }));
@@ -1192,6 +1213,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               if (found.orderNumber) recordDeletedId("orders", found.orderNumber);
             }
             writeOrdersList(filtered);
+            broadcastSseSync("orders", filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
             res.end(JSON.stringify({ success: true, id: orderId, count: filtered.length }));
@@ -1425,13 +1447,20 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             getShiprocketConfig,
           } = await import("./shiprocketService");
 
-          // A. Status & Connection Test: GET /api/shipping/shiprocket/status
-          if (urlWithoutQuery === "/api/shipping/shiprocket/status" && method === "GET") {
-            const statusResult = await testShiprocketAuth();
-            res.setHeader("Content-Type", "application/json");
-            res.statusCode = 200;
-            res.end(JSON.stringify(statusResult));
-            return;
+          // A. Status & Connection Test: GET / POST /api/shipping/shiprocket/status
+          if (urlWithoutQuery === "/api/shipping/shiprocket/status") {
+            if (method === "OPTIONS") {
+              res.statusCode = 204;
+              res.end();
+              return;
+            }
+            if (method === "GET" || method === "POST") {
+              const statusResult = await testShiprocketAuth();
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify(statusResult));
+              return;
+            }
           }
 
           // A2. Test Provided Credentials: POST / GET /api/shipping/shiprocket/test-credentials
