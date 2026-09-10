@@ -1,56 +1,11 @@
 [
   {
     "id": "hos-003",
-    "hoverImage": "/uploads/hos-003-hover-1788707076768-382.webp",
-    "savings": "Save 25%",
-    "reviews": "19",
-    "fabricType": "Satin",
-    "inStock": true,
-    "tags": [
-      "Seasonal Drop",
-      "Party Wear",
-      "Festive Wear"
-    ],
-    "rating": "5.0",
-    "price": "₹750",
+    "name": "Updated Cream & Rust Botanical Suit Set TEST",
+    "price": "₹899",
     "category": "Satin Wear",
-    "description": "An elegant sleeveless cream suit set featuring rich rust and olive floral motifs. Complete with pleated bottoms and a sheer matching dupatta with intricate printed borders",
-    "badges": [
-      "New Drop",
-      "Seasonal Drop"
-    ],
-    "originalPrice": "₹1000",
-    "updatedAt": "2026-09-06T11:33:37.074Z",
-    "image": "/uploads/hos-003-img-0-1788707076769-402.webp",
-    "images": [
-      "/uploads/hos-003-img-0-1788707076769-402.webp"
-    ],
-    "sizes": [
-      "Unstitched Suit"
-    ],
-    "createdAt": "2026-09-03T06:47:37.919Z",
-    "color": "Beige base with rust orange, terracotta,and green floral prints",
-    "name": "Cream & Rust Botanical Floral Printed Suit Set",
-    "activeWishlist": false,
-    "colorHex": "#0d4f3c",
-    "colorVariants": [
-      {
-        "id": "var-hos-003-0",
-        "colorName": "Beige base with rust orange, terracotta,and green floral prints",
-        "colorHex": "#0d4f3c",
-        "price": "₹750",
-        "originalPrice": "₹1000",
-        "savings": "Save 25%",
-        "description": "An elegant sleeveless cream suit set featuring rich rust and olive floral motifs. Complete with pleated bottoms and a sheer matching dupatta with intricate printed borders",
-        "fabricType": "Satin",
-        "images": [
-          "/uploads/hos-003-img-0-1788707076769-402.webp"
-        ],
-        "image": "/uploads/hos-003-img-0-1788707076769-402.webp",
-        "hoverImage": "/uploads/hos-003-hover-1788707076768-382.webp",
-        "inStock": true
-      }
-    ]
+    "inStock": true,
+    "updatedAt": "2026-09-10T13:06:46.878Z"
   },
   {
     "id": "hos-004",
