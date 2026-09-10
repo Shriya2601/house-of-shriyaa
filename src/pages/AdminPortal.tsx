@@ -42,6 +42,8 @@ import {
 import { useStore } from "../context/StoreContext";
 import {
   ADMIN_EMAIL,
+  AUTHORIZED_ADMIN_EMAILS,
+  isAuthorizedAdminEmail,
   ADMIN_FALLBACK_PASS,
   isAdminSessionValid,
   adminLogin,
@@ -54,6 +56,7 @@ import {
   adminFetchAllOrders,
   adminUpdateOrder,
   adminDeleteOrder,
+  syncServerDeletedIds,
   ensureProductVariants,
   cacheProductsLocally,
   cacheSiteContentLocally,
@@ -266,6 +269,7 @@ export default function AdminPortal() {
   const loadDashboardData = async () => {
     setDataLoading(true);
     try {
+      await syncServerDeletedIds().catch(() => {});
       const [fetchedBookings, fetchedOrders] = await Promise.all([
         adminFetchAllBookings(),
         adminFetchAllOrders(),
@@ -513,9 +517,9 @@ export default function AdminPortal() {
 
     try {
       const cleanEmail = authEmail.trim().toLowerCase();
-      if (cleanEmail !== ADMIN_EMAIL.toLowerCase()) {
+      if (!isAuthorizedAdminEmail(cleanEmail)) {
         throw new Error(
-          `Unauthorized Access: Only ${ADMIN_EMAIL} is authorized to access the House of Shriya Atelier Admin Portal.`
+          `Unauthorized Access: ${cleanEmail} is not registered as an authorized House of Shriya Atelier Administrator.`
         );
       }
 

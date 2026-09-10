@@ -192,22 +192,13 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
   const { email, password, isConfigured } = getShiprocketConfig();
   const now = Date.now();
 
-  // 1. If we have a cached token that is still unexpired (with 2 minute safety margin)
-  if (authCache.token && authCache.expiresAt > now + 120000) {
-    if (!forceRefresh) {
-      return authCache.token;
-    }
-    // If forceRefresh was requested, test if the existing token is active before discarding
-    try {
-      const probeRes = await fetch(`${SHIPROCKET_BASE_URL}/settings/company/pickup`, {
-        headers: { Authorization: `Bearer ${authCache.token}` },
-      });
-      if (probeRes.ok) {
-        return authCache.token;
-      }
-    } catch {
-      return authCache.token;
-    }
+  // 1. If forceRefresh is requested, invalidate cached token immediately
+  if (forceRefresh) {
+    authCache.token = null;
+    authCache.expiresAt = 0;
+  } else if (authCache.token && authCache.expiresAt > now + 120000) {
+    // Return valid cached token
+    return authCache.token;
   }
 
   if (!isConfigured && !authCache.token) {

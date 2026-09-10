@@ -28,6 +28,7 @@ import {
   fetchAtelierBookings,
   subscribeAuthState,
   seedInitialProductsIfEmpty,
+  syncServerDeletedIds,
   fetchCustomerProfile,
   updateCustomerProfile as saveProfileToDb,
   customerSignIn,
@@ -408,6 +409,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Subscribe to real-time Firestore content, products, and categories
   useEffect(() => {
+    // Immediately synchronize any deleted items from the server so stale items are purged
+    syncServerDeletedIds().catch(() => {});
+
     // Attempt initial database bootstrap if products empty
     seedInitialProductsIfEmpty().catch(() => {});
 

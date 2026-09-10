@@ -448,6 +448,26 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         if (urlWithoutQuery === "/api/deleted-ids") {
           setAntiCacheHeaders(res);
           setCorsHeaders(res);
+
+          if (method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const { type, id } = body || {};
+              if (type && id) {
+                recordDeletedId(type, id);
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, type, id }));
+                return;
+              }
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Invalid payload" }));
+              return;
+            }
+          }
+
           res.setHeader("Content-Type", "application/json");
           res.statusCode = 200;
           res.end(
@@ -1740,6 +1760,31 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 500;
               res.end(JSON.stringify({ success: false, error: err.message }));
+              return;
+            }
+          }
+
+          // J. Live Orders Sync from Shiprocket: GET /api/shipping/shiprocket/orders
+          if (
+            (urlWithoutQuery === "/api/shipping/shiprocket/orders" ||
+              urlWithoutQuery === "/api/shiprocket/orders") &&
+            method === "GET"
+          ) {
+            try {
+              const { getShiprocketToken } = await import("./shiprocketService");
+              const token = await getShiprocketToken();
+              const srRes = await fetch("https://apiv2.shiprocket.in/v1/external/orders?per_page=50", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const srData = await srRes.json().catch(() => ({}));
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, data: srData?.data || [] }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: false, error: err.message, data: [] }));
               return;
             }
           }

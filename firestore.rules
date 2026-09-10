@@ -27,6 +27,9 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'houseofshriya.in@gmail.com' ||
+        request.auth.token.email == 'houseofshriyaa@gmail.com' ||
+        request.auth.token.email == 'admin@houseofshriya.in' ||
+        request.auth.token.email == 'kshriya2626@gmail.com' ||
         request.auth.token.email == 'shriyapusha2001@gmail.com' ||
         request.auth.token.email == 'shriyapusha01@gmail.com' ||
         request.auth.token.email == 'shriya14301@gmail.com' ||

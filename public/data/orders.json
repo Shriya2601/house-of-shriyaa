@@ -11,8 +11,35 @@
     "shiprocketLastAttemptAt": "2026-09-09T21:14:59.687Z",
     "shiprocketOrderId": 1575875355,
     "shiprocketShipmentId": 1572093350,
-    "trackingCourier": "Shiprocket Courier Partner",
-    "shiprocketSyncedAt": "2026-09-09T21:24:54.115Z"
+    "trackingCourier": "Shiprocket Express Partner",
+    "shiprocketSyncedAt": "2026-09-09T21:24:54.115Z",
+    "customer": {
+      "fullName": "Patron (Friend Order)",
+      "email": "patron@houseofshriya.in",
+      "phone": "9501698356"
+    },
+    "shippingAddress": {
+      "addressLine1": "Ludhiana Atelier Boutique Road",
+      "city": "Ludhiana",
+      "state": "Punjab",
+      "pincode": "141001"
+    },
+    "items": [
+      {
+        "productId": "hos-001",
+        "productName": "House of Shriya Heirloom Suit Ensemble",
+        "sku": "hos-custom-couture",
+        "quantity": 1,
+        "unitPrice": 4999,
+        "totalPrice": 4999,
+        "price": 4999
+      }
+    ],
+    "subtotal": 4999,
+    "shippingFee": 0,
+    "total": 4999,
+    "totalAmount": 4999,
+    "paymentMethod": "Prepaid"
   },
   {
     "id": "test-order-1",

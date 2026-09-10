@@ -197,7 +197,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v4_2026_09_10";
+const APP_CACHE_VERSION = "hos_v6_2026_09_10_synced";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -205,6 +205,7 @@ if (typeof window !== "undefined") {
       localStorage.removeItem(PRODUCTS_CACHE_KEY);
       localStorage.removeItem(SITE_CONTENT_CACHE_KEY);
       localStorage.removeItem(CATEGORIES_CACHE_KEY);
+      localStorage.removeItem(ORDERS_CACHE_KEY);
       localStorage.setItem("hos_app_cache_version", APP_CACHE_VERSION);
     }
   } catch {}
@@ -267,6 +268,52 @@ export async function syncServerDeletedIds(): Promise<void> {
             if (changed) {
               localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(Array.from(current)));
             }
+          }
+        }
+
+        // Purge deleted items from active caches and notify UI
+        const delProducts = getLocallyDeletedIds("products");
+        if (delProducts.size > 0) {
+          const rawProds = localStorage.getItem(PRODUCTS_CACHE_KEY);
+          if (rawProds) {
+            try {
+              const pList = JSON.parse(rawProds);
+              if (Array.isArray(pList)) {
+                const filtered = pList.filter((p) => p && !delProducts.has(p.id) && !delProducts.has((p as any).sku));
+                localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(filtered));
+                window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: filtered }));
+              }
+            } catch {}
+          }
+        }
+
+        const delCats = getLocallyDeletedIds("categories");
+        if (delCats.size > 0) {
+          const rawCats = localStorage.getItem(CATEGORIES_CACHE_KEY);
+          if (rawCats) {
+            try {
+              const cList = JSON.parse(rawCats);
+              if (Array.isArray(cList)) {
+                const filtered = cList.filter((c) => c && !delCats.has(c.id) && !delCats.has(c.slug));
+                localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(filtered));
+                window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: filtered }));
+              }
+            } catch {}
+          }
+        }
+
+        const delOrders = getLocallyDeletedIds("orders");
+        if (delOrders.size > 0) {
+          const rawOrders = localStorage.getItem(ORDERS_CACHE_KEY);
+          if (rawOrders) {
+            try {
+              const oList = JSON.parse(rawOrders);
+              if (Array.isArray(oList)) {
+                const filtered = oList.filter((o) => o && !delOrders.has(o.id) && !delOrders.has(o.orderNumber));
+                localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(filtered));
+                window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: filtered }));
+              }
+            } catch {}
           }
         }
       }
@@ -538,16 +585,21 @@ export function ensureProductVariants(product: any): Product {
 }
 
 export function getCachedProducts(): Product[] {
+  const deleted = getLocallyDeletedIds("products");
   try {
     const saved = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed.map(ensureProductVariants);
+        return parsed
+          .map(ensureProductVariants)
+          .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
       }
     }
   } catch {}
-  return defaultProducts.map(ensureProductVariants);
+  return defaultProducts
+    .map(ensureProductVariants)
+    .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
 }
 
 export function cacheProductsLocally(prods: Product[]) {
@@ -575,14 +627,17 @@ export function cacheProductsLocally(prods: Product[]) {
 }
 
 export function getCachedCategories(): CategoryItem[] {
+  const deleted = getLocallyDeletedIds("categories");
   try {
     const saved = localStorage.getItem(CATEGORIES_CACHE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((c) => c && c.id && !deleted.has(c.id) && !deleted.has(c.slug));
+      }
     }
   } catch {}
-  return defaultCategories;
+  return defaultCategories.filter((c) => c && c.id && !deleted.has(c.id) && !deleted.has(c.slug));
 }
 
 export function cacheCategoriesLocally(cats: CategoryItem[]): void {
@@ -1026,13 +1081,30 @@ export async function deleteCategory(id: string): Promise<void> {
   const filtered = current.filter((c) => c.id !== id);
   cacheCategoriesLocally(filtered);
 
-  // Sync with central backend API
+  // 1. Sync with central backend API
   try {
     await fetch(`/api/categories/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   } catch {}
 
+  // 2. Central Deleted-IDs registration
+  try {
+    await fetch("/api/deleted-ids", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "categories", id }),
+    });
+    if (target?.slug) {
+      await fetch("/api/deleted-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "categories", id: target.slug }),
+      });
+    }
+  } catch {}
+
+  // 3. Firestore deletion
   try {
     const docRef = doc(db, "categories", id);
     await deleteDoc(docRef);
@@ -1306,7 +1378,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 
 export async function deleteProduct(id: string): Promise<void> {
   recordLocallyDeletedId("products", id);
-  const current = getCachedProducts().filter((p) => p.id !== id);
+  const current = getCachedProducts().filter((p) => p.id !== id && (p as any).sku !== id);
   cacheProductsLocally(current);
 
   // 1. Central Backend API deletion
@@ -1316,13 +1388,22 @@ export async function deleteProduct(id: string): Promise<void> {
     });
   } catch {}
 
-  // 2. Firestore deletion
+  // 2. Central Deleted-IDs registration
+  try {
+    await fetch("/api/deleted-ids", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "products", id }),
+    });
+  } catch {}
+
+  // 3. Firestore deletion
   try {
     const docRef = doc(db, "products", id);
     await deleteDoc(docRef);
   } catch {}
 
-  // 3. Dispatch real-time events for instant local & cross-device updates
+  // 4. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
@@ -1331,10 +1412,29 @@ export async function deleteProduct(id: string): Promise<void> {
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {
+  const deleted = getLocallyDeletedIds("products");
   const hasSaved = localStorage.getItem(PRODUCTS_CACHE_KEY);
   if (hasSaved === null) {
-    cacheProductsLocally(defaultProducts.map(ensureProductVariants));
+    const clean = defaultProducts
+      .map(ensureProductVariants)
+      .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+    cacheProductsLocally(clean);
   }
+}
+
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return null as any;
+  if (Array.isArray(data)) return data.map(sanitizeForFirestore) as any;
+  if (typeof data === "object" && !(data instanceof Date)) {
+    const res: any = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) {
+        res[k] = sanitizeForFirestore(v);
+      }
+    }
+    return res;
+  }
+  return data;
 }
 
 /* ============================================================
@@ -1342,11 +1442,14 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
 ============================================================ */
 
 export function getCachedOrders(): Order[] {
+  const deleted = getLocallyDeletedIds("orders");
   try {
     const saved = localStorage.getItem(ORDERS_CACHE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+      }
     }
   } catch {}
   return [];
@@ -1413,7 +1516,7 @@ export async function createRealOrder(
 
   try {
     const docRef = doc(db, "orders", orderId);
-    await setDoc(docRef, fullOrder, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(fullOrder), { merge: true });
   } catch (err) {
     console.warn("Firestore order root save notice:", err);
   }
@@ -2422,17 +2525,31 @@ export async function updateCustomerProfile(uid: string, updates: Partial<Custom
 ============================================================ */
 
 export const ADMIN_EMAIL = "houseofshriya.in@gmail.com";
+export const AUTHORIZED_ADMIN_EMAILS = [
+  "houseofshriya.in@gmail.com",
+  "houseofshriyaa@gmail.com",
+  "admin@houseofshriya.in",
+  "kshriya2626@gmail.com",
+  "shriyapusha01@gmail.com",
+  "shriyapusha2001@gmail.com",
+];
 export const ADMIN_FALLBACK_PASS = "Houseofshriy@26";
 
+export function isAuthorizedAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  return AUTHORIZED_ADMIN_EMAILS.some((e) => e.toLowerCase() === clean);
+}
+
 export function isAdminSessionValid(): boolean {
-  if (auth.currentUser && auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+  if (auth.currentUser && isAuthorizedAdminEmail(auth.currentUser.email)) {
     return true;
   }
   try {
     const raw = localStorage.getItem("hos_admin_session");
     if (raw) {
       const data = JSON.parse(raw);
-      if (data && data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      if (data && isAuthorizedAdminEmail(data.email)) {
         return true;
       }
     }
@@ -2442,7 +2559,7 @@ export function isAdminSessionValid(): boolean {
 
 export async function adminLogin(email: string, pass: string): Promise<User> {
   const cleanEmail = email.trim().toLowerCase();
-  if (cleanEmail !== ADMIN_EMAIL.toLowerCase()) {
+  if (!isAuthorizedAdminEmail(cleanEmail)) {
     throw new Error("Access Restricted: Only authorized House of Shriya atelier administrators may sign in here.");
   }
 
@@ -2835,6 +2952,66 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
     console.warn("Firestore adminFetchAllOrders notice:", e);
   }
 
+  // 3. Fetch live orders from Shiprocket to guarantee no placed order is missed
+  try {
+    const srRes = await fetch(`/api/shipping/shiprocket/orders?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (srRes.ok) {
+      const srJson = await srRes.json();
+      if (srJson?.success && Array.isArray(srJson.data)) {
+        const srOrders: Order[] = srJson.data.map((item: any) => {
+          const ordNum = item.channel_order_id || `HOS-${item.id}`;
+          const existing = list.find((o) => o.orderNumber === ordNum || o.id === item.id?.toString());
+          const srCreatedAt = item.created_at || new Date().toISOString();
+          return {
+            id: existing?.id || `ord_${item.id || ordNum.replace(/[^a-zA-Z0-9]/g, "_")}`,
+            orderNumber: ordNum,
+            customer: {
+              fullName: item.customer_name || existing?.customer?.fullName || "Patron",
+              email: item.customer_email || existing?.customer?.email || "patron@houseofshriya.in",
+              phone: item.customer_phone || existing?.customer?.phone || "9501698356",
+            },
+            shippingAddress: {
+              addressLine1: item.customer_address || existing?.shippingAddress?.addressLine1 || "Atelier Studio",
+              city: item.customer_city || existing?.shippingAddress?.city || "Ludhiana",
+              state: item.customer_state || existing?.shippingAddress?.state || "Punjab",
+              pincode: item.customer_pincode || existing?.shippingAddress?.pincode || "141001",
+            },
+            items: existing?.items && existing.items.length > 0 ? existing.items : [
+              {
+                productName: item.products?.[0]?.name || "House of Shriya Heirloom Suit Ensemble",
+                quantity: item.products?.[0]?.quantity || 1,
+                price: Number(item.products?.[0]?.price || item.total || 4999),
+                unitPrice: Number(item.products?.[0]?.price || item.total || 4999),
+                totalPrice: Number(item.total || 4999),
+              }
+            ],
+            subtotal: Number(item.subtotal || item.total || 4999),
+            shippingFee: 0,
+            total: Number(item.total || 4999),
+            totalAmount: Number(item.total || 4999),
+            paymentMethod: item.payment_method === "COD" ? "Cash on Delivery (COD)" : "Prepaid",
+            paymentStatus: item.payment_method === "COD" ? "Pending" : "Paid",
+            orderStatus: "confirmed",
+            shiprocketStatus: "SYNCED",
+            shiprocketOrderId: item.id,
+            shiprocketShipmentId: item.shipment_id || existing?.shiprocketShipmentId,
+            trackingNumber: item.awb_code || existing?.trackingNumber,
+            trackingCourier: item.courier_name || existing?.trackingCourier,
+            trackingUrl: item.tracking_url || existing?.trackingUrl,
+            createdAt: srCreatedAt,
+            updatedAt: item.updated_at || srCreatedAt,
+          };
+        }).filter((o: Order) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
+
+        list = mergeEntitiesByTimestamp(list, srOrders, deleted, (o) => o.id, (o) => o.orderNumber);
+      }
+    }
+  } catch (srErr) {
+    console.warn("Shiprocket orders sync notice:", srErr);
+  }
+
   list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   cacheOrdersLocally(list);
   return list;
@@ -2915,7 +3092,23 @@ export async function adminDeleteOrder(orderId: string): Promise<void> {
     });
   } catch {}
 
-  // 2. Firestore deletion
+  // 2. Central Deleted-IDs registration
+  try {
+    await fetch("/api/deleted-ids", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "orders", id: orderId }),
+    });
+    if (target?.orderNumber && target.orderNumber !== orderId) {
+      await fetch("/api/deleted-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "orders", id: target.orderNumber }),
+      });
+    }
+  } catch {}
+
+  // 3. Firestore deletion
   try {
     const docRef = doc(db, "orders", orderId);
     await deleteDoc(docRef);
