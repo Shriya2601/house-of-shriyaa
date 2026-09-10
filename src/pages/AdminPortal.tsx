@@ -57,6 +57,9 @@ import {
   ensureProductVariants,
   cacheProductsLocally,
   cacheSiteContentLocally,
+  getCachedProducts,
+  getLocallyDeletedIds,
+  mergeEntitiesByTimestamp,
 } from "../services/storeService";
 import {
   fetchShiprocketStatus,
@@ -287,9 +290,14 @@ export default function AdminPortal() {
       if (prodRes.status === "fulfilled" && prodRes.value.ok) {
         const prodData = await prodRes.value.json();
         if (Array.isArray(prodData)) {
-          const normalized = prodData.map(ensureProductVariants);
-          setProducts(normalized);
-          cacheProductsLocally(normalized);
+          const deleted = getLocallyDeletedIds("products");
+          const normalized = prodData
+            .map(ensureProductVariants)
+            .filter((p: Product) => !deleted.has(p.id) && !deleted.has((p as any).sku));
+          const current = getCachedProducts().filter((p) => !deleted.has(p.id) && !deleted.has((p as any).sku));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
+          setProducts(merged);
+          cacheProductsLocally(merged);
         }
       }
 
@@ -309,7 +317,7 @@ export default function AdminPortal() {
     }
   };
 
-  // Real-time synchronization for AdminPortal when products or content are edited, uploaded, or deleted
+  // Real-time synchronization for AdminPortal when products, orders, bookings or content are edited or deleted
   useEffect(() => {
     const handleProductSaved = (e: any) => {
       if (e.detail?.id) {
@@ -335,7 +343,12 @@ export default function AdminPortal() {
 
     const handleCatalogUpdated = (e: any) => {
       if (Array.isArray(e.detail)) {
-        setProducts(e.detail.map(ensureProductVariants));
+        const deleted = getLocallyDeletedIds("products");
+        setProducts(
+          e.detail
+            .map(ensureProductVariants)
+            .filter((p: Product) => !deleted.has(p.id) && !deleted.has((p as any).sku))
+        );
       }
     };
 
@@ -345,16 +358,96 @@ export default function AdminPortal() {
       }
     };
 
+    const handleOrderSaved = (e: any) => {
+      const order = e.detail;
+      if (order?.id || order?.orderNumber) {
+        setOrders((prev) => {
+          const id = order.id;
+          const num = order.orderNumber;
+          const idx = prev.findIndex((o) => (id && o.id === id) || (num && o.orderNumber === num));
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...order };
+            return next;
+          }
+          return [order, ...prev];
+        });
+      }
+    };
+
+    const handleOrderDeleted = (e: any) => {
+      const id = e.detail?.id;
+      const num = e.detail?.orderNumber;
+      setOrders((prev) => prev.filter((o) => o.id !== id && o.orderNumber !== num && o.id !== num));
+    };
+
+    const handleOrdersUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        const deleted = getLocallyDeletedIds("orders");
+        setOrders(e.detail.filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber)));
+      }
+    };
+
+    const handleBookingSaved = (e: any) => {
+      const b = e.detail;
+      if (b?.id || b?.bookingNumber) {
+        setBookings((prev) => {
+          const id = b.id;
+          const num = b.bookingNumber;
+          const idx = prev.findIndex((item) => (id && item.id === id) || (num && item.bookingNumber === num));
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...b };
+            return next;
+          }
+          return [b, ...prev];
+        });
+      }
+    };
+
+    const handleBookingDeleted = (e: any) => {
+      const id = e.detail?.id;
+      const num = e.detail?.bookingNumber;
+      setBookings((prev) => prev.filter((b) => b.id !== id && b.bookingNumber !== num && b.id !== num));
+    };
+
+    const handleBookingsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        const deleted = getLocallyDeletedIds("bookings");
+        setBookings(e.detail.filter((b) => !deleted.has(b.id) && !deleted.has(b.bookingNumber)));
+      }
+    };
+
     window.addEventListener("hos-product-saved", handleProductSaved);
     window.addEventListener("hos-product-deleted", handleProductDeleted);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
     window.addEventListener("hos-content-updated", handleContentUpdated);
+
+    window.addEventListener("hos-order-updated", handleOrderSaved);
+    window.addEventListener("hos-order-placed", handleOrderSaved);
+    window.addEventListener("hos-order-deleted", handleOrderDeleted);
+    window.addEventListener("hos-orders-updated", handleOrdersUpdated);
+
+    window.addEventListener("hos-booking-created", handleBookingSaved);
+    window.addEventListener("hos-booking-updated", handleBookingSaved);
+    window.addEventListener("hos-booking-deleted", handleBookingDeleted);
+    window.addEventListener("hos-bookings-updated", handleBookingsUpdated);
 
     return () => {
       window.removeEventListener("hos-product-saved", handleProductSaved);
       window.removeEventListener("hos-product-deleted", handleProductDeleted);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
       window.removeEventListener("hos-content-updated", handleContentUpdated);
+
+      window.removeEventListener("hos-order-updated", handleOrderSaved);
+      window.removeEventListener("hos-order-placed", handleOrderSaved);
+      window.removeEventListener("hos-order-deleted", handleOrderDeleted);
+      window.removeEventListener("hos-orders-updated", handleOrdersUpdated);
+
+      window.removeEventListener("hos-booking-created", handleBookingSaved);
+      window.removeEventListener("hos-booking-updated", handleBookingSaved);
+      window.removeEventListener("hos-booking-deleted", handleBookingDeleted);
+      window.removeEventListener("hos-bookings-updated", handleBookingsUpdated);
     };
   }, []);
 

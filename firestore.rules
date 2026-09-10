@@ -99,7 +99,7 @@ service cloud.firestore {
     match /categories/{categoryId} {
       allow get, list: if true;
       allow create, update: if isValidId(categoryId) && (isAdmin() || request.auth != null);
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || request.auth != null;
     }
 
     // Orders: Customers see own orders; Admin sees all
@@ -108,7 +108,7 @@ service cloud.firestore {
       allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(orderId) && isValidOrder(incoming());
       allow update: if isValidId(orderId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid)) && isValidOrder(incoming());
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || request.auth != null;
     }
 
     // Atelier Bookings: Patrons see own bookings; Admin manages all
@@ -117,7 +117,7 @@ service cloud.firestore {
       allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(bookingId) && isValidBooking(incoming());
       allow update: if isValidId(bookingId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid)) && isValidBooking(incoming());
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || request.auth != null;
     }
 
     // Customer Profiles: Patron can read/update own profile; Admin has full access

@@ -229,6 +229,104 @@ export function unrecordLocallyDeletedId(type: string, id: string): void {
   } catch {}
 }
 
+// Synchronize deleted IDs from backend so deletions persist across tabs/devices/sessions
+export async function syncServerDeletedIds(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const res = await fetch(`/api/deleted-ids?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === "object") {
+        for (const [type, ids] of Object.entries(data)) {
+          if (Array.isArray(ids)) {
+            const current = getLocallyDeletedIds(type);
+            let changed = false;
+            for (const id of ids) {
+              if (typeof id === "string" && id && !current.has(id)) {
+                current.add(id);
+                changed = true;
+              }
+            }
+            if (changed) {
+              localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(Array.from(current)));
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
+// Universal timestamp & deletion-aware merge helper: protects local updates and deletions from being reverted
+export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: string; createdAt?: string }>(
+  localList: T[],
+  incomingList: T[],
+  deletedIds: Set<string>,
+  idKey: (item: T) => string | undefined,
+  altIdKey?: (item: T) => string | undefined
+): T[] {
+  const map = new Map<string, T>();
+  const isDeleted = (item: T) => {
+    if (!item) return true;
+    const k1 = idKey(item);
+    const k2 = altIdKey ? altIdKey(item) : undefined;
+    if (k1 && deletedIds.has(k1)) return true;
+    if (k2 && deletedIds.has(k2)) return true;
+    return false;
+  };
+
+  const getTime = (item: T) => {
+    const raw = item.updatedAt || item.createdAt;
+    return raw ? new Date(raw).getTime() : 0;
+  };
+
+  // 1. Seed with local active items
+  for (const item of localList) {
+    if (!item || isDeleted(item)) continue;
+    const k1 = idKey(item);
+    const k2 = altIdKey ? altIdKey(item) : undefined;
+    if (k1) map.set(k1, item);
+    if (k2) map.set(k2, item);
+  }
+
+  // 2. Merge incoming items
+  for (const item of incomingList) {
+    if (!item || isDeleted(item)) continue;
+    const k1 = idKey(item);
+    const k2 = altIdKey ? altIdKey(item) : undefined;
+    const primaryKey = k1 || k2;
+    if (!primaryKey) continue;
+
+    const existing = (k1 ? map.get(k1) : undefined) || (k2 ? map.get(k2) : undefined);
+    if (existing) {
+      const localTime = getTime(existing);
+      const incomingTime = getTime(item);
+      // Only overwrite if incoming is strictly newer
+      if (incomingTime > localTime) {
+        if (k1) map.set(k1, item);
+        if (k2) map.set(k2, item);
+      }
+    } else {
+      if (k1) map.set(k1, item);
+      if (k2) map.set(k2, item);
+    }
+  }
+
+  // Deduplicate entries
+  const seen = new Set<T>();
+  const result: T[] = [];
+  for (const item of map.values()) {
+    if (!seen.has(item) && !isDeleted(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
 // Multi-tab / cross-device broadcast channel for 0ms instantaneous synchronization
 const syncChannel: BroadcastChannel | null =
   typeof window !== "undefined" && "BroadcastChannel" in window
@@ -263,22 +361,64 @@ export function initServerLiveSync() {
         if (!payload || !payload.type) return;
 
         if (payload.type === "products" && Array.isArray(payload.data)) {
-          const normalized = payload.data.map(ensureProductVariants);
-          cacheProductsLocally(normalized);
-          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: normalized }));
+          const deleted = getLocallyDeletedIds("products");
+          const normalized = payload.data.map(ensureProductVariants).filter((p: any) => p && p.id && !deleted.has(p.id));
+          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
+          cacheProductsLocally(merged);
+          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: merged }));
         } else if (payload.type === "site_content" && payload.data) {
-          const merged = { ...defaultSiteContent, ...payload.data };
-          cacheSiteContentLocally(merged);
-          window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+          const localContent = getCachedSiteContent();
+          const localTime = new Date(localContent?.updatedAt || 0).getTime();
+          const remoteTime = new Date(payload.data.updatedAt || 0).getTime();
+          if (localTime <= remoteTime || !localContent) {
+            const merged = { ...defaultSiteContent, ...payload.data };
+            cacheSiteContentLocally(merged);
+            window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+          }
         } else if (payload.type === "categories" && Array.isArray(payload.data)) {
-          cacheCategoriesLocally(payload.data);
-          window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: payload.data }));
+          const deleted = getLocallyDeletedIds("categories");
+          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            payload.data,
+            deleted,
+            (c: any) => c.id,
+            (c: any) => c.slug || c.name
+          );
+          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(merged);
+          window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: merged }));
         } else if (payload.type === "orders" && Array.isArray(payload.data)) {
-          localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(payload.data));
-          window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: payload.data }));
+          const deleted = getLocallyDeletedIds("orders");
+          const current = getCachedOrders().filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            payload.data,
+            deleted,
+            (o: any) => o.id,
+            (o: any) => o.orderNumber
+          );
+          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          cacheOrdersLocally(merged);
+          window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: merged }));
         } else if (payload.type === "bookings" && Array.isArray(payload.data)) {
-          localStorage.setItem("hos_atelier_bookings", JSON.stringify(payload.data));
-          window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: payload.data }));
+          const deleted = getLocallyDeletedIds("bookings");
+          let current: AtelierBooking[] = [];
+          try {
+            const raw = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+            if (Array.isArray(raw)) current = raw.filter((b: any) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
+          } catch {}
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            payload.data,
+            deleted,
+            (b: any) => b.id,
+            (b: any) => b.bookingNumber
+          );
+          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          localStorage.setItem("hos_atelier_bookings", JSON.stringify(merged));
+          window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: merged }));
         }
       } catch (err) {
         console.warn("SSE sync payload parse notice:", err);
@@ -301,6 +441,7 @@ export function initServerLiveSync() {
 }
 
 if (typeof window !== "undefined") {
+  syncServerDeletedIds();
   initServerLiveSync();
 }
 
@@ -498,6 +639,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (res.ok) {
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
+          const localContent = getCachedSiteContent();
+          const localTime = new Date(localContent?.updatedAt || 0).getTime();
+          const serverTime = new Date(serverData.updatedAt || 0).getTime();
+          if (localTime > serverTime && localContent) {
+            return;
+          }
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
           if (Array.isArray(serverData.heroSlides)) {
             merged.heroSlides = serverData.heroSlides;
@@ -525,6 +672,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (staticRes.ok) {
         const staticData = await staticRes.json();
         if (staticData && typeof staticData === "object" && Object.keys(staticData).length > 0) {
+          const localContent = getCachedSiteContent();
+          const localTime = new Date(localContent?.updatedAt || 0).getTime();
+          const staticTime = new Date(staticData.updatedAt || 0).getTime();
+          if (localTime > staticTime && localContent) {
+            return;
+          }
           const merged: SiteContent = { ...defaultSiteContent, ...staticData };
           if (Array.isArray(staticData.heroSlides) && staticData.heroSlides.length > 0) {
             merged.heroSlides = staticData.heroSlides;
@@ -707,8 +860,17 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
-          cacheCategoriesLocally(filtered);
-          callback(filtered);
+          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            filtered,
+            deleted,
+            (c: any) => c.id,
+            (c: any) => c.slug || c.name
+          );
+          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(merged);
+          callback(merged);
           return;
         }
       }
@@ -724,8 +886,17 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
-          cacheCategoriesLocally(filtered);
-          callback(filtered);
+          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            filtered,
+            deleted,
+            (c: any) => c.id,
+            (c: any) => c.slug || c.name
+          );
+          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(merged);
+          callback(merged);
         }
       }
     } catch {}
@@ -754,27 +925,14 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
             .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
             .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
 
-          const current = getCachedCategories().filter((c) => !deleted.has(c.id));
-          const currentMap = new Map(current.map((c) => [c.id, c]));
-          const merged: CategoryItem[] = [];
-          const seen = new Set<string>();
-
-          for (const fsItem of fsList) {
-            seen.add(fsItem.id);
-            const localItem = currentMap.get(fsItem.id);
-            if (localItem && (localItem as any).updatedAt && (fsItem as any).updatedAt) {
-              const localTime = new Date((localItem as any).updatedAt).getTime();
-              const fsTime = new Date((fsItem as any).updatedAt).getTime();
-              merged.push(localTime > fsTime ? localItem : fsItem);
-            } else {
-              merged.push(fsItem);
-            }
-          }
-          for (const localItem of current) {
-            if (!seen.has(localItem.id) && !deleted.has(localItem.id)) {
-              merged.push(localItem);
-            }
-          }
+          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+          const merged = mergeEntitiesByTimestamp(
+            current,
+            fsList,
+            deleted,
+            (c: any) => c.id,
+            (c: any) => c.slug || c.name
+          );
 
           merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
           cacheCategoriesLocally(merged);
@@ -930,8 +1088,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id));
-          cacheProductsLocally(normalized);
-          callback(normalized);
+          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
+          cacheProductsLocally(merged);
+          callback(merged);
           return;
         }
       }
@@ -949,8 +1109,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = staticData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id));
-          cacheProductsLocally(normalized);
-          callback(normalized);
+          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
+          cacheProductsLocally(merged);
+          callback(merged);
         }
       }
     } catch {}
@@ -1039,27 +1201,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
             .filter((p) => p && p.id && !deleted.has(p.id));
 
           const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
-          const currentMap = new Map(current.map((p) => [p.id, p]));
-          const merged: Product[] = [];
-          const seen = new Set<string>();
-
-          for (const fsItem of fsList) {
-            seen.add(fsItem.id);
-            const localItem = currentMap.get(fsItem.id);
-            if (localItem) {
-              const localTime = new Date(localItem.updatedAt || 0).getTime();
-              const fsTime = new Date(fsItem.updatedAt || 0).getTime();
-              merged.push(localTime > fsTime ? localItem : fsItem);
-            } else {
-              merged.push(fsItem);
-            }
-          }
-
-          for (const localItem of current) {
-            if (!seen.has(localItem.id) && !deleted.has(localItem.id)) {
-              merged.push(localItem);
-            }
-          }
+          const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (p) => p.id);
 
           if (merged.length > 0) {
             cacheProductsLocally(merged);
@@ -1489,15 +1631,18 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
         const apiData = await res.json();
         if (Array.isArray(apiData)) {
           const deleted = getLocallyDeletedIds("orders");
-          const sorted = [...apiData]
-            .filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber))
-            .sort(
-              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-            );
-          const current = getCachedOrders();
-          if (JSON.stringify(current) !== JSON.stringify(sorted)) {
-            cacheOrdersLocally(sorted);
-            callback(sorted);
+          const incoming = apiData
+            .map((o: any) => ({
+              ...o,
+              id: o.id || `ord_${(o.orderNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
+            }))
+            .filter((o: Order) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const current = getCachedOrders().filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const merged = mergeEntitiesByTimestamp(current, incoming, deleted, (o) => o.id, (o) => o.orderNumber);
+          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          if (JSON.stringify(current) !== JSON.stringify(merged)) {
+            cacheOrdersLocally(merged);
+            callback(merged);
           }
           return;
         }
@@ -1513,15 +1658,18 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
         const staticData = await staticRes.json();
         if (Array.isArray(staticData)) {
           const deleted = getLocallyDeletedIds("orders");
-          const sorted = [...staticData]
-            .filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber))
-            .sort(
-              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-            );
-          const current = getCachedOrders();
-          if (JSON.stringify(current) !== JSON.stringify(sorted)) {
-            cacheOrdersLocally(sorted);
-            callback(sorted);
+          const incoming = staticData
+            .map((o: any) => ({
+              ...o,
+              id: o.id || `ord_${(o.orderNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
+            }))
+            .filter((o: Order) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const current = getCachedOrders().filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const merged = mergeEntitiesByTimestamp(current, incoming, deleted, (o) => o.id, (o) => o.orderNumber);
+          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          if (JSON.stringify(current) !== JSON.stringify(merged)) {
+            cacheOrdersLocally(merged);
+            callback(merged);
           }
         }
       }
@@ -1543,6 +1691,7 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
 
   // 4. Listen to local/custom order events
   const handleOrderChange = () => {
+    callback(getCachedOrders());
     fetchLiveOrders();
   };
 
@@ -1582,10 +1731,15 @@ export function subscribeOrders(callback: (orders: Order[]) => void): () => void
       colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          const fsList = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
-          fsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          cacheOrdersLocally(fsList);
-          callback(fsList);
+          const deleted = getLocallyDeletedIds("orders");
+          const fsList = snapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() } as Order))
+            .filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const current = getCachedOrders().filter((o) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber));
+          const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (o) => o.id, (o) => o.orderNumber);
+          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          cacheOrdersLocally(merged);
+          callback(merged);
         }
       },
       () => {}
@@ -2369,14 +2523,13 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
     if (res.ok) {
       const serverList = await res.json();
       if (Array.isArray(serverList)) {
-        list = serverList
+        const normalized = serverList
           .map((b: any) => ({
             ...b,
             id: b.id || `book_${(b.bookingNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
           }))
           .filter((b: AtelierBooking) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
-        localStorage.setItem("hos_atelier_bookings", JSON.stringify(list));
-        return list;
+        list = mergeEntitiesByTimestamp(list, normalized, deleted, (b) => b.id, (b) => b.bookingNumber);
       }
     }
   } catch {}
@@ -2389,32 +2542,16 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
       const remote = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as AtelierBooking))
         .filter((b) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
-      const map = new Map<string, AtelierBooking>();
-      for (const b of remote) {
-        map.set(b.id || b.bookingNumber, b);
-      }
-      for (const b of list) {
-        const key = b.id || b.bookingNumber;
-        const rem = map.get(key);
-        if (rem) {
-          const localTime = new Date(b.updatedAt || 0).getTime();
-          const remTime = new Date(rem.updatedAt || 0).getTime();
-          map.set(key, localTime >= remTime ? b : rem);
-        } else {
-          map.set(key, b);
-        }
-      }
-      const combined = Array.from(map.values())
-        .filter((b) => !deleted.has(b.id) && !deleted.has(b.bookingNumber))
-        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      try {
-        localStorage.setItem("hos_atelier_bookings", JSON.stringify(combined));
-      } catch {}
-      return combined;
+      list = mergeEntitiesByTimestamp(list, remote, deleted, (b) => b.id, (b) => b.bookingNumber);
     }
   } catch (e) {
     console.warn("Firestore adminFetchAllBookings fetch error:", e);
   }
+
+  list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  try {
+    localStorage.setItem("hos_atelier_bookings", JSON.stringify(list));
+  } catch {}
 
   return list;
 }
@@ -2432,8 +2569,13 @@ export async function adminUpdateBooking(
     if (idx > -1) {
       updatedBooking = { ...local[idx], ...updates, updatedAt: now };
       local[idx] = updatedBooking;
-      localStorage.setItem("hos_atelier_bookings", JSON.stringify(local));
+    } else {
+      updatedBooking = { id: bookingId, bookingNumber: bookingId, ...updates, updatedAt: now } as AtelierBooking;
+      local.unshift(updatedBooking);
     }
+    if (updatedBooking.id) unrecordLocallyDeletedId("bookings", updatedBooking.id);
+    if (updatedBooking.bookingNumber) unrecordLocallyDeletedId("bookings", updatedBooking.bookingNumber);
+    localStorage.setItem("hos_atelier_bookings", JSON.stringify(local));
   } catch {}
 
   // Central Server API sync
@@ -2447,6 +2589,14 @@ export async function adminUpdateBooking(
       const data = await res.json();
       if (data && data.booking) {
         updatedBooking = data.booking;
+        try {
+          const freshLocal: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+          const fIdx = freshLocal.findIndex((b) => b.id === bookingId || b.bookingNumber === bookingId);
+          if (fIdx > -1) {
+            freshLocal[fIdx] = updatedBooking;
+            localStorage.setItem("hos_atelier_bookings", JSON.stringify(freshLocal));
+          }
+        } catch {}
       }
     }
   } catch (apiErr) {
@@ -2454,9 +2604,10 @@ export async function adminUpdateBooking(
   }
 
   if (updatedBooking) {
+    if (updatedBooking.id) unrecordLocallyDeletedId("bookings", updatedBooking.id);
     if (updatedBooking.bookingNumber) unrecordLocallyDeletedId("bookings", updatedBooking.bookingNumber);
     try {
-      const docRef = doc(db, "bookings", bookingId);
+      const docRef = doc(db, "bookings", updatedBooking.id || bookingId);
       await setDoc(docRef, updatedBooking, { merge: true });
     } catch (e) {
       console.warn("Firestore adminUpdateBooking error:", e);
@@ -2469,7 +2620,12 @@ export async function adminUpdateBooking(
         detail: updatedBooking || { id: bookingId, ...updates },
       })
     );
+    try {
+      const freshLocal: AtelierBooking[] = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
+      window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: freshLocal }));
+    } catch {}
   }
+  broadcastCrossDeviceSync("bookings", updatedBooking);
 }
 
 export async function adminDeleteBooking(bookingId: string): Promise<void> {
@@ -2653,14 +2809,13 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
     if (res.ok) {
       const serverOrders = await res.json();
       if (Array.isArray(serverOrders)) {
-        list = serverOrders
+        const normalized = serverOrders
           .map((o: any) => ({
             ...o,
             id: o.id || `ord_${(o.orderNumber || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, "_")}`,
           }))
           .filter((o: Order) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
-        cacheOrdersLocally(list);
-        return list;
+        list = mergeEntitiesByTimestamp(list, normalized, deleted, (o) => o.id, (o) => o.orderNumber);
       }
     }
   } catch (apiErr) {
@@ -2676,30 +2831,14 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
         .map((d) => ({ id: d.id, ...d.data() } as Order))
         .filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
 
-      const map = new Map<string, Order>();
-      for (const o of remote) {
-        map.set(o.id || o.orderNumber, o);
-      }
-      for (const o of list) {
-        const key = o.id || o.orderNumber;
-        const rem = map.get(key);
-        if (rem) {
-          const localTime = new Date(o.updatedAt || 0).getTime();
-          const remTime = new Date(rem.updatedAt || 0).getTime();
-          map.set(key, localTime >= remTime ? o : rem);
-        } else {
-          map.set(key, o);
-        }
-      }
-      list = Array.from(map.values())
-        .filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber))
-        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      cacheOrdersLocally(list);
+      list = mergeEntitiesByTimestamp(list, remote, deleted, (o) => o.id, (o) => o.orderNumber);
     }
   } catch (e) {
     console.warn("Firestore adminFetchAllOrders notice:", e);
   }
 
+  list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  cacheOrdersLocally(list);
   return list;
 }
 
@@ -2719,6 +2858,7 @@ export async function adminUpdateOrder(
     updatedOrder = { id: orderId, orderNumber: orderId, ...updates, updatedAt: now } as Order;
     current.unshift(updatedOrder);
   }
+  if (updatedOrder.id) unrecordLocallyDeletedId("orders", updatedOrder.id);
   if (updatedOrder.orderNumber) unrecordLocallyDeletedId("orders", updatedOrder.orderNumber);
   cacheOrdersLocally(current);
 
@@ -2745,7 +2885,7 @@ export async function adminUpdateOrder(
 
   // 2. Sync to Firestore
   try {
-    const docRef = doc(db, "orders", orderId);
+    const docRef = doc(db, "orders", updatedOrder.id || orderId);
     await setDoc(docRef, updatedOrder, { merge: true });
   } catch (e) {
     console.warn("Firestore adminUpdateOrder error:", e);
@@ -2754,9 +2894,9 @@ export async function adminUpdateOrder(
   // 3. Broadcast real-time event
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updatedOrder }));
-    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: current }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: getCachedOrders() }));
   }
-  broadcastCrossDeviceSync("orders", current);
+  broadcastCrossDeviceSync("orders", updatedOrder);
 }
 
 export async function adminDeleteOrder(orderId: string): Promise<void> {
@@ -2783,6 +2923,16 @@ export async function adminDeleteOrder(orderId: string): Promise<void> {
     await deleteDoc(docRef);
   } catch (e) {
     console.warn("Firestore adminDeleteOrder error:", e);
+  }
+  if (target?.id && target.id !== orderId) {
+    try {
+      await deleteDoc(doc(db, "orders", target.id));
+    } catch {}
+  }
+  if (target?.orderNumber && target.orderNumber !== orderId) {
+    try {
+      await deleteDoc(doc(db, "orders", target.orderNumber));
+    } catch {}
   }
 
   // 3. Broadcast real-time event

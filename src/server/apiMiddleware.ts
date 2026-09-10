@@ -406,6 +406,23 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           return;
         }
 
+        // 1D. DELETED IDENTIFIERS SYNC: /api/deleted-ids
+        if (urlWithoutQuery === "/api/deleted-ids") {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 200;
+          res.end(
+            JSON.stringify({
+              products: Array.from(getDeletedIds("products")),
+              categories: Array.from(getDeletedIds("categories")),
+              orders: Array.from(getDeletedIds("orders")),
+              bookings: Array.from(getDeletedIds("bookings")),
+            })
+          );
+          return;
+        }
+
         // 2. PRODUCTS COLLECTION: /api/products
         if (urlWithoutQuery === "/api/products") {
           setAntiCacheHeaders(res);
