@@ -378,59 +378,5 @@
         "inStock": true
       }
     ]
-  },
-  {
-    "id": "hos-008",
-    "originalPrice": "₹2,499",
-    "activeWishlist": false,
-    "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
-    "badges": [
-      "Pure Mulmul",
-      "Summer Edit"
-    ],
-    "price": "₹1,799",
-    "fabricType": "Pure Mulmul",
-    "tags": [
-      "Cotton Suits",
-      "Daily Wear Suits"
-    ],
-    "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
-    "savings": "Save 28%",
-    "reviews": "26",
-    "name": "Sage Garden Mulmul Breezy Stitched Kurti Pant",
-    "updatedAt": "2026-09-06T11:34:22.383Z",
-    "createdAt": "2026-09-03T06:47:33.123Z",
-    "category": "Cotton Suits",
-    "rating": "4.8",
-    "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
-    "sizes": [
-      "Unstitched Suit"
-    ],
-    "inStock": true,
-    "color": "Sage Green",
-    "images": [
-      "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
-    ],
-    "colorHex": "#0d4f3c",
-    "colorVariants": [
-      {
-        "id": "var-hos-008-0",
-        "colorName": "Sage Green",
-        "colorHex": "#0d4f3c",
-        "price": "₹1,799",
-        "originalPrice": "₹2,499",
-        "savings": "Save 28%",
-        "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
-        "fabricType": "Pure Mulmul",
-        "images": [
-          "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
-          "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
-        ],
-        "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
-        "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
-        "inStock": true
-      }
-    ]
   }
 ]

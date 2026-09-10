@@ -354,9 +354,9 @@ export function ensureProductVariants(product: any): Product {
 export function getCachedProducts(): Product[] {
   try {
     const saved = localStorage.getItem(PRODUCTS_CACHE_KEY);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed.map(ensureProductVariants);
       }
     }
@@ -466,10 +466,14 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
-          if (Array.isArray(serverData.heroSlides) && serverData.heroSlides.length > 0) {
+          if (Array.isArray(serverData.heroSlides)) {
             merged.heroSlides = serverData.heroSlides;
-          } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
-            merged.heroSlides = defaultSiteContent.heroSlides || [];
+          }
+          if (Array.isArray(serverData.features)) {
+            merged.features = serverData.features;
+          }
+          if (Array.isArray(serverData.trustBadges)) {
+            merged.trustBadges = serverData.trustBadges;
           }
           currentContent = merged;
           cacheSiteContentLocally(merged);
@@ -605,6 +609,12 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
 
   if (Array.isArray(sanitizedContent.heroSlides)) {
     updated.heroSlides = sanitizedContent.heroSlides;
+  }
+  if (Array.isArray(sanitizedContent.features)) {
+    updated.features = sanitizedContent.features;
+  }
+  if (Array.isArray(sanitizedContent.trustBadges)) {
+    updated.trustBadges = sanitizedContent.trustBadges;
   }
 
   // 1. Immediately cache locally
@@ -832,7 +842,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       });
       if (res.ok) {
         const apiData = await res.json();
-        if (Array.isArray(apiData) && apiData.length > 0) {
+        if (Array.isArray(apiData)) {
           const normalized = apiData.map(ensureProductVariants);
           cacheProductsLocally(normalized);
           callback(normalized);
@@ -848,7 +858,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       });
       if (staticRes.ok) {
         const staticData = await staticRes.json();
-        if (Array.isArray(staticData) && staticData.length > 0) {
+        if (Array.isArray(staticData)) {
           const normalized = staticData.map(ensureProductVariants);
           cacheProductsLocally(normalized);
           callback(normalized);
@@ -872,7 +882,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
   // 4. Listen to local/custom events dispatched during admin operations
   const handleCatalogUpdate = (e: any) => {
-    if (Array.isArray(e.detail) && e.detail.length > 0) {
+    if (Array.isArray(e.detail)) {
       callback(e.detail.map(ensureProductVariants));
     }
   };
@@ -965,7 +975,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   };
 }
 
-export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean }> {
+export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean; product?: Product }> {
   const id = product.id || `hos-${Date.now()}`;
 
   // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
@@ -1034,7 +1044,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   }
   broadcastCrossDeviceSync("products", updated);
 
-  return { id, success: true };
+  return { id, success: true, product: sanitized };
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -1063,8 +1073,8 @@ export async function deleteProduct(id: string): Promise<void> {
 }
 
 export async function seedInitialProductsIfEmpty(): Promise<void> {
-  const prods = getCachedProducts();
-  if (prods.length === 0) {
+  const hasSaved = localStorage.getItem(PRODUCTS_CACHE_KEY);
+  if (hasSaved === null) {
     cacheProductsLocally(defaultProducts.map(ensureProductVariants));
   }
 }

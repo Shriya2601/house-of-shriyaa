@@ -286,7 +286,7 @@ export default function AdminPortal() {
 
       if (prodRes.status === "fulfilled" && prodRes.value.ok) {
         const prodData = await prodRes.value.json();
-        if (Array.isArray(prodData) && prodData.length > 0) {
+        if (Array.isArray(prodData)) {
           const normalized = prodData.map(ensureProductVariants);
           setProducts(normalized);
           cacheProductsLocally(normalized);
@@ -308,6 +308,55 @@ export default function AdminPortal() {
       setRefreshing(false);
     }
   };
+
+  // Real-time synchronization for AdminPortal when products or content are edited, uploaded, or deleted
+  useEffect(() => {
+    const handleProductSaved = (e: any) => {
+      if (e.detail?.id) {
+        const normalized = ensureProductVariants(e.detail);
+        setProducts((prev) => {
+          const idx = prev.findIndex((p) => p.id === normalized.id);
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx] = normalized;
+            return next;
+          }
+          return [normalized, ...prev];
+        });
+      }
+    };
+
+    const handleProductDeleted = (e: any) => {
+      const deletedId = e.detail?.id;
+      if (deletedId) {
+        setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+      }
+    };
+
+    const handleCatalogUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setProducts(e.detail.map(ensureProductVariants));
+      }
+    };
+
+    const handleContentUpdated = (e: any) => {
+      if (e.detail && typeof e.detail === "object") {
+        setSiteContent((prev) => ({ ...prev, ...e.detail }));
+      }
+    };
+
+    window.addEventListener("hos-product-saved", handleProductSaved);
+    window.addEventListener("hos-product-deleted", handleProductDeleted);
+    window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
+    window.addEventListener("hos-content-updated", handleContentUpdated);
+
+    return () => {
+      window.removeEventListener("hos-product-saved", handleProductSaved);
+      window.removeEventListener("hos-product-deleted", handleProductDeleted);
+      window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
+      window.removeEventListener("hos-content-updated", handleContentUpdated);
+    };
+  }, []);
 
   // Push order to Shiprocket
   const handlePushToShiprocket = async (orderToSync: Order) => {

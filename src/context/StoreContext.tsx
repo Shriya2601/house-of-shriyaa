@@ -475,12 +475,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     };
     const handleCatalogUpdated = (e: any) => {
-      if (Array.isArray(e.detail) && e.detail.length > 0) {
+      if (Array.isArray(e.detail)) {
         setProducts(e.detail);
       }
     };
     const handleCategoriesUpdated = (e: any) => {
-      if (Array.isArray(e.detail) && e.detail.length > 0) {
+      if (Array.isArray(e.detail)) {
         setCategories(e.detail);
       }
     };

@@ -32,7 +32,10 @@ export function broadcastSseSync(type: string, data: any) {
   }
 }
 
+const memoryDataCache: Record<string, any> = {};
+
 function syncDataFile(filename: string, data: any): void {
+  memoryDataCache[filename] = data;
   const jsonStr = JSON.stringify(data, null, 2);
   const targets = [
     path.resolve(process.cwd(), "public/data", filename),
@@ -57,16 +60,23 @@ function syncDataFile(filename: string, data: any): void {
 }
 
 function readDataFile(filename: string, fallback: any = []): any {
+  if (memoryDataCache[filename] !== undefined) {
+    return memoryDataCache[filename];
+  }
   const targets = [
     path.resolve(process.cwd(), "public/data", filename),
     path.resolve(process.cwd(), "src/data", filename),
+    path.resolve(process.cwd(), "dist/data", filename),
   ];
   for (const target of targets) {
     if (fs.existsSync(target)) {
       try {
         const raw = fs.readFileSync(target, "utf-8");
         const parsed = JSON.parse(raw);
-        if (parsed !== undefined && parsed !== null) return parsed;
+        if (parsed !== undefined && parsed !== null) {
+          memoryDataCache[filename] = parsed;
+          return parsed;
+        }
       } catch {}
     }
   }
@@ -377,7 +387,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 };
                 const idx = products.findIndex((p) => p.id === product.id);
                 if (idx > -1) {
-                  products[idx] = { ...products[idx], ...product };
+                  products[idx] = { ...product, id: product.id, updatedAt: new Date().toISOString() };
                 } else {
                   products.unshift(product);
                 }
@@ -398,6 +408,25 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               res.statusCode = 400;
               res.end(JSON.stringify({ error: err.message || "Invalid JSON payload" }));
               return;
+            }
+          }
+
+          if (method === "DELETE") {
+            try {
+              const body = await parseJsonBody(req).catch(() => ({}));
+              const parsedUrl = new URL(req.url, "http://localhost:3000");
+              const delId = parsedUrl.searchParams.get("id") || body?.id;
+              if (delId) {
+                let products = readProducts();
+                const filtered = products.filter((p) => p.id !== delId);
+                writeProducts(filtered);
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, id: delId, count: filtered.length }));
+                return;
+              }
+            } catch (err: any) {
+              console.warn("[API] Delete product query error:", err);
             }
           }
 
@@ -439,7 +468,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               };
               const idx = products.findIndex((p) => p.id === productId);
               if (idx > -1) {
-                products[idx] = { ...products[idx], ...product };
+                products[idx] = { ...product, id: productId, updatedAt: new Date().toISOString() };
               } else {
                 products.unshift(product);
               }
@@ -735,6 +764,16 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 ...body,
                 updatedAt: new Date().toISOString(),
               };
+
+              if (Array.isArray(body.heroSlides)) {
+                updated.heroSlides = body.heroSlides;
+              }
+              if (Array.isArray(body.features)) {
+                updated.features = body.features;
+              }
+              if (Array.isArray(body.trustBadges)) {
+                updated.trustBadges = body.trustBadges;
+              }
 
               writeSiteContent(updated);
 

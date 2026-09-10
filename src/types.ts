@@ -81,6 +81,7 @@ export interface SiteContent {
   atelierCity: string;
   heroSlides: HeroSlide[];
   features: FeatureItem[];
+  trustBadges?: any[];
   footerNote: string;
   catalogTitle?: string;
   catalogSubtitle?: string;
