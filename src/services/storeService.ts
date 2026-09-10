@@ -197,7 +197,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v6_2026_09_10_synced";
+const APP_CACHE_VERSION = "hos_v7_2026_09_11_cleaned";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -211,17 +211,43 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+export const DEFAULT_PERMANENTLY_DELETED: Record<string, string[]> = {
+  products: [
+    "hos-006",
+    "hos-007",
+    "hos-008",
+    "Reyna Phiran",
+    "Sage Garden Mulmul Breezy Stitched Kurti Pant",
+  ],
+  orders: [
+    "ord_hos_test_verify_4911",
+    "HOS-TEST-VERIFY-4911",
+    "test-order-1",
+    "HOS-TEST-1",
+    "test",
+    "HOS-TEST",
+  ],
+  categories: [],
+  bookings: [],
+};
+
 // Local deleted items tracking to prevent stale snapshots/re-fetches from reviving deleted items
 export function getLocallyDeletedIds(type: string): Set<string> {
-  if (typeof window === "undefined") return new Set();
+  const defaults = DEFAULT_PERMANENTLY_DELETED[type] || [];
+  const set = new Set<string>(defaults);
+  if (typeof window === "undefined") return set;
   try {
     const raw = localStorage.getItem(`hos_deleted_${type}`);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set(arr);
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (item) set.add(item);
+        }
+      }
     }
   } catch {}
-  return new Set();
+  return set;
 }
 
 export function recordLocallyDeletedId(type: string, id: string): void {
@@ -593,13 +619,27 @@ export function getCachedProducts(): Product[] {
       if (Array.isArray(parsed)) {
         return parsed
           .map(ensureProductVariants)
-          .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+          .filter(
+            (p) =>
+              p &&
+              p.id &&
+              !deleted.has(p.id) &&
+              !deleted.has((p as any).sku) &&
+              !deleted.has(p.name)
+          );
       }
     }
   } catch {}
   return defaultProducts
     .map(ensureProductVariants)
-    .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+    .filter(
+      (p) =>
+        p &&
+        p.id &&
+        !deleted.has(p.id) &&
+        !deleted.has((p as any).sku) &&
+        !deleted.has(p.name)
+    );
 }
 
 export function cacheProductsLocally(prods: Product[]) {
@@ -1155,7 +1195,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
             .map(ensureProductVariants)
-            .filter((p) => p && p.id && !deleted.has(p.id));
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
           cacheProductsLocally(normalized);
           callback(normalized);
           return;
@@ -1174,7 +1214,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const deleted = getLocallyDeletedIds("products");
           const normalized = staticData
             .map(ensureProductVariants)
-            .filter((p) => p && p.id && !deleted.has(p.id));
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
           cacheProductsLocally(normalized);
           callback(normalized);
         }
@@ -1198,12 +1238,19 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   // 4. Listen to local/custom events dispatched during admin operations
   const handleCatalogUpdate = (e: any) => {
     if (Array.isArray(e.detail)) {
-      callback(e.detail.map(ensureProductVariants));
+      const deleted = getLocallyDeletedIds("products");
+      callback(
+        e.detail
+          .map(ensureProductVariants)
+          .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name))
+      );
     }
   };
 
   const handleSingleProductSaved = (e: any) => {
     if (e.detail && e.detail.id) {
+      const deleted = getLocallyDeletedIds("products");
+      if (deleted.has(e.detail.id) || deleted.has(e.detail.name)) return;
       const current = getCachedProducts();
       const idx = current.findIndex((p) => p.id === e.detail.id);
       const normalized = ensureProductVariants(e.detail);
@@ -1217,7 +1264,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   const handleProductDeleted = (e: any) => {
     const deletedId = e.detail?.id;
     if (deletedId) {
-      const current = getCachedProducts().filter((p) => p.id !== deletedId);
+      const deleted = getLocallyDeletedIds("products");
+      const current = getCachedProducts().filter(
+        (p) => p.id !== deletedId && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name)
+      );
       cacheProductsLocally(current);
       callback(current);
     }
@@ -1230,7 +1280,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         const deleted = getLocallyDeletedIds("products");
         const normalized = event.data.data
           .map(ensureProductVariants)
-          .filter((p: any) => p && p.id && !deleted.has(p.id));
+          .filter((p: any) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
         cacheProductsLocally(normalized);
         callback(normalized);
       } else {
@@ -1271,7 +1321,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const deleted = getLocallyDeletedIds("products");
           const fsList = snapshot.docs
             .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
-            .filter((p) => p && p.id && !deleted.has(p.id));
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
 
           if (fsList.length > 0) {
             cacheProductsLocally(fsList);
@@ -1377,8 +1427,21 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  const currentBefore = getCachedProducts();
+  const target = currentBefore.find((p) => p.id === id || (p as any).sku === id);
   recordLocallyDeletedId("products", id);
-  const current = getCachedProducts().filter((p) => p.id !== id && (p as any).sku !== id);
+  if (target) {
+    if (target.name) recordLocallyDeletedId("products", target.name);
+    if ((target as any).sku) recordLocallyDeletedId("products", (target as any).sku);
+    if (Array.isArray(target.colorVariants)) {
+      target.colorVariants.forEach((v) => {
+        if (v && v.id) recordLocallyDeletedId("products", v.id);
+      });
+    }
+  }
+  const current = currentBefore.filter(
+    (p) => p.id !== id && (p as any).sku !== id && (!target || p.name !== target.name)
+  );
   cacheProductsLocally(current);
 
   // 1. Central Backend API deletion
@@ -1395,6 +1458,13 @@ export async function deleteProduct(id: string): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "products", id }),
     });
+    if (target && target.name) {
+      await fetch("/api/deleted-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "products", id: target.name }),
+      });
+    }
   } catch {}
 
   // 3. Firestore deletion
@@ -1405,7 +1475,7 @@ export async function deleteProduct(id: string): Promise<void> {
 
   // 4. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id, name: target?.name } }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
   }
   broadcastCrossDeviceSync("products", current);
@@ -1417,7 +1487,7 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
   if (hasSaved === null) {
     const clean = defaultProducts
       .map(ensureProductVariants)
-      .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+      .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
     cacheProductsLocally(clean);
   }
 }

@@ -112,10 +112,23 @@ function readDataFile(filename: string, fallback: any = []): any {
   return fallback;
 }
 
+const DEFAULT_DELETED_REGISTRY: Record<string, string[]> = {
+  products: ["hos-006", "hos-007", "hos-008", "Reyna Phiran", "Sage Garden Mulmul Breezy Stitched Kurti Pant"],
+  orders: ["ord_hos_test_verify_4911", "HOS-TEST-VERIFY-4911", "test-order-1", "HOS-TEST-1", "test", "HOS-TEST"],
+  categories: [],
+  bookings: [],
+};
+
 function getDeletedIds(type: string): Set<string> {
   const filename = `deleted_${type}.json`;
   const list = readDataFile(filename, []);
-  return new Set(Array.isArray(list) ? list : []);
+  const set = new Set<string>(DEFAULT_DELETED_REGISTRY[type] || []);
+  if (Array.isArray(list)) {
+    for (const item of list) {
+      if (item) set.add(item);
+    }
+  }
+  return set;
 }
 
 function recordDeletedId(type: string, id: string): void {
@@ -139,7 +152,9 @@ function unrecordDeletedId(type: string, id: string): void {
 function readProducts(): any[] {
   const list = readDataFile("products.json", []);
   const deleted = getDeletedIds("products");
-  return (Array.isArray(list) ? list : []).filter((p) => p && p.id && !deleted.has(p.id));
+  return (Array.isArray(list) ? list : []).filter(
+    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku) && !deleted.has(p.name)
+  );
 }
 
 function writeProducts(products: any[]): void {
@@ -642,8 +657,20 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           }
 
           if (method === "DELETE") {
-            const filtered = products.filter((p) => p.id !== productId);
+            const target = products.find((p) => p.id === productId || (p as any).sku === productId);
+            const filtered = products.filter(
+              (p) => p.id !== productId && (p as any).sku !== productId && (!target || p.name !== target.name)
+            );
             recordDeletedId("products", productId);
+            if (target) {
+              if (target.name) recordDeletedId("products", target.name);
+              if ((target as any).sku) recordDeletedId("products", (target as any).sku);
+              if (Array.isArray(target.colorVariants)) {
+                target.colorVariants.forEach((v: any) => {
+                  if (v && v.id) recordDeletedId("products", v.id);
+                });
+              }
+            }
             writeProducts(filtered);
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;

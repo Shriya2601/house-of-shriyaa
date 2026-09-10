@@ -431,12 +431,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Real-time deletion listeners
     const handleProdDel = (e: any) => {
       const id = e.detail?.id;
-      if (id) {
-        setProducts((prev) => prev.filter((p) => p.id !== id));
-        setCart((prev) => prev.filter((item) => item.product.id !== id));
+      const name = e.detail?.name;
+      if (id || name) {
+        setProducts((prev) => prev.filter((p) => p.id !== id && (!name || p.name !== name)));
+        setCart((prev) => prev.filter((item) => item.product.id !== id && (!name || item.product.name !== name)));
         setWishlist((prev) => {
           const next = new Set(prev);
-          next.delete(id);
+          if (id) next.delete(id);
           return next;
         });
       }
