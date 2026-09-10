@@ -2177,7 +2177,6 @@ export function InteractiveModal({
               <div className="pt-2 border-t border-[#f5efeb] space-y-1.5 text-[#706458]">
                 <p>✦ <strong>Domestic Shipping:</strong> Delivered within 4–7 business days via air cargo.</p>
                 <p>✦ <strong>Artisan Inspection:</strong> Hand-inspected with artisanal care before dispatch.</p>
-                <p>✦ <strong>Packaging:</strong> Sealed in heirloom bridal-grade garment bags.</p>
               </div>
             </div>
             <button

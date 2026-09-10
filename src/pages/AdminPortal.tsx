@@ -294,10 +294,8 @@ export default function AdminPortal() {
           const normalized = prodData
             .map(ensureProductVariants)
             .filter((p: Product) => !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const current = getCachedProducts().filter((p) => !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
-          setProducts(merged);
-          cacheProductsLocally(merged);
+          setProducts(normalized);
+          cacheProductsLocally(normalized);
         }
       }
 

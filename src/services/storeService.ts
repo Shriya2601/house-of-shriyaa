@@ -283,8 +283,8 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
     return raw ? new Date(raw).getTime() : 0;
   };
 
-  // 1. Seed with local active items
-  for (const item of localList) {
+  // 1. Incoming items from server take precedence as the authoritative list
+  for (const item of incomingList) {
     if (!item || isDeleted(item)) continue;
     const k1 = idKey(item);
     const k2 = altIdKey ? altIdKey(item) : undefined;
@@ -292,26 +292,30 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
     if (k2) map.set(k2, item);
   }
 
-  // 2. Merge incoming items
-  for (const item of incomingList) {
+  // 2. Only preserve items from localList if they were created within the last 45s (optimistic creation)
+  // and are not yet on the server. Otherwise, if absent from server, they were deleted on server.
+  const now = Date.now();
+  for (const item of localList) {
     if (!item || isDeleted(item)) continue;
     const k1 = idKey(item);
     const k2 = altIdKey ? altIdKey(item) : undefined;
-    const primaryKey = k1 || k2;
-    if (!primaryKey) continue;
+    const key = k1 || k2;
+    if (!key) continue;
 
-    const existing = (k1 ? map.get(k1) : undefined) || (k2 ? map.get(k2) : undefined);
-    if (existing) {
-      const localTime = getTime(existing);
-      const incomingTime = getTime(item);
-      // Only overwrite if incoming is strictly newer
-      if (incomingTime > localTime) {
-        if (k1) map.set(k1, item);
-        if (k2) map.set(k2, item);
+    if (map.has(key)) {
+      // If local item has a strictly newer edit timestamp than the incoming server item, keep local
+      const existing = map.get(key)!;
+      const localTime = getTime(item);
+      const incomingTime = getTime(existing);
+      if (localTime > incomingTime && localTime - incomingTime < 120000) {
+        map.set(key, item);
       }
     } else {
-      if (k1) map.set(k1, item);
-      if (k2) map.set(k2, item);
+      // Not on server: only keep if created locally in the last 45 seconds (pending sync)
+      const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+      if (createdTime && now - createdTime < 45000) {
+        map.set(key, item);
+      }
     }
   }
 
@@ -355,75 +359,68 @@ export function initServerLiveSync() {
   try {
     sseSource = new EventSource("/api/sync/events");
 
-    sseSource.addEventListener("sync", (event: MessageEvent) => {
+    const handlePayload = (dataStr: string) => {
       try {
-        const payload = JSON.parse(event.data);
+        const payload = JSON.parse(dataStr);
         if (!payload || !payload.type) return;
 
         if (payload.type === "products" && Array.isArray(payload.data)) {
           const deleted = getLocallyDeletedIds("products");
-          const normalized = payload.data.map(ensureProductVariants).filter((p: any) => p && p.id && !deleted.has(p.id));
-          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
-          cacheProductsLocally(merged);
-          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: merged }));
-        } else if (payload.type === "site_content" && payload.data) {
-          const localContent = getCachedSiteContent();
-          const localTime = new Date(localContent?.updatedAt || 0).getTime();
-          const remoteTime = new Date(payload.data.updatedAt || 0).getTime();
-          if (localTime <= remoteTime || !localContent) {
-            const merged = { ...defaultSiteContent, ...payload.data };
-            cacheSiteContentLocally(merged);
-            window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
+          const normalized = payload.data
+            .map(ensureProductVariants)
+            .filter((p: any) => p && p.id && !deleted.has(p.id));
+          cacheProductsLocally(normalized);
+          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: normalized }));
+        } else if ((payload.type === "site_content" || payload.type === "siteContent") && payload.data) {
+          const merged = { ...defaultSiteContent, ...payload.data };
+          if (Array.isArray(payload.data.heroSlides)) {
+            merged.heroSlides = payload.data.heroSlides;
           }
+          if (Array.isArray(payload.data.features)) {
+            merged.features = payload.data.features;
+          }
+          if (Array.isArray(payload.data.trustBadges)) {
+            merged.trustBadges = payload.data.trustBadges;
+          }
+          cacheSiteContentLocally(merged);
+          window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: merged }));
         } else if (payload.type === "categories" && Array.isArray(payload.data)) {
           const deleted = getLocallyDeletedIds("categories");
-          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            payload.data,
-            deleted,
-            (c: any) => c.id,
-            (c: any) => c.slug || c.name
+          const filtered = payload.data.filter(
+            (c: any) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)
           );
-          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(merged);
-          window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: merged }));
+          filtered.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(filtered);
+          window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: filtered }));
         } else if (payload.type === "orders" && Array.isArray(payload.data)) {
           const deleted = getLocallyDeletedIds("orders");
-          const current = getCachedOrders().filter((o) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            payload.data,
-            deleted,
-            (o: any) => o.id,
-            (o: any) => o.orderNumber
+          const filtered = payload.data.filter(
+            (o: any) => o && !deleted.has(o.id) && !deleted.has(o.orderNumber)
           );
-          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          cacheOrdersLocally(merged);
-          window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: merged }));
+          filtered.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          cacheOrdersLocally(filtered);
+          window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: filtered }));
         } else if (payload.type === "bookings" && Array.isArray(payload.data)) {
           const deleted = getLocallyDeletedIds("bookings");
-          let current: AtelierBooking[] = [];
-          try {
-            const raw = JSON.parse(localStorage.getItem("hos_atelier_bookings") || "[]");
-            if (Array.isArray(raw)) current = raw.filter((b: any) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber));
-          } catch {}
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            payload.data,
-            deleted,
-            (b: any) => b.id,
-            (b: any) => b.bookingNumber
+          const filtered = payload.data.filter(
+            (b: any) => b && !deleted.has(b.id) && !deleted.has(b.bookingNumber)
           );
-          merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          localStorage.setItem("hos_atelier_bookings", JSON.stringify(merged));
-          window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: merged }));
+          filtered.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
+          window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: filtered }));
         }
       } catch (err) {
         console.warn("SSE sync payload parse notice:", err);
       }
+    };
+
+    sseSource.addEventListener("sync", (event: MessageEvent) => {
+      if (event.data) handlePayload(event.data);
     });
+
+    sseSource.onmessage = (event: MessageEvent) => {
+      if (event.data) handlePayload(event.data);
+    };
 
     sseSource.onerror = () => {
       if (sseSource) {
@@ -433,7 +430,7 @@ export function initServerLiveSync() {
       clearTimeout(sseReconnectTimer);
       sseReconnectTimer = setTimeout(() => {
         initServerLiveSync();
-      }, 4000);
+      }, 3000);
     };
   } catch (err) {
     console.warn("SSE init notice:", err);
@@ -640,12 +637,6 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (res.ok) {
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
-          const localContent = getCachedSiteContent();
-          const localTime = new Date(localContent?.updatedAt || 0).getTime();
-          const serverTime = new Date(serverData.updatedAt || 0).getTime();
-          if (localTime > serverTime && localContent) {
-            return;
-          }
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
           if (Array.isArray(serverData.heroSlides)) {
             merged.heroSlides = serverData.heroSlides;
@@ -673,12 +664,6 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       if (staticRes.ok) {
         const staticData = await staticRes.json();
         if (staticData && typeof staticData === "object" && Object.keys(staticData).length > 0) {
-          const localContent = getCachedSiteContent();
-          const localTime = new Date(localContent?.updatedAt || 0).getTime();
-          const staticTime = new Date(staticData.updatedAt || 0).getTime();
-          if (localTime > staticTime && localContent) {
-            return;
-          }
           const merged: SiteContent = { ...defaultSiteContent, ...staticData };
           if (Array.isArray(staticData.heroSlides) && staticData.heroSlides.length > 0) {
             merged.heroSlides = staticData.heroSlides;
@@ -756,8 +741,24 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
   };
 
   const handleBroadcastMessage = (event: MessageEvent) => {
-    if (event.data?.type === "site_content") {
-      fetchLiveSiteContent();
+    if (event.data?.type === "site_content" || event.data?.type === "siteContent") {
+      if (event.data.data && typeof event.data.data === "object") {
+        const merged: SiteContent = { ...defaultSiteContent, ...event.data.data };
+        if (Array.isArray(event.data.data.heroSlides)) {
+          merged.heroSlides = event.data.data.heroSlides;
+        }
+        if (Array.isArray(event.data.data.features)) {
+          merged.features = event.data.data.features;
+        }
+        if (Array.isArray(event.data.data.trustBadges)) {
+          merged.trustBadges = event.data.data.trustBadges;
+        }
+        currentContent = merged;
+        cacheSiteContentLocally(merged);
+        callback(merged);
+      } else {
+        fetchLiveSiteContent();
+      }
     }
   };
 
@@ -946,7 +947,17 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
 
   const handleBroadcastMessage = (event: MessageEvent) => {
     if (event.data?.type === "categories") {
-      fetchLiveCategories();
+      if (Array.isArray(event.data.data)) {
+        const deleted = getLocallyDeletedIds("categories");
+        const filtered = event.data.data.filter(
+          (c: any) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)
+        );
+        filtered.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        cacheCategoriesLocally(filtered);
+        callback(filtered);
+      } else {
+        fetchLiveCategories();
+      }
     }
   };
 
@@ -1163,7 +1174,16 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   // 5. BroadcastChannel handler for 0ms cross-tab & cross-window updates
   const handleBroadcastMessage = (event: MessageEvent) => {
     if (event.data?.type === "products") {
-      fetchLiveProducts();
+      if (Array.isArray(event.data.data)) {
+        const deleted = getLocallyDeletedIds("products");
+        const normalized = event.data.data
+          .map(ensureProductVariants)
+          .filter((p: any) => p && p.id && !deleted.has(p.id));
+        cacheProductsLocally(normalized);
+        callback(normalized);
+      } else {
+        fetchLiveProducts();
+      }
     }
   };
 
