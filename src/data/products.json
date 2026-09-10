@@ -276,5 +276,163 @@
         "inStock": true
       }
     ]
+  },
+  {
+    "id": "hos-006",
+    "fabricType": "Premium Pure Malai Silk Jacquard",
+    "originalPrice": "₹2500",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "image": "/uploads/hos-006-img-0-1788707076776-154.jpg",
+    "activeWishlist": false,
+    "name": "Reyna Phiran",
+    "hoverImage": "/uploads/hos-006-hover-1788707076775-936.jpg",
+    "color": "Yellow / Mustard Gold",
+    "savings": "Save 8.2%",
+    "reviews": "31",
+    "badges": [
+      "Bestseller",
+      "Alia Cut"
+    ],
+    "images": [
+      "/uploads/hos-006-img-0-1788707076776-154.jpg"
+    ],
+    "updatedAt": "2026-09-06T11:34:16.356Z",
+    "createdAt": "2026-09-03T06:47:38.533Z",
+    "inStock": true,
+    "rating": "5.0",
+    "description": "Premium Pure Malai Silk Jacquard solid featuring intricate handwork and delicate lace details on the sleeves and daman.",
+    "price": "₹2295",
+    "category": "Daily & College Wear",
+    "tags": [
+      "Party Wear",
+      "Festive Wear"
+    ],
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-006-0",
+        "colorName": "Yellow / Mustard Gold",
+        "colorHex": "#0d4f3c",
+        "price": "₹2295",
+        "originalPrice": "₹2500",
+        "savings": "Save 8.2%",
+        "description": "Premium Pure Malai Silk Jacquard solid featuring intricate handwork and delicate lace details on the sleeves and daman.",
+        "fabricType": "Premium Pure Malai Silk Jacquard",
+        "images": [
+          "/uploads/hos-006-img-0-1788707076776-154.jpg"
+        ],
+        "image": "/uploads/hos-006-img-0-1788707076776-154.jpg",
+        "hoverImage": "/uploads/hos-006-hover-1788707076775-936.jpg",
+        "inStock": true
+      }
+    ]
+  },
+  {
+    "id": "hos-007",
+    "price": "₹2295",
+    "reviews": "24",
+    "savings": "Save 8.2%",
+    "images": [
+      "/uploads/hos-007-img-0-1788707076778-220.jpg"
+    ],
+    "category": "Daily & College Wear",
+    "badges": [
+      "Bestseller",
+      "Pure Handloom"
+    ],
+    "inStock": true,
+    "fabricType": "Banarasi Katan",
+    "name": "Reyna Phiran",
+    "hoverImage": "/uploads/hos-007-hover-1788707076777-774.jpg",
+    "originalPrice": "₹2500",
+    "activeWishlist": false,
+    "description": "Authentic Banarasi Katan Handloom Silk with Zardozi Borders and Regal Zari Pallu",
+    "tags": [
+      "Festive Wear",
+      "Seasonal Drop"
+    ],
+    "color": "Royal Crimson",
+    "rating": "4.9",
+    "updatedAt": "2026-09-06T11:34:37.141Z",
+    "createdAt": "2026-09-03T06:47:39.103Z",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "image": "/uploads/hos-007-img-0-1788707076778-220.jpg",
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-007-0",
+        "colorName": "Royal Crimson",
+        "colorHex": "#0d4f3c",
+        "price": "₹2295",
+        "originalPrice": "₹2500",
+        "savings": "Save 8.2%",
+        "description": "Authentic Banarasi Katan Handloom Silk with Zardozi Borders and Regal Zari Pallu",
+        "fabricType": "Banarasi Katan",
+        "images": [
+          "/uploads/hos-007-img-0-1788707076778-220.jpg"
+        ],
+        "image": "/uploads/hos-007-img-0-1788707076778-220.jpg",
+        "hoverImage": "/uploads/hos-007-hover-1788707076777-774.jpg",
+        "inStock": true
+      }
+    ]
+  },
+  {
+    "id": "hos-008",
+    "originalPrice": "₹2,499",
+    "activeWishlist": false,
+    "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
+    "badges": [
+      "Pure Mulmul",
+      "Summer Edit"
+    ],
+    "price": "₹1,799",
+    "fabricType": "Pure Mulmul",
+    "tags": [
+      "Cotton Suits",
+      "Daily Wear Suits"
+    ],
+    "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
+    "savings": "Save 28%",
+    "reviews": "26",
+    "name": "Sage Garden Mulmul Breezy Stitched Kurti Pant",
+    "updatedAt": "2026-09-06T11:34:22.383Z",
+    "createdAt": "2026-09-03T06:47:33.123Z",
+    "category": "Cotton Suits",
+    "rating": "4.8",
+    "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "inStock": true,
+    "color": "Sage Green",
+    "images": [
+      "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
+    ],
+    "colorHex": "#0d4f3c",
+    "colorVariants": [
+      {
+        "id": "var-hos-008-0",
+        "colorName": "Sage Green",
+        "colorHex": "#0d4f3c",
+        "price": "₹1,799",
+        "originalPrice": "₹2,499",
+        "savings": "Save 28%",
+        "description": "100% Organic Mulmul Cotton with Hand Block Print & Straight Fit Cigarette Pants",
+        "fabricType": "Pure Mulmul",
+        "images": [
+          "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+          "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85"
+        ],
+        "image": "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?auto=format&fit=crop&w=900&q=85",
+        "hoverImage": "https://images.unsplash.com/photo-1583391733975-27a928923a1a?auto=format&fit=crop&w=900&q=85",
+        "inStock": true
+      }
+    ]
   }
 ]

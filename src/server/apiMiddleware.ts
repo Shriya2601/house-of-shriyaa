@@ -113,7 +113,7 @@ function readDataFile(filename: string, fallback: any = []): any {
 }
 
 const DEFAULT_DELETED_REGISTRY: Record<string, string[]> = {
-  products: ["hos-006", "hos-007", "hos-008", "Reyna Phiran", "Sage Garden Mulmul Breezy Stitched Kurti Pant"],
+  products: [],
   orders: ["ord_hos_test_verify_4911", "HOS-TEST-VERIFY-4911", "test-order-1", "HOS-TEST-1", "test", "HOS-TEST"],
   categories: [],
   bookings: [],
@@ -139,12 +139,23 @@ function recordDeletedId(type: string, id: string): void {
   syncDataFile(filename, Array.from(set));
 }
 
-function unrecordDeletedId(type: string, id: string): void {
-  if (!id) return;
+function unrecordDeletedId(type: string, idOrName: string): void {
+  if (!idOrName) return;
   const filename = `deleted_${type}.json`;
   const set = getDeletedIds(type);
-  if (set.has(id)) {
-    set.delete(id);
+  let changed = false;
+  if (set.has(idOrName)) {
+    set.delete(idOrName);
+    changed = true;
+  }
+  const clean = idOrName.trim().toLowerCase();
+  for (const item of Array.from(set)) {
+    if (typeof item === "string" && item.trim().toLowerCase() === clean) {
+      set.delete(item);
+      changed = true;
+    }
+  }
+  if (changed) {
     syncDataFile(filename, Array.from(set));
   }
 }
@@ -560,6 +571,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                   products.unshift(product);
                 }
                 unrecordDeletedId("products", product.id);
+                if (product.name) unrecordDeletedId("products", product.name);
+                if (product.sku) unrecordDeletedId("products", product.sku);
                 writeProducts(products);
                 res.setHeader("Content-Type", "application/json");
                 res.statusCode = 200;

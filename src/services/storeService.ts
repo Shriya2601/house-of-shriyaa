@@ -197,7 +197,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v7_2026_09_11_cleaned";
+const APP_CACHE_VERSION = "hos_v9_2026_09_12_fix_upload";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -206,19 +206,14 @@ if (typeof window !== "undefined") {
       localStorage.removeItem(SITE_CONTENT_CACHE_KEY);
       localStorage.removeItem(CATEGORIES_CACHE_KEY);
       localStorage.removeItem(ORDERS_CACHE_KEY);
+      localStorage.removeItem("hos_deleted_products");
       localStorage.setItem("hos_app_cache_version", APP_CACHE_VERSION);
     }
   } catch {}
 }
 
 export const DEFAULT_PERMANENTLY_DELETED: Record<string, string[]> = {
-  products: [
-    "hos-006",
-    "hos-007",
-    "hos-008",
-    "Reyna Phiran",
-    "Sage Garden Mulmul Breezy Stitched Kurti Pant",
-  ],
+  products: [],
   orders: [
     "ord_hos_test_verify_4911",
     "HOS-TEST-VERIFY-4911",
@@ -259,12 +254,23 @@ export function recordLocallyDeletedId(type: string, id: string): void {
   } catch {}
 }
 
-export function unrecordLocallyDeletedId(type: string, id: string): void {
-  if (typeof window === "undefined" || !id) return;
+export function unrecordLocallyDeletedId(type: string, idOrName: string): void {
+  if (typeof window === "undefined" || !idOrName) return;
   try {
     const current = getLocallyDeletedIds(type);
-    if (current.has(id)) {
-      current.delete(id);
+    let changed = false;
+    if (current.has(idOrName)) {
+      current.delete(idOrName);
+      changed = true;
+    }
+    const clean = idOrName.trim().toLowerCase();
+    for (const item of Array.from(current)) {
+      if (typeof item === "string" && item.trim().toLowerCase() === clean) {
+        current.delete(item);
+        changed = true;
+      }
+    }
+    if (changed) {
       localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(Array.from(current)));
     }
   } catch {}
@@ -1356,6 +1362,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean; product?: Product }> {
   const id = product.id || `hos-${Date.now()}`;
   unrecordLocallyDeletedId("products", id);
+  if (product.name) unrecordLocallyDeletedId("products", product.name);
+  if ((product as any).sku) unrecordLocallyDeletedId("products", (product as any).sku);
 
   // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
   const cleanImage = applyImageCacheBuster(product.image);
@@ -2599,6 +2607,7 @@ export const AUTHORIZED_ADMIN_EMAILS = [
   "houseofshriya.in@gmail.com",
   "houseofshriyaa@gmail.com",
   "admin@houseofshriya.in",
+  "pshriya2626@gmail.com",
   "kshriya2626@gmail.com",
   "shriyapusha01@gmail.com",
   "shriyapusha2001@gmail.com",

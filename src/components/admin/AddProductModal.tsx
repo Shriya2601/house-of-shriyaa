@@ -57,19 +57,28 @@ async function compressImageFile(
 ): Promise<{ dataUrl: string; sizeText: string }> {
   return new Promise((resolve, reject) => {
     const isImage =
-      (file.type && file.type.startsWith("image/")) ||
-      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+      !file.type ||
+      file.type.startsWith("image/") ||
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg|heic|heif)$/i.test(file.name);
 
     if (!isImage) {
-      reject(new Error("Please choose a valid image file (JPG, PNG, WebP, or AVIF)."));
+      reject(new Error("Please choose a valid photo (JPG, PNG, WebP, AVIF, or HEIC)."));
       return;
     }
 
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Unable to read photo from your device."));
     reader.onload = (e) => {
+      const raw = e.target?.result as string;
+      if (!raw) {
+        reject(new Error("Empty image file."));
+        return;
+      }
       const img = new Image();
-      img.onerror = () => reject(new Error("Failed to process image format."));
+      // If browser Image element fails to decode (e.g. raw camera HEIC on some platforms), fallback gracefully to dataUrl
+      img.onerror = () => {
+        resolve({ dataUrl: raw, sizeText: formatFileSize(file.size) });
+      };
       img.onload = () => {
         try {
           const canvas = document.createElement("canvas");
@@ -89,7 +98,6 @@ async function compressImageFile(
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
-            const raw = e.target?.result as string;
             resolve({ dataUrl: raw, sizeText: formatFileSize(file.size) });
             return;
           }
@@ -102,11 +110,10 @@ async function compressImageFile(
           const approxBytes = Math.round((compressed.length * 3) / 4);
           resolve({ dataUrl: compressed, sizeText: formatFileSize(approxBytes) });
         } catch {
-          const raw = e.target?.result as string;
           resolve({ dataUrl: raw, sizeText: formatFileSize(file.size) });
         }
       };
-      img.src = e.target?.result as string;
+      img.src = raw;
     };
     reader.readAsDataURL(file);
   });
@@ -560,7 +567,7 @@ export default function AddProductModal({
                   <input
                     ref={mainFileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/jpg,image/avif"
+                    accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -672,7 +679,7 @@ export default function AddProductModal({
                   <input
                     ref={hoverFileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/jpg,image/avif"
+                    accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -773,7 +780,7 @@ export default function AddProductModal({
                   <input
                     ref={extraFileInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    accept="image/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
