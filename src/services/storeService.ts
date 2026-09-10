@@ -196,6 +196,20 @@ const PRODUCTS_CACHE_KEY = "hos_products_cache";
 const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
+// Cache version check: forces mobile & desktop browsers to purge stale local storage caches
+const APP_CACHE_VERSION = "hos_v4_2026_09_10";
+if (typeof window !== "undefined") {
+  try {
+    const savedVer = localStorage.getItem("hos_app_cache_version");
+    if (savedVer !== APP_CACHE_VERSION) {
+      localStorage.removeItem(PRODUCTS_CACHE_KEY);
+      localStorage.removeItem(SITE_CONTENT_CACHE_KEY);
+      localStorage.removeItem(CATEGORIES_CACHE_KEY);
+      localStorage.setItem("hos_app_cache_version", APP_CACHE_VERSION);
+    }
+  } catch {}
+}
+
 // Local deleted items tracking to prevent stale snapshots/re-fetches from reviving deleted items
 export function getLocallyDeletedIds(type: string): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -701,15 +715,6 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         if (snap.exists()) {
           const fsData = snap.data() as SiteContent;
           if (fsData && typeof fsData === "object") {
-            const localContent = getCachedSiteContent();
-            const localTime = new Date(localContent?.updatedAt || 0).getTime();
-            const fsTime = new Date(fsData.updatedAt || 0).getTime();
-
-            // Do not let older/stale remote snapshot overwrite newer local updates
-            if (localTime > fsTime && localContent) {
-              return;
-            }
-
             const merged: SiteContent = { ...defaultSiteContent, ...fsData };
             if (Array.isArray(fsData.heroSlides) && fsData.heroSlides.length > 0) {
               merged.heroSlides = fsData.heroSlides;
@@ -861,18 +866,11 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
-          const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
-          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            filtered,
-            deleted,
-            (c: any) => c.id,
-            (c: any) => c.slug || c.name
-          );
-          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(merged);
-          callback(merged);
+          const filtered = data
+            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
+            .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(filtered);
+          callback(filtered);
           return;
         }
       }
@@ -887,18 +885,11 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         const data = await staticRes.json();
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
-          const filtered = data.filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)));
-          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            filtered,
-            deleted,
-            (c: any) => c.id,
-            (c: any) => c.slug || c.name
-          );
-          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(merged);
-          callback(merged);
+          const filtered = data
+            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
+            .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          cacheCategoriesLocally(filtered);
+          callback(filtered);
         }
       }
     } catch {}
@@ -925,20 +916,13 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
           const deleted = getLocallyDeletedIds("categories");
           const fsList = snapshot.docs
             .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
-            .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
+            .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name))
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-          const current = getCachedCategories().filter((c) => !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name));
-          const merged = mergeEntitiesByTimestamp(
-            current,
-            fsList,
-            deleted,
-            (c: any) => c.id,
-            (c: any) => c.slug || c.name
-          );
-
-          merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(merged);
-          callback(merged);
+          if (fsList.length > 0) {
+            cacheCategoriesLocally(fsList);
+            callback(fsList);
+          }
         }
       },
       () => {}
@@ -1100,10 +1084,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id));
-          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
-          cacheProductsLocally(merged);
-          callback(merged);
+          cacheProductsLocally(normalized);
+          callback(normalized);
           return;
         }
       }
@@ -1121,10 +1103,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = staticData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id));
-          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id);
-          cacheProductsLocally(merged);
-          callback(merged);
+          cacheProductsLocally(normalized);
+          callback(normalized);
         }
       }
     } catch {}
@@ -1221,12 +1201,9 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
             .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
             .filter((p) => p && p.id && !deleted.has(p.id));
 
-          const current = getCachedProducts().filter((p) => p && p.id && !deleted.has(p.id));
-          const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (p) => p.id);
-
-          if (merged.length > 0) {
-            cacheProductsLocally(merged);
-            callback(merged);
+          if (fsList.length > 0) {
+            cacheProductsLocally(fsList);
+            callback(fsList);
           }
         }
       },

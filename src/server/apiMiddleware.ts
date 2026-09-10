@@ -75,23 +75,38 @@ function readDataFile(filename: string, fallback: any = []): any {
     path.resolve(process.cwd(), "src/data", filename),
     path.resolve(process.cwd(), "dist/data", filename),
   ];
+  let newestTarget: string | null = null;
+  let newestMtime = -1;
+
   for (const target of targets) {
     if (fs.existsSync(target)) {
       try {
         const stat = fs.statSync(target);
-        const cached = memoryDataCache[filename];
-        if (cached && cached.mtimeMs >= stat.mtimeMs) {
-          return cached.data;
-        }
-        const raw = fs.readFileSync(target, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (parsed !== undefined && parsed !== null) {
-          memoryDataCache[filename] = { data: parsed, mtimeMs: stat.mtimeMs };
-          return parsed;
+        if (stat.mtimeMs > newestMtime) {
+          newestMtime = stat.mtimeMs;
+          newestTarget = target;
         }
       } catch {}
     }
   }
+
+  if (newestTarget && newestMtime > -1) {
+    const cached = memoryDataCache[filename];
+    if (cached && cached.mtimeMs >= newestMtime) {
+      return cached.data;
+    }
+    try {
+      const raw = fs.readFileSync(newestTarget, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed !== undefined && parsed !== null) {
+        memoryDataCache[filename] = { data: parsed, mtimeMs: newestMtime };
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[API] Error reading ${newestTarget}:`, err);
+    }
+  }
+
   const cached = memoryDataCache[filename];
   if (cached) return cached.data;
   return fallback;
