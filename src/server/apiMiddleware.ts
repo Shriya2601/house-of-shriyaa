@@ -83,9 +83,34 @@ function readDataFile(filename: string, fallback: any = []): any {
   return fallback;
 }
 
+function getDeletedIds(type: string): Set<string> {
+  const filename = `deleted_${type}.json`;
+  const list = readDataFile(filename, []);
+  return new Set(Array.isArray(list) ? list : []);
+}
+
+function recordDeletedId(type: string, id: string): void {
+  if (!id) return;
+  const filename = `deleted_${type}.json`;
+  const set = getDeletedIds(type);
+  set.add(id);
+  syncDataFile(filename, Array.from(set));
+}
+
+function unrecordDeletedId(type: string, id: string): void {
+  if (!id) return;
+  const filename = `deleted_${type}.json`;
+  const set = getDeletedIds(type);
+  if (set.has(id)) {
+    set.delete(id);
+    syncDataFile(filename, Array.from(set));
+  }
+}
+
 function readProducts(): any[] {
   const list = readDataFile("products.json", []);
-  return Array.isArray(list) ? list : [];
+  const deleted = getDeletedIds("products");
+  return (Array.isArray(list) ? list : []).filter((p) => p && p.id && !deleted.has(p.id));
 }
 
 function writeProducts(products: any[]): void {
@@ -115,7 +140,10 @@ function writeSiteContent(content: any): void {
 
 function readOrdersList(): any[] {
   const list = readDataFile("orders.json", []);
-  return Array.isArray(list) ? list : [];
+  const deleted = getDeletedIds("orders");
+  return (Array.isArray(list) ? list : []).filter(
+    (o) => o && (!o.id || !deleted.has(o.id)) && (!o.orderNumber || !deleted.has(o.orderNumber))
+  );
 }
 
 function writeOrdersList(orders: any[]): void {
@@ -125,7 +153,10 @@ function writeOrdersList(orders: any[]): void {
 
 function readBookingsList(): any[] {
   const list = readDataFile("bookings.json", []);
-  return Array.isArray(list) ? list : [];
+  const deleted = getDeletedIds("bookings");
+  return (Array.isArray(list) ? list : []).filter(
+    (b) => b && (!b.id || !deleted.has(b.id)) && (!b.bookingNumber || !deleted.has(b.bookingNumber))
+  );
 }
 
 function writeBookingsList(bookings: any[]): void {

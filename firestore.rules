@@ -30,7 +30,8 @@ service cloud.firestore {
         request.auth.token.email == 'shriya14301@gmail.com' ||
         request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
         request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
-        request.auth.token.email == 'hello.kohoo@gmail.com'
+        request.auth.token.email == 'hello.kohoo@gmail.com' ||
+        request.auth.token.email == 'tiarathakur93@gmail.com'
       );
     }
 
