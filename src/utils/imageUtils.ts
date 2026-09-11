@@ -2,6 +2,7 @@
  * Image URL normalization utility for House of Shriya.
  * Converts external share links (Kommodo, Google Drive, Dropbox) into direct, embeddable image URLs.
  */
+import type React from "react";
 
 const KNOWN_KOMMODO_MAP: Record<string, string> = {
   "eA9kgNNZCuEDbWDBS8JI": "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
@@ -40,13 +41,18 @@ export function normalizeImageUrl(url?: string | null, fallback = ""): string {
     return trimmed.replace("dl=0", "raw=1");
   }
 
-  // Clean /public/ prefix if stored incorrectly
+  // Clean /public/ or public/ prefix if stored incorrectly
   if (trimmed.startsWith("/public/")) {
     trimmed = trimmed.replace("/public", "");
-  } else if (
+  } else if (trimmed.startsWith("public/")) {
+    trimmed = "/" + trimmed.replace(/^public\//, "");
+  }
+
+  if (
     !trimmed.startsWith("http://") &&
     !trimmed.startsWith("https://") &&
     !trimmed.startsWith("data:") &&
+    !trimmed.startsWith("blob:") &&
     !trimmed.startsWith("/")
   ) {
     trimmed = `/${trimmed}`;
@@ -54,3 +60,92 @@ export function normalizeImageUrl(url?: string | null, fallback = ""): string {
 
   return trimmed;
 }
+
+export function handleImageError(
+  e: React.SyntheticEvent<HTMLImageElement, Event>,
+  fallback = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80"
+) {
+  const target = e.currentTarget;
+  // If image has ?v= cache-busting timestamp, retry without ?v=
+  if (target.src && target.src.includes("?v=") && !target.dataset.retried) {
+    target.dataset.retried = "true";
+    target.src = target.src.split("?")[0];
+    return;
+  }
+  if (!target.src.includes("unsplash.com") && target.src !== fallback) {
+    target.src = fallback;
+  }
+}
+
+export function getProductDisplayImage(
+  product?: {
+    image?: string;
+    hoverImage?: string;
+    images?: string[];
+    colorVariants?: Array<{ image?: string; hoverImage?: string; images?: string[] }>;
+  } | null,
+  fallback = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80"
+): string {
+  if (!product) return fallback;
+  const raw =
+    product.image ||
+    (Array.isArray(product.images) && product.images.find((img) => img && typeof img === "string" && img.trim())) ||
+    product.colorVariants?.[0]?.image ||
+    (Array.isArray(product.colorVariants?.[0]?.images) && product.colorVariants[0].images.find((img) => img && typeof img === "string" && img.trim())) ||
+    "";
+  return normalizeImageUrl(raw, fallback);
+}
+
+export function getProductHoverImage(
+  product?: {
+    image?: string;
+    hoverImage?: string;
+    images?: string[];
+    colorVariants?: Array<{ image?: string; hoverImage?: string; images?: string[] }>;
+  } | null,
+  fallback = ""
+): string {
+  if (!product) return fallback;
+  const main = getProductDisplayImage(product, "");
+  const raw =
+    (product.hoverImage && product.hoverImage !== product.image ? product.hoverImage : null) ||
+    (Array.isArray(product.images) && product.images.length > 1 ? product.images[1] : null) ||
+    product.colorVariants?.[0]?.hoverImage ||
+    (Array.isArray(product.colorVariants?.[0]?.images) && product.colorVariants[0].images.length > 1 ? product.colorVariants[0].images[1] : null) ||
+    main;
+  return normalizeImageUrl(raw, fallback || main);
+}
+
+export function getProductGalleryImages(
+  product?: {
+    image?: string;
+    hoverImage?: string;
+    images?: string[];
+    colorVariants?: Array<{ image?: string; hoverImage?: string; images?: string[] }>;
+  } | null
+): string[] {
+  if (!product) return [];
+  const list: string[] = [];
+  const add = (u?: string | null) => {
+    if (!u || typeof u !== "string") return;
+    const clean = normalizeImageUrl(u);
+    if (clean && !list.includes(clean)) list.push(clean);
+  };
+
+  add(product.image);
+  if (Array.isArray(product.images)) {
+    product.images.forEach(add);
+  }
+  add(product.hoverImage);
+
+  if (Array.isArray(product.colorVariants)) {
+    for (const v of product.colorVariants) {
+      add(v.image);
+      if (Array.isArray(v.images)) v.images.forEach(add);
+      add(v.hoverImage);
+    }
+  }
+
+  return list;
+}
+

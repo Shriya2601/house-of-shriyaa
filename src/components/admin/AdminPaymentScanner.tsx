@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
+import { normalizeImageUrl } from "../../utils/imageUtils";
 
 interface AdminPaymentScannerProps {
   showToast: (msg: string, type?: "success" | "error") => void;
@@ -213,7 +214,7 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
             <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-stone-200">
               <div className="bg-white p-2 rounded-lg border border-stone-300 shrink-0 shadow-xs">
                 <img
-                  src={activeScanner}
+                  src={normalizeImageUrl(activeScanner, fallbackQr)}
                   alt="House of Shriya Official Scanner"
                   className="w-32 h-32 object-contain rounded"
                   onError={(e) => {

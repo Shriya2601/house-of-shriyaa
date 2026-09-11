@@ -39,6 +39,7 @@ import {
 } from "./Index";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
+import { normalizeImageUrl } from "../utils/imageUtils";
 
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
 
@@ -111,7 +112,7 @@ export default function ProductDetails() {
   const currentColorVariant = availableVariants[selectedColorIndex] || availableVariants[0];
 
   // Gallery images strictly for the selected color variant!
-  const productImages = useMemo(() => {
+  const rawProductImages = useMemo(() => {
     if (!currentColorVariant) return [product?.image || FALLBACK_IMAGE];
 
     if (selectedColorIndex === 0 && product?.image) {
@@ -152,6 +153,10 @@ export default function ProductDetails() {
     // Secondary variants without photos yet show the default fallback, NOT variant 0's photos
     return [FALLBACK_IMAGE];
   }, [currentColorVariant, selectedColorIndex, product]);
+
+  const productImages = useMemo(() => {
+    return rawProductImages.map((img) => normalizeImageUrl(img, FALLBACK_IMAGE));
+  }, [rawProductImages]);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 

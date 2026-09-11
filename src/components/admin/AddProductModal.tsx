@@ -15,6 +15,13 @@ import {
 } from "lucide-react";
 import { Product } from "../../types";
 import { saveProduct } from "../../services/storeService";
+import {
+  normalizeImageUrl,
+  handleImageError,
+  getProductDisplayImage,
+  getProductHoverImage,
+  getProductGalleryImages,
+} from "../../utils/imageUtils";
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -26,10 +33,11 @@ interface AddProductModalProps {
 const SAMPLE_IMAGES = [
   "/uploads/hos-001-main-1788707076761-551.webp",
   "/uploads/hos-002-main-1788707076764-431.webp",
-  "/uploads/hos-003-main-1788707076767-463.webp",
-  "/uploads/hos-004-main-1788707076770-520.webp",
-  "/uploads/hos-005-main-1788707076772-527.webp",
-  "/uploads/hos-006-main-1788707076775-533.webp",
+  "/uploads/hos-003-main-1788707076767-726.webp",
+  "/uploads/hos-004-main-1788707076769-360.webp",
+  "/uploads/hos-005-main-1788707076772-389.webp",
+  "/uploads/hos-006-main-1788707076774-649.jpg",
+  "/uploads/hos-007-main-1788707076777-561.jpg",
 ];
 
 const STANDARD_CATEGORIES = [
@@ -183,17 +191,19 @@ export default function AddProductModal({
       setColor(productToEdit.color || "Royal Emerald");
       setColorHex(productToEdit.colorHex || "#0d4f3c");
       setDescription(productToEdit.description || "");
-      setImage(productToEdit.image || "");
-      setHoverImage(productToEdit.hoverImage || productToEdit.image || "");
-      const allImgs = Array.isArray(productToEdit.images) ? productToEdit.images.filter(Boolean) : [];
-      const extras = allImgs.filter(
-        (u) => u !== productToEdit.image && u !== productToEdit.hoverImage
-      );
+
+      const initialMain = getProductDisplayImage(productToEdit);
+      const initialHover = getProductHoverImage(productToEdit);
+      const gallery = getProductGalleryImages(productToEdit);
+      const extras = gallery.filter((u) => u !== initialMain && u !== initialHover);
+
+      setImage(initialMain);
+      setHoverImage(initialHover || initialMain);
       setExtraImages(extras);
       setInStock(productToEdit.inStock !== false);
       setSelectedBadge(productToEdit.badges?.[0] || "New Drop");
-      setMainImageDetails(productToEdit.image ? { name: "Current Product Photo", size: "Ready" } : null);
-      setHoverImageDetails(productToEdit.hoverImage ? { name: "Current Hover Photo", size: "Ready" } : null);
+      setMainImageDetails(initialMain ? { name: "Current Product Photo", size: "Ready" } : null);
+      setHoverImageDetails(initialHover ? { name: "Current Hover Photo", size: "Ready" } : null);
     } else {
       // Reset form
       setName("");
@@ -580,15 +590,10 @@ export default function AddProductModal({
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
                         <img
-                          src={image}
+                          src={normalizeImageUrl(image)}
                           alt="Main Suit"
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!target.src.includes("unsplash")) {
-                              target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
-                            }
-                          }}
+                          onError={handleImageError}
                         />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -688,27 +693,26 @@ export default function AddProductModal({
                     }}
                   />
 
-                  {hoverImage && hoverImage !== image ? (
+                  {hoverImage ? (
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
                         <img
-                          src={hoverImage}
+                          src={normalizeImageUrl(hoverImage)}
                           alt="Hover Detail"
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!target.src.includes("unsplash")) {
-                              target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
-                            }
-                          }}
+                          onError={handleImageError}
                         />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-stone-900 truncate">
-                          {hoverImageDetails?.name || "Secondary Angle / Embroidery Detail"}
+                          {hoverImageDetails?.name || "Hover Secondary Photo"}
                         </p>
                         <p className="text-[11px] text-stone-500">
-                          {hoverImageDetails?.size ? `Size: ${hoverImageDetails.size}` : "Ready"}
+                          {hoverImage === image
+                            ? "Matches primary (click Change to set distinct hover photo)"
+                            : hoverImageDetails?.size
+                            ? `Size: ${hoverImageDetails.size}`
+                            : "Ready"}
                         </p>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
@@ -796,7 +800,12 @@ export default function AddProductModal({
                           key={idx}
                           className="relative group w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shadow-2xs"
                         >
-                          <img src={extraImg} alt={`Gallery ${idx + 1}`} className="w-full h-full object-cover" />
+                          <img
+                            src={normalizeImageUrl(extraImg)}
+                            alt={`Gallery ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={handleImageError}
+                          />
                           <button
                             type="button"
                             onClick={() => handleRemoveExtraImage(idx)}
@@ -848,12 +857,10 @@ export default function AddProductModal({
                     />
                     {image && (
                       <img
-                        src={image}
+                        src={normalizeImageUrl(image)}
                         alt="Preview"
                         className="w-10 h-10 object-cover rounded-md border border-stone-200 shrink-0"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = "none";
-                        }}
+                        onError={handleImageError}
                       />
                     )}
                   </div>
@@ -896,7 +903,12 @@ export default function AddProductModal({
                         : "border-stone-200 opacity-70 hover:opacity-100"
                     }`}
                   >
-                    <img src={imgUrl} alt={`Sample ${i}`} className="w-full h-full object-cover" />
+                    <img
+                      src={normalizeImageUrl(imgUrl)}
+                      alt={`Sample ${i}`}
+                      className="w-full h-full object-cover"
+                      onError={handleImageError}
+                    />
                     {image === imgUrl && (
                       <div className="absolute inset-0 bg-[#0d4f3c]/40 flex items-center justify-center text-white">
                         <Check size={14} />

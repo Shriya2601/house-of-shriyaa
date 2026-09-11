@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Product } from "../../types";
 import { deleteProduct, saveProduct } from "../../services/storeService";
+import { getProductDisplayImage, handleImageError, normalizeImageUrl } from "../../utils/imageUtils";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -321,13 +322,7 @@ export default function AdminProductManager({
               </thead>
               <tbody className="divide-y divide-stone-100 text-stone-700">
                 {filteredProducts.map((p) => {
-                  const rawImg = p.image || p.images?.[0] || "";
-                  const displayImg =
-                    rawImg.startsWith("/") || rawImg.startsWith("http") || rawImg.startsWith("data:")
-                      ? rawImg
-                      : rawImg
-                      ? `/${rawImg}`
-                      : "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
+                  const displayImg = getProductDisplayImage(p);
 
                   return (
                     <tr
@@ -342,13 +337,7 @@ export default function AdminProductManager({
                               src={displayImg}
                               alt={p.name}
                               className="w-11 h-11 object-cover rounded-lg border border-stone-200 bg-stone-100"
-                              onError={(e) => {
-                                const target = e.currentTarget;
-                                if (!target.src.includes("unsplash")) {
-                                  target.src =
-                                    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
-                                }
-                              }}
+                              onError={handleImageError}
                             />
                             <button
                               type="button"
