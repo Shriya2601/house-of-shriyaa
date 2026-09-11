@@ -10,12 +10,14 @@
     "originalPrice": "₹1000",
     "price": "₹750",
     "inStock": true,
-    "updatedAt": "2026-09-11T17:17:39.483Z",
+    "updatedAt": "2026-09-11T18:22:50.425Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
     "fabricType": "Satin ",
     "images": [
+      "/uploads/hos-001-main-1788707076761-551.webp",
+      "/uploads/test.png",
       "/uploads/hos-001-img-0-1788707076763-589.webp",
       "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
       "/uploads/hos-001-img-1-1788707076763-948.webp",
@@ -29,12 +31,12 @@
     ],
     "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
     "category": "Satin Wear",
-    "image": "/uploads/hos-001-img-0-1788707076763-589.webp",
+    "image": "/uploads/hos-001-main-1788707076761-551.webp",
     "sizes": [
       "Unstitched Suit"
     ],
     "description": "Indulge in royal sophistication with our Ivory & Royal Blue Floral Printed Satin Suit Set. Crafted from premium high-luster satin with intricate floral impressions and paired with a breezy mulmul dupatta.",
-    "name": "Ivory & Royal Blue Floral Satin Suit Set",
+    "name": "Ivory Blue Handloom Satin Printed Unstitched Suit",
     "colorHex": "#0d4f3c",
     "colorVariants": [
       {
@@ -47,12 +49,14 @@
         "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
         "fabricType": "Satin ",
         "images": [
+          "/uploads/hos-001-main-1788707076761-551.webp",
+          "/uploads/test.png",
           "/uploads/hos-001-img-0-1788707076763-589.webp",
           "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
           "/uploads/hos-001-img-1-1788707076763-948.webp",
           "/uploads/hos-001-img-2-1788707076764-576.webp"
         ],
-        "image": "/uploads/hos-001-img-0-1788707076763-589.webp",
+        "image": "/uploads/hos-001-main-1788707076761-551.webp",
         "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
         "inStock": true
       }
