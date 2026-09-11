@@ -2530,6 +2530,16 @@ function Hero({ onPookie }: { onPookie: () => void }) {
   const { siteContent } = useStore();
   const [activeSlide, setActiveSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [, setForceTick] = useState(0);
+
+  // Instant storefront reactivity for live admin updates
+  useEffect(() => {
+    const handleUpdate = () => {
+      setForceTick((t) => t + 1);
+    };
+    window.addEventListener("hos-content-updated", handleUpdate);
+    return () => window.removeEventListener("hos-content-updated", handleUpdate);
+  }, []);
 
   const activeSlides = useMemo(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
@@ -2584,12 +2594,13 @@ function Hero({ onPookie }: { onPookie: () => void }) {
           <div className="hero-meta-pills"><BuilderText as="span" text="Pure Fabrics" /><BuilderText as="span" text="Unstitched Set" /><BuilderText as="span" text="100% handloom" /></div>
         </div>
         <div className="hero-grid">
-          <div className="hero-copy" key={slide.number}>
+          <div className="hero-copy" key={`hero_copy_${slideIndex}_${slide.title}_${slide.number}`}>
             <div data-editable="true" className="hero-eyebrow">
               <Sparkles size={13} />{" "}
               <BuilderText
                 as="span"
                 id={`hero_slide_${slideIndex}_eyebrow`}
+                key={`eyebrow_${slideIndex}_${slide.eyebrow}`}
                 fieldPath={`heroSlides[${slideIndex}].eyebrow`}
                 label="Hero Eyebrow"
                 text={slide.eyebrow}
@@ -2598,6 +2609,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
             <BuilderText
               as="p"
               id={`hero_slide_${slideIndex}_collection`}
+              key={`collection_${slideIndex}_${slide.collection}`}
               className="hero-collection"
               fieldPath={`heroSlides[${slideIndex}].collection`}
               label="Hero Collection"
@@ -2606,6 +2618,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
             <BuilderText
               as="h1"
               id={`hero_slide_${slideIndex}_title`}
+              key={`title_${slideIndex}_${slide.title}`}
               fieldPath={`heroSlides[${slideIndex}].title`}
               label="Hero Headline"
               type="heading"
@@ -2614,6 +2627,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
             <BuilderText
               as="p"
               id={`hero_slide_${slideIndex}_desc`}
+              key={`desc_${slideIndex}_${slide.description}`}
               className="hero-description"
               fieldPath={`heroSlides[${slideIndex}].description`}
               label="Hero Description"
@@ -2710,7 +2724,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
               <button data-editable="true" className="save-pin">
                 <Bookmark size={14} /> <BuilderText as="span" text="Save Pin" />
               </button>
-              <div className="hero-caption" key={`caption_${slideIndex}`}>
+              <div className="hero-caption" key={`caption_${slideIndex}_${slide.caption}_${slide.mood}`}>
                 <div>
                   <BuilderText as="strong" text="HOUSE OF SHRIYA COUTURE" />
                   <BuilderText as="span" text={`${slide.number} · ${slide.season}`} />
@@ -2718,6 +2732,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
                 <BuilderText
                   as="h3"
                   id={`hero_slide_${slideIndex}_caption`}
+                  key={`caption_h3_${slideIndex}_${slide.caption}`}
                   fieldPath={`heroSlides[${slideIndex}].caption`}
                   label="Hero Caption"
                   text={slide.caption}
@@ -2725,6 +2740,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
                 <BuilderText
                   as="p"
                   id={`hero_slide_${slideIndex}_mood`}
+                  key={`mood_${slideIndex}_${slide.mood}`}
                   fieldPath={`heroSlides[${slideIndex}].mood`}
                   label="Hero Mood"
                   text={`✦ Trending on Moodboard: ${slide.mood}`}

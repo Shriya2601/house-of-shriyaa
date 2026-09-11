@@ -746,6 +746,15 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
     const incomingTime = incoming.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
     const currentTime = currentContent?.updatedAt ? new Date(currentContent.updatedAt).getTime() : 0;
 
+    // Never overwrite populated heroSlides with empty array
+    if (
+      Array.isArray(currentContent?.heroSlides) &&
+      currentContent.heroSlides.length > 0 &&
+      (!Array.isArray(incoming.heroSlides) || incoming.heroSlides.length === 0)
+    ) {
+      incoming.heroSlides = currentContent.heroSlides;
+    }
+
     if (incomingTime >= currentTime || !currentContent?.updatedAt) {
       currentContent = incoming;
       cacheSiteContentLocally(incoming);
@@ -915,13 +924,13 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     updatedAt: timestamp,
   };
 
-  if (Array.isArray(sanitizedContent.heroSlides)) {
+  if (Array.isArray(sanitizedContent.heroSlides) && sanitizedContent.heroSlides.length > 0) {
     updated.heroSlides = sanitizedContent.heroSlides;
   }
-  if (Array.isArray(sanitizedContent.features)) {
+  if (Array.isArray(sanitizedContent.features) && sanitizedContent.features.length > 0) {
     updated.features = sanitizedContent.features;
   }
-  if (Array.isArray(sanitizedContent.trustBadges)) {
+  if (Array.isArray(sanitizedContent.trustBadges) && sanitizedContent.trustBadges.length > 0) {
     updated.trustBadges = sanitizedContent.trustBadges;
   }
 

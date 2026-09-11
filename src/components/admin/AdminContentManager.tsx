@@ -68,7 +68,9 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
     if (e) e.preventDefault();
     setIsSaving(true);
     try {
-      await saveSiteContent(formData);
+      // Exclude heroSlides from AdminContentManager so it never overwrites banners
+      const { heroSlides: _unused, ...safeContent } = formData;
+      await saveSiteContent(safeContent);
       isDirtyRef.current = false;
       setIsDirty(false);
       showToast("Website content published live to Firebase & storefront!", "success");
@@ -82,7 +84,10 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
 
   const handleReset = () => {
     if (!window.confirm("Reset all website text content to defaults?")) return;
-    setFormData(defaultSiteContent);
+    setFormData((prev) => ({
+      ...defaultSiteContent,
+      heroSlides: prev.heroSlides, // Preserve banners safely
+    }));
     setIsDirty(true);
     isDirtyRef.current = true;
     showToast("Content restored to defaults. Click 'Publish All Changes' to apply.", "info");

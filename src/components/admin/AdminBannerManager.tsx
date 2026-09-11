@@ -16,6 +16,7 @@ import {
   Crown,
   Plus,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
@@ -94,6 +95,23 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   const isDirtyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Synchronous ref to prevent stale closures during rapid typing and uploads
+  const slidesRef = useRef<HeroSlide[]>(slides);
+  slidesRef.current = slides;
+
+  // Auto-save debounce timer
+  const autoSaveTimerRef = useRef<any>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+
+  // Cleanup pending auto-saves on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
+
   // Initialize slides from store only when user has not made unsaved modifications
   useEffect(() => {
     if (isDirtyRef.current || uploadingIndex !== null || isSaving) return;
@@ -138,23 +156,72 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   const currentSlide = slides[activeSlideIndex] || slides[0];
 
-  // Update a field on the current slide (pure state update without corrupting URLs on keystroke)
+  // Safely switch active slide, flushing any pending text auto-save first
+  const handleSelectSlide = (targetIdx: number) => {
+    if (targetIdx === activeSlideIndex) return;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      saveSiteContent({ heroSlides: slidesRef.current }).catch(() => {});
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      setAutoSaveStatus("saved");
+    }
+    setActiveSlideIndex(targetIdx);
+  };
+
+  // Update a field on the current slide with 0ms local preview & debounced auto-save to cloud
   const handleFieldChange = (field: keyof HeroSlide, value: string) => {
     setIsDirty(true);
     isDirtyRef.current = true;
-    setSlides((prev) => {
-      const next = [...prev];
-      next[activeSlideIndex] = {
-        ...next[activeSlideIndex],
-        [field]: value,
-      };
-      return next;
-    });
+    setAutoSaveStatus("unsaved");
+
+    // Compute next slides synchronously from ref
+    const targetIdx = activeSlideIndex;
+    const nextSlides = slidesRef.current.map((s, idx) =>
+      idx === targetIdx
+        ? {
+            ...s,
+            [field]: value,
+          }
+        : s
+    );
+
+    // Immediately update local state and ref
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
+
+    // Immediately update in-memory store so any open storefront view refreshes with 0ms delay
+    setSiteContent((prev) => ({
+      ...prev,
+      heroSlides: nextSlides,
+    }));
+
+    // Debounced auto-save to disk, Firestore & SSE broadcast
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAutoSaveStatus("saving");
+        const saved = await saveSiteContent({
+          heroSlides: slidesRef.current,
+        });
+        setSiteContent(saved);
+        isDirtyRef.current = false;
+        setIsDirty(false);
+        setAutoSaveStatus("saved");
+      } catch (err) {
+        console.warn("Auto-save banner error:", err);
+      }
+    }, 750);
   };
 
   // Add a new slide
-  const handleAddSlide = () => {
-    const newIdx = slides.length;
+  const handleAddSlide = async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const newIdx = slidesRef.current.length;
     const newSlide: HeroSlide = {
       eyebrow: "New Collection",
       number: `0${newIdx + 1}`,
@@ -168,48 +235,79 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       ctaText: "Explore Collection",
       ctaTarget: "catalog-section",
     };
-    setIsDirty(true);
-    isDirtyRef.current = true;
-    setSlides((prev) => [...prev, newSlide]);
+    const nextSlides = [...slidesRef.current, newSlide];
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
     setActiveSlideIndex(newIdx);
-    showToast(`Added Slide 0${newIdx + 1}. Click Publish to save live.`, "info");
+    setSiteContent((prev) => ({ ...prev, heroSlides: nextSlides }));
+    try {
+      await saveSiteContent({ heroSlides: nextSlides });
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      setAutoSaveStatus("saved");
+      showToast(`Added Slide 0${newIdx + 1} and published live!`, "success");
+    } catch {
+      showToast(`Added Slide 0${newIdx + 1}.`, "info");
+    }
   };
 
   // Remove a slide
-  const handleDeleteSlide = (idxToDelete: number, e: React.MouseEvent) => {
+  const handleDeleteSlide = async (idxToDelete: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (slides.length <= 1) {
+    if (slidesRef.current.length <= 1) {
       showToast("Cannot delete the only remaining slide.", "error");
       return;
     }
     if (!window.confirm(`Are you sure you want to delete Slide 0${idxToDelete + 1}?`)) {
       return;
     }
-    setIsDirty(true);
-    isDirtyRef.current = true;
-    setSlides((prev) => {
-      const next = prev.filter((_, idx) => idx !== idxToDelete);
-      return next.map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
-    });
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const nextSlides = slidesRef.current
+      .filter((_, idx) => idx !== idxToDelete)
+      .map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
+
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
     if (activeSlideIndex >= idxToDelete && activeSlideIndex > 0) {
       setActiveSlideIndex(activeSlideIndex - 1);
     }
-    showToast(`Deleted Slide 0${idxToDelete + 1}. Remember to click Publish Banners.`, "info");
+    setSiteContent((prev) => ({ ...prev, heroSlides: nextSlides }));
+    try {
+      await saveSiteContent({ heroSlides: nextSlides });
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      setAutoSaveStatus("saved");
+      showToast(`Deleted Slide 0${idxToDelete + 1} and updated live!`, "success");
+    } catch {
+      showToast(`Deleted Slide 0${idxToDelete + 1}.`, "info");
+    }
   };
 
   // Reorder slides
-  const handleMoveSlide = (fromIdx: number, toIdx: number, e?: React.MouseEvent) => {
+  const handleMoveSlide = async (fromIdx: number, toIdx: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (toIdx < 0 || toIdx >= slides.length) return;
-    setIsDirty(true);
-    isDirtyRef.current = true;
-    setSlides((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next.map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
-    });
+    if (toIdx < 0 || toIdx >= slidesRef.current.length) return;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const next = [...slidesRef.current];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    const nextSlides = next.map((item, idx) => ({ ...item, number: `0${idx + 1}` }));
+
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
     setActiveSlideIndex(toIdx);
+    setSiteContent((prev) => ({ ...prev, heroSlides: nextSlides }));
+    try {
+      await saveSiteContent({ heroSlides: nextSlides });
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      setAutoSaveStatus("saved");
+      showToast(`Reordered slides and published live!`, "success");
+    } catch {}
   };
 
   // Core Image Compression and Upload Processor
@@ -224,7 +322,8 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       return;
     }
 
-    setUploadingIndex(activeSlideIndex);
+    const targetIdx = activeSlideIndex;
+    setUploadingIndex(targetIdx);
     try {
       // Compress and convert to Base64 (max 1600px, high quality JPEG for universal compatibility)
       const compressedDataUrl = await new Promise<string>((resolve, reject) => {
@@ -286,7 +385,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       // Instantly show local photo with 0ms delay on admin screen
       setSlides((prev) =>
         prev.map((s, idx) =>
-          idx === activeSlideIndex
+          idx === targetIdx
             ? {
                 ...s,
                 image: compressedDataUrl,
@@ -303,7 +402,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             dataUrl: compressedDataUrl,
-            filename: `hero-slide-${activeSlideIndex + 1}`,
+            filename: `hero-slide-${targetIdx + 1}`,
           }),
         });
 
@@ -319,32 +418,42 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         console.warn("[Banner Upload] Server upload endpoint notice:", uploadErr);
       }
 
-      // Update slide image state AND immediately persist it to disk and live website
-      let nextSlides: HeroSlide[] = [];
-      setSlides((prev) => {
-        const next = prev.map((s, idx) =>
-          idx === activeSlideIndex
-            ? {
-                ...s,
-                image: uploadedUrl,
-              }
-            : s
-        );
-        nextSlides = next;
-        return next;
-      });
+      // Update slide image state synchronously and immediately persist to disk & live website
+      const nextSlides = slidesRef.current.map((s, idx) =>
+        idx === targetIdx
+          ? {
+              ...s,
+              image: uploadedUrl,
+            }
+          : s
+      );
+
+      // Immediately update local state, ref, and StoreContext
+      setSlides(nextSlides);
+      slidesRef.current = nextSlides;
+      setSiteContent((prev) => ({
+        ...prev,
+        heroSlides: nextSlides,
+      }));
+
+      // Cancel any pending debounced auto-save because we are saving directly right now
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
 
       try {
+        setAutoSaveStatus("saving");
         const saved = await saveSiteContent({
           heroSlides: nextSlides,
         });
         setSiteContent(saved);
         isDirtyRef.current = false;
         setIsDirty(false);
-        showToast(`Slide 0${activeSlideIndex + 1} photo uploaded & published live to homepage!`, "success");
+        setAutoSaveStatus("saved");
+        showToast(`Slide 0${targetIdx + 1} photo uploaded & published live to homepage!`, "success");
       } catch (saveErr: any) {
         console.error("Auto-save banner content error:", saveErr);
-        showToast(`Slide 0${activeSlideIndex + 1} image updated successfully!`, "success");
+        showToast(`Slide 0${targetIdx + 1} image updated successfully!`, "success");
       }
     } catch (err: any) {
       console.error("Banner upload error:", err);
@@ -391,16 +500,21 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
 
   // Save all slides
   const handleSaveAll = async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
     setIsSaving(true);
+    setAutoSaveStatus("saving");
     try {
       // Normalize any raw URLs on final save
-      const normalizedSlides = slides.map((s, idx) => ({
+      const normalizedSlides = slidesRef.current.map((s, idx) => ({
         ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
         ...s,
         number: s.number || `0${idx + 1}`,
-        image: normalizeImageUrl(s.image) || DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length]?.image,
+        image: s.image || DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length]?.image,
       }));
       setSlides(normalizedSlides);
+      slidesRef.current = normalizedSlides;
 
       const saved = await saveSiteContent({
         heroSlides: normalizedSlides,
@@ -408,6 +522,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       setSiteContent(saved);
       isDirtyRef.current = false;
       setIsDirty(false);
+      setAutoSaveStatus("saved");
       showToast("Homepage Hero Slideshow updated successfully! Live website refreshed.", "success");
     } catch (err: any) {
       console.error("Save site content error:", err);
@@ -422,7 +537,11 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     if (!window.confirm("Are you sure you want to reset all 3 homepage banner slides to the original boutique curation?")) {
       return;
     }
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
     setSlides(DEFAULT_SLIDES);
+    slidesRef.current = DEFAULT_SLIDES;
     setIsSaving(true);
     try {
       const saved = await saveSiteContent({
@@ -431,6 +550,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       setSiteContent(saved);
       isDirtyRef.current = false;
       setIsDirty(false);
+      setAutoSaveStatus("saved");
       showToast("Homepage banners restored to original curated defaults.", "info");
     } catch (err: any) {
       showToast("Failed to reset: " + err.message, "error");
@@ -462,13 +582,17 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 <h2 className="font-serif font-bold text-lg text-[#1e1b18]">
                   Homepage Hero Slideshow & Banners
                 </h2>
-                {isDirty ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                    <AlertCircle size={10} /> Unsaved edits
+                {autoSaveStatus === "saving" || isSaving ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-300">
+                    <Loader2 size={11} className="animate-spin" /> Saving live to website...
+                  </span>
+                ) : isDirty ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                    <AlertCircle size={11} /> Auto-saving in a moment...
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    <CheckCircle2 size={10} /> Live on storefront
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                    <CheckCircle2 size={11} /> Live on storefront (Saved)
                   </span>
                 )}
               </div>
@@ -523,7 +647,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           return (
             <div
               key={idx}
-              onClick={() => setActiveSlideIndex(idx)}
+              onClick={() => handleSelectSlide(idx)}
               className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 flex-1 min-w-[220px] max-w-[340px] relative group ${
                 isActive
                   ? "bg-[#0d4f3c]/5 border-[#0d4f3c] shadow-xs"
@@ -626,7 +750,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveSlideIndex((prev) => (prev > 0 ? prev - 1 : slides.length - 1))
+                    handleSelectSlide(activeSlideIndex > 0 ? activeSlideIndex - 1 : slides.length - 1)
                   }
                   className="p-1 rounded hover:bg-stone-100 text-stone-600 transition-colors"
                   title="Previous Slide"
@@ -639,7 +763,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveSlideIndex((prev) => (prev < slides.length - 1 ? prev + 1 : 0))
+                    handleSelectSlide(activeSlideIndex < slides.length - 1 ? activeSlideIndex + 1 : 0)
                   }
                   className="p-1 rounded hover:bg-stone-100 text-stone-600 transition-colors"
                   title="Next Slide"

@@ -977,13 +977,13 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 updatedAt: new Date().toISOString(),
               };
 
-              if (Array.isArray(body.heroSlides)) {
+              if (Array.isArray(body.heroSlides) && body.heroSlides.length > 0) {
                 updated.heroSlides = body.heroSlides;
               }
-              if (Array.isArray(body.features)) {
+              if (Array.isArray(body.features) && body.features.length > 0) {
                 updated.features = body.features;
               }
-              if (Array.isArray(body.trustBadges)) {
+              if (Array.isArray(body.trustBadges) && body.trustBadges.length > 0) {
                 updated.trustBadges = body.trustBadges;
               }
 
