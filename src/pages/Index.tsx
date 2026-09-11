@@ -8,7 +8,7 @@ import { useEditMode, CanvaEditable } from "../components/editmode";
 import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
-import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment } from "../services/storeService";
+import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment, getLocallyDeletedIds } from "../services/storeService";
 import { lookupPincode } from "../utils/pincodeLookup";
 import { normalizeImageUrl } from "../utils/imageUtils";
 import { SavedAddress, Order, AtelierBooking } from "../types";
@@ -2806,7 +2806,11 @@ function Catalog({
   }, [categories]);
 
   const visibleProducts = useMemo(() => {
-    const listToFilter = dynamicProducts && dynamicProducts.length > 0 ? dynamicProducts : products;
+    const deleted = getLocallyDeletedIds("products");
+    const sourceList = Array.isArray(dynamicProducts) && dynamicProducts.length > 0 ? dynamicProducts : products;
+    const listToFilter = sourceList.filter(
+      (p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name)
+    );
     let result = listToFilter.filter((product) => {
       let matchesFilter = true;
       if (activeCategory === "Wishlist") {

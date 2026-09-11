@@ -40,6 +40,7 @@ import {
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
 import { normalizeImageUrl } from "../utils/imageUtils";
+import { getLocallyDeletedIds } from "../services/storeService";
 
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80";
 
@@ -61,9 +62,17 @@ export default function ProductDetails() {
 
   // Find product by id from live store or fallback catalog
   const product = useMemo(() => {
+    const deleted = getLocallyDeletedIds("products");
+    if (id && (deleted.has(id) || deleted.has(id.trim()))) return null;
     const found = products.find((p) => p.id === id);
-    if (found) return found;
-    return fallbackCatalog.find((p) => p.id === id);
+    if (found && !deleted.has(found.id) && !deleted.has((found as any).sku) && !deleted.has(found.name)) {
+      return found;
+    }
+    const fallback = fallbackCatalog.find((p) => p.id === id);
+    if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku) && !deleted.has(fallback.name)) {
+      return fallback;
+    }
+    return null;
   }, [products, id]);
 
   // Normalized available color variants for this product
