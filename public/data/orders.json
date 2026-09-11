@@ -27,10 +27,13 @@
     "createdAt": "2026-09-10T22:16:46.862Z",
     "updatedAt": "2026-09-10T22:16:46.862Z",
     "orderStatus": "confirmed",
-    "shiprocketStatus": "PENDING_RETRY",
-    "shiprocketError": "token_expired",
-    "shiprocketRetryCount": 1,
-    "shiprocketLastAttemptAt": "2026-09-10T22:16:47.856Z"
+    "shiprocketStatus": "SYNCED",
+    "shiprocketRetryCount": 2,
+    "shiprocketLastAttemptAt": "2026-09-10T22:16:47.856Z",
+    "shiprocketOrderId": 1579107437,
+    "shiprocketShipmentId": 1575325336,
+    "trackingCourier": "Shiprocket Courier Partner",
+    "shiprocketSyncedAt": "2026-09-11T09:23:48.681Z"
   },
   {
     "id": "ord_1788988499686_2859",

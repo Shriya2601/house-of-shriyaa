@@ -53,7 +53,10 @@ export default function ShiprocketConfigModal({
     } else if (!emailInput) {
       setEmailInput("shriyapusha01@gmail.com");
     }
-  }, [status?.configuredEmail]);
+    if (!passwordInput) {
+      setPasswordInput("d1Iq14dVBWxqUVZ8cJO3!f1DLhJCGDRo");
+    }
+  }, [status?.configuredEmail, status?.hasKey]);
 
   if (!isOpen) return null;
 

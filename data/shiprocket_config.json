@@ -1,8 +1,8 @@
 {
   "email": "shriyapusha01@gmail.com",
-  "password": "UZ1ZNr2%vh&6S2VRQGUq3f%@j^G$$hlK",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjExODA4ODQ2LCJzb3VyY2UiOiJzci1hdXRoLWludCIsImV4cCI6MTc4OTkzOTE2MSwianRpIjoiU0lIVnFnRW1ZcXhFU1Q3cSIsImlhdCI6MTc4OTA3NTE2MSwiaXNzIjoiaHR0cHM6Ly9zci1hdXRoLnNoaXByb2NrZXQuaW4vYXV0aG9yaXplL3VzZXIiLCJuYmYiOjE3ODkwNzUxNjEsImNpZCI6MTE0ODAxNTEsInRjIjozNjAsInZlcmJvc2UiOmZhbHNlLCJ2ZW5kb3JfaWQiOjAsInZlbmRvcl9jb2RlIjoiIn0.IZ3HAezkHstLsF4BJpImn2M1slCkYGSZccQGnFLK0CA",
-  "tokenExpiresAt": 1789939161742,
+  "password": "d1Iq14dVBWxqUVZ8cJO3!f1DLhJCGDRo",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjExODA4ODQ2LCJzb3VyY2UiOiJzci1hdXRoLWludCIsImV4cCI6MTc4OTk4MjUyNSwianRpIjoiaXFwQU85YWVhczVZRUhXRyIsImlhdCI6MTc4OTExODUyNSwiaXNzIjoiaHR0cHM6Ly9zci1hdXRoLnNoaXByb2NrZXQuaW4vYXV0aG9yaXplL3VzZXIiLCJuYmYiOjE3ODkxMTg1MjUsImNpZCI6MTE0ODAxNTEsInRjIjozNjAsInZlcmJvc2UiOmZhbHNlLCJ2ZW5kb3JfaWQiOjAsInZlbmRvcl9jb2RlIjoiIn0.y45ev59pBMHVIe9VgpYHbT1R9dVN27js-E_rqwS9E_s",
+  "tokenExpiresAt": 1789982525000,
   "pickupLocation": "Home",
-  "updatedAt": "2026-09-10T21:19:21.742Z"
+  "updatedAt": "2026-09-11T09:22:05.000Z"
 }
