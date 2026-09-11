@@ -11,43 +11,43 @@
   "footerNote": "© House of Shriya. Made for your forever wardrobe.",
   "heroSlides": [
     {
+      "eyebrow": "NEW ARRIVAL / Contemporary Pret",
+      "number": "01",
+      "collection": "Festive Pret & Luxury Coordinates",
+      "title": "Sage & Turquoise Handcrafted Printed Kurti Set",
+      "description": "Handcrafted pure cotton-silk designer kurti tunic with traditional geometric & floral motifs, embroidered contrast placket, and effortless artisanal elegance.",
+      "image": "/uploads/hero-slide-1-turq.jpg",
+      "season": "SUMMER/FESTIVE 2026",
+      "caption": "Bespoke Printed Kurti with Embroidered Placket",
       "mood": "Turquoise, Sage & Terracotta",
       "ctaText": "Explore Collection",
-      "description": "Handcrafted pure cotton-silk designer kurti tunic with traditional geometric & floral motifs, embroidered contrast placket, and effortless artisanal elegance.",
-      "season": "SUMMER/FESTIVE 2026",
-      "collection": "Festive Pret & Luxury Coordinates",
-      "number": "01",
-      "title": "Sage & Turquoise Handcrafted Printed Kurti Set",
-      "ctaTarget": "catalog-section",
-      "eyebrow": "NEW ARRIVAL / Contemporary Pret",
-      "image": "/uploads/hero-slide-1-turq.jpg",
-      "caption": "Bespoke Printed Kurti with Embroidered Placket"
+      "ctaTarget": "catalog-section"
     },
     {
-      "description": "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
-      "caption": "    Pastels • Delicate Embroidery • Effortless Grace",
-      "mood": "Antique Zari & Handlooms",
-      "collection": "The Festive Edit",
       "eyebrow": "Timeless Indian elegance",
-      "title": "Grace, weave in Every Detail",
-      "ctaTarget": "catalog-section",
-      "ctaText": "Discover Unstitched",
-      "season": "ROYAL HERITAGE 2026",
       "number": "02",
-      "image": "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg"
+      "collection": "The Festive Edit",
+      "title": "Grace, weave in Every Detail",
+      "description": "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
+      "image": "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
+      "season": "ROYAL HERITAGE 2026",
+      "caption": "Pastels • Delicate Embroidery • Effortless Grace",
+      "mood": "Antique Zari & Handlooms",
+      "ctaText": "Discover Unstitched",
+      "ctaTarget": "catalog-section"
     },
     {
-      "description": "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND\nCONTRAST PIPING WITH LACE ON DAMAN.",
-      "mood": "Pastel Silks & Easy Linens",
       "eyebrow": "Daily Chic",
-      "season": "DAILY CHIC 2026",
-      "caption": "Printed Organza Dupatta Set in Sage & Pastel Rose",
-      "ctaTarget": "catalog-section",
       "number": "03",
       "collection": "Wrap yourself in the soft elegance of muted pistachio tones and hand-painted watercolor florals, finished with",
       "title": "Grace in Every Print",
+      "description": "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND\nCONTRAST PIPING WITH LACE ON DAMAN.",
+      "image": "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg",
+      "season": "DAILY CHIC 2026",
+      "caption": "Printed Organza Dupatta Set in Sage & Pastel Rose",
+      "mood": "Pastel Silks & Easy Linens",
       "ctaText": "Shop Daily Chic",
-      "image": "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg"
+      "ctaTarget": "catalog-section"
     }
   ],
   "features": [
@@ -103,5 +103,5 @@
   "upiScannerUrl": "/uploads/house-of-shriya-official-upi-scanner.png",
   "upiId": "shriyapusha01-1@okaxis",
   "upiMerchantName": "House of Shriya",
-  "updatedAt": "2026-09-09T21:52:14.917Z"
+  "updatedAt": "2026-09-11T09:42:24.326Z"
 }
