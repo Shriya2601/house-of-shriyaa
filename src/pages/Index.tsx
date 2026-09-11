@@ -2533,18 +2533,22 @@ function Hero({ onPookie }: { onPookie: () => void }) {
 
   const activeSlides = useMemo(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      return siteContent.heroSlides.map((s, idx) => ({
-        eyebrow: s.eyebrow || "DAILY / Festive Couture",
-        number: `0${idx + 1}`,
-        collection: s.collection || "Handcrafted Heirloom",
-        title: s.title || "Pure Handloom Silks & Unstitched Suits",
-        description: s.description || "Crafted in Surat with 100% pure fabrics and delicate artisan detailing.",
-        image: normalizeImageUrl(s.image) || imageUrls.silk,
-        season: s.season || "AUTUMN/FESTIVE 2026",
-        caption: s.caption || "Atelier Handloom Couture",
-        mood: s.mood || "Emerald & Gold Weaves",
-        ctaText: s.ctaText || "Explore Festive Edit",
-      }));
+      return siteContent.heroSlides.map((s, idx) => {
+        const fallback = slides[idx % slides.length] || slides[0];
+        return {
+          eyebrow: s.eyebrow !== undefined && s.eyebrow !== "" ? s.eyebrow : fallback.eyebrow,
+          number: s.number || `0${idx + 1}`,
+          collection: s.collection !== undefined && s.collection !== "" ? s.collection : fallback.collection,
+          title: s.title !== undefined && s.title !== "" ? s.title : fallback.title,
+          description: s.description !== undefined && s.description !== "" ? s.description : fallback.description,
+          image: normalizeImageUrl(s.image) || fallback.image,
+          season: s.season !== undefined && s.season !== "" ? s.season : fallback.season,
+          caption: s.caption !== undefined && s.caption !== "" ? s.caption : fallback.caption,
+          mood: s.mood !== undefined && s.mood !== "" ? s.mood : fallback.mood,
+          ctaText: s.ctaText !== undefined && s.ctaText !== "" ? s.ctaText : fallback.ctaText,
+          ctaTarget: s.ctaTarget || fallback.ctaTarget || "catalog-section",
+        };
+      });
     }
     return slides;
   }, [siteContent]);
@@ -2627,7 +2631,21 @@ function Hero({ onPookie }: { onPookie: () => void }) {
               <button
                 data-editable="true"
                 className="primary-action"
-                onClick={() => document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" })}
+                onClick={() => {
+                  const targetId = slide.ctaTarget || "catalog-section";
+                  if (targetId.startsWith("#")) {
+                    document.querySelector(targetId)?.scrollIntoView({ behavior: "smooth" });
+                  } else if (targetId.startsWith("http://") || targetId.startsWith("https://") || targetId.startsWith("/")) {
+                    window.location.href = targetId;
+                  } else {
+                    const el = document.getElementById(targetId);
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth" });
+                    } else {
+                      document.getElementById("catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }
+                }}
               >
                 <BuilderText
                   as="span"
@@ -2673,7 +2691,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
               </div>
             </div>
           </div>
-          <div className="hero-media-wrap">
+          <div className="hero-media-wrap" key={`hero_media_${slideIndex}_${slide.image}`}>
             <div data-editable="true" className="hero-media-label">
               <Crown size={15} /> <BuilderText as="span" text="Haute Couture Edit" />
             </div>
@@ -2692,13 +2710,25 @@ function Hero({ onPookie }: { onPookie: () => void }) {
               <button data-editable="true" className="save-pin">
                 <Bookmark size={14} /> <BuilderText as="span" text="Save Pin" />
               </button>
-              <div className="hero-caption">
+              <div className="hero-caption" key={`caption_${slideIndex}`}>
                 <div>
                   <BuilderText as="strong" text="HOUSE OF SHRIYA COUTURE" />
                   <BuilderText as="span" text={`${slide.number} · ${slide.season}`} />
                 </div>
-                <BuilderText as="h3" text={slide.caption} />
-                <BuilderText as="p" text={`✦ Trending on Moodboard: ${slide.mood}`} />
+                <BuilderText
+                  as="h3"
+                  id={`hero_slide_${slideIndex}_caption`}
+                  fieldPath={`heroSlides[${slideIndex}].caption`}
+                  label="Hero Caption"
+                  text={slide.caption}
+                />
+                <BuilderText
+                  as="p"
+                  id={`hero_slide_${slideIndex}_mood`}
+                  fieldPath={`heroSlides[${slideIndex}].mood`}
+                  label="Hero Mood"
+                  text={`✦ Trending on Moodboard: ${slide.mood}`}
+                />
               </div>
             </div>
             <div className="atelier-card">

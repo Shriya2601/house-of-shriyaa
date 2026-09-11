@@ -741,6 +741,18 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 
   let active = true;
 
+  const applyContentIfNewer = (incoming: SiteContent) => {
+    if (!incoming || typeof incoming !== "object") return;
+    const incomingTime = incoming.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
+    const currentTime = currentContent?.updatedAt ? new Date(currentContent.updatedAt).getTime() : 0;
+
+    if (incomingTime >= currentTime || !currentContent?.updatedAt) {
+      currentContent = incoming;
+      cacheSiteContentLocally(incoming);
+      callback(incoming);
+    }
+  };
+
   // Active sync function: fetches live site content from backend API
   const fetchLiveSiteContent = async () => {
     if (!active) return;
@@ -762,9 +774,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges)) {
             merged.trustBadges = serverData.trustBadges;
           }
-          currentContent = merged;
-          cacheSiteContentLocally(merged);
-          callback(merged);
+          applyContentIfNewer(merged);
           return;
         }
       }
@@ -785,9 +795,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
             merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          currentContent = merged;
-          cacheSiteContentLocally(merged);
-          callback(merged);
+          applyContentIfNewer(merged);
         }
       }
     } catch {}
@@ -796,8 +804,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
   // Immediate live fetch
   fetchLiveSiteContent();
 
-  // Active background polling interval (every 3s) for instant sync on mobile phones & tablets
-  const pollTimer = setInterval(fetchLiveSiteContent, 3000);
+  // Active background polling interval (every 4s) for instant sync across devices
+  const pollTimer = setInterval(fetchLiveSiteContent, 4000);
 
   // Focus & mobile visibility change (crucial for phones when resuming screen)
   const handleWakeup = () => {
@@ -822,9 +830,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
             } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
               merged.heroSlides = defaultSiteContent.heroSlides || [];
             }
-            currentContent = merged;
-            cacheSiteContentLocally(merged);
-            callback(merged);
+            applyContentIfNewer(merged);
           }
         }
       },
@@ -859,9 +865,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         if (Array.isArray(event.data.data.trustBadges)) {
           merged.trustBadges = event.data.data.trustBadges;
         }
-        currentContent = merged;
-        cacheSiteContentLocally(merged);
-        callback(merged);
+        applyContentIfNewer(merged);
       } else {
         fetchLiveSiteContent();
       }
@@ -903,11 +907,12 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 export async function saveSiteContent(content: Partial<SiteContent>): Promise<SiteContent> {
   const existing = getCachedSiteContent();
   const sanitizedContent = sanitizeSiteContent({ ...content });
+  const timestamp = new Date().toISOString();
   const updated: SiteContent = {
     ...defaultSiteContent,
     ...existing,
     ...sanitizedContent,
-    updatedAt: new Date().toISOString(),
+    updatedAt: timestamp,
   };
 
   if (Array.isArray(sanitizedContent.heroSlides)) {
@@ -923,7 +928,13 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
   // 1. Immediately cache locally
   cacheSiteContentLocally(updated);
 
-  // 2. Sync to API backend for disk persistence
+  // 2. Dispatch events synchronously for 0ms reactive UI refresh
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: updated }));
+  }
+  broadcastCrossDeviceSync("site_content" as any, updated);
+
+  // 3. Sync to API backend for disk persistence
   try {
     await fetch("/api/site-content", {
       method: "POST",
@@ -934,19 +945,13 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     console.warn("API site content sync notice:", apiErr);
   }
 
-  // 3. Sync to Firestore (single source of truth across all devices)
+  // 4. Sync to Firestore (single source of truth across all devices)
   try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     await setDoc(docRef, updated, { merge: true });
   } catch (fsErr) {
     handleFirestoreError(fsErr, OperationType.WRITE, `site_content/${SITE_CONTENT_DOC}`);
   }
-
-  // 4. Dispatch events for 0ms reactive UI refresh across all tabs/components
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: updated }));
-  }
-  broadcastCrossDeviceSync("site_content" as any, updated);
 
   return updated;
 }

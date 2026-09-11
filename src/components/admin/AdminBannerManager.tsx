@@ -75,7 +75,7 @@ interface AdminBannerManagerProps {
 }
 
 export default function AdminBannerManager({ showToast }: AdminBannerManagerProps) {
-  const { siteContent } = useStore();
+  const { siteContent, setSiteContent } = useStore();
   const [slides, setSlides] = useState<HeroSlide[]>(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
       return siteContent.heroSlides.map((s, idx) => ({
@@ -103,7 +103,12 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         ...s,
         number: s.number || `0${idx + 1}`,
       }));
-      setSlides(cleanSlides);
+      setSlides((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(cleanSlides)) {
+          return cleanSlides;
+        }
+        return prev;
+      });
     }
   }, [siteContent, uploadingIndex, isSaving]);
 
@@ -118,7 +123,12 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           ...s,
           number: s.number || `0${idx + 1}`,
         }));
-        setSlides(cleanSlides);
+        setSlides((prev) => {
+          if (JSON.stringify(prev) !== JSON.stringify(cleanSlides)) {
+            return cleanSlides;
+          }
+          return prev;
+        });
       }
     };
 
@@ -310,22 +320,27 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       }
 
       // Update slide image state AND immediately persist it to disk and live website
-      const nextSlides = slides.map((s, idx) =>
-        idx === activeSlideIndex
-          ? {
-              ...s,
-              image: uploadedUrl,
-            }
-          : s
-      );
-      setSlides(nextSlides);
-      isDirtyRef.current = false;
-      setIsDirty(false);
+      let nextSlides: HeroSlide[] = [];
+      setSlides((prev) => {
+        const next = prev.map((s, idx) =>
+          idx === activeSlideIndex
+            ? {
+                ...s,
+                image: uploadedUrl,
+              }
+            : s
+        );
+        nextSlides = next;
+        return next;
+      });
 
       try {
-        await saveSiteContent({
+        const saved = await saveSiteContent({
           heroSlides: nextSlides,
         });
+        setSiteContent(saved);
+        isDirtyRef.current = false;
+        setIsDirty(false);
         showToast(`Slide 0${activeSlideIndex + 1} photo uploaded & published live to homepage!`, "success");
       } catch (saveErr: any) {
         console.error("Auto-save banner content error:", saveErr);
@@ -379,15 +394,18 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     setIsSaving(true);
     try {
       // Normalize any raw URLs on final save
-      const normalizedSlides = slides.map((s) => ({
+      const normalizedSlides = slides.map((s, idx) => ({
+        ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
         ...s,
-        image: normalizeImageUrl(s.image),
+        number: s.number || `0${idx + 1}`,
+        image: normalizeImageUrl(s.image) || DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length]?.image,
       }));
       setSlides(normalizedSlides);
 
-      await saveSiteContent({
+      const saved = await saveSiteContent({
         heroSlides: normalizedSlides,
       });
+      setSiteContent(saved);
       isDirtyRef.current = false;
       setIsDirty(false);
       showToast("Homepage Hero Slideshow updated successfully! Live website refreshed.", "success");
@@ -407,9 +425,10 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
     setSlides(DEFAULT_SLIDES);
     setIsSaving(true);
     try {
-      await saveSiteContent({
+      const saved = await saveSiteContent({
         heroSlides: DEFAULT_SLIDES,
       });
+      setSiteContent(saved);
       isDirtyRef.current = false;
       setIsDirty(false);
       showToast("Homepage banners restored to original curated defaults.", "info");
