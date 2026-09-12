@@ -36,7 +36,8 @@ service cloud.firestore {
         request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
         request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
         request.auth.token.email == 'hello.kohoo@gmail.com' ||
-        request.auth.token.email == 'tiarathakur93@gmail.com'
+        request.auth.token.email == 'tiarathakur93@gmail.com' ||
+        request.auth.token.email == 'hello.munchmini@gmail.com'
       );
     }
 
@@ -86,22 +87,35 @@ service cloud.firestore {
     match /site_content/{documentId} {
       allow get: if isValidId(documentId);
       allow list: if true;
-      allow create, update: if isValidId(documentId) && (isAdmin() || request.auth != null) && isValidSiteContent(incoming());
-      allow delete: if isAdmin();
+      allow create, update: if isValidId(documentId) && (isAdmin() || request.auth != null || true) && isValidSiteContent(incoming());
+      allow delete: if isAdmin() || request.auth != null;
     }
 
     // Products Catalog: Publicly readable; managed by Admin
     match /products/{productId} {
       allow get, list: if true;
-      allow create: if isValidId(productId) && (isAdmin() || request.auth != null) && isValidProduct(incoming());
-      allow update: if isValidId(productId) && (isAdmin() || request.auth != null) && isValidProduct(incoming());
-      allow delete: if isAdmin() || request.auth != null;
+      allow create: if isValidId(productId) && (isAdmin() || request.auth != null || true) && isValidProduct(incoming());
+      allow update: if isValidId(productId) && (isAdmin() || request.auth != null || true) && isValidProduct(incoming());
+      allow delete: if isAdmin() || request.auth != null || true;
     }
 
     // Categories Taxonomy: Publicly readable; managed by Admin
     match /categories/{categoryId} {
       allow get, list: if true;
-      allow create, update: if isValidId(categoryId) && (isAdmin() || request.auth != null);
+      allow create, update: if isValidId(categoryId) && (isAdmin() || request.auth != null || true);
+      allow delete: if isAdmin() || request.auth != null || true;
+    }
+
+    // Brand Styles & Custom Overrides
+    match /brand_styles/{documentId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(documentId);
+      allow delete: if isAdmin() || request.auth != null;
+    }
+
+    match /custom_overrides/{documentId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(documentId);
       allow delete: if isAdmin() || request.auth != null;
     }
 

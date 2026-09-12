@@ -269,8 +269,16 @@ function setCorsHeaders(res: any) {
 }
 
 function parseJsonBody(req: any): Promise<any> {
-  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
-    return Promise.resolve(req.body);
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === "object") return Promise.resolve(req.body);
+    if (typeof req.body === "string" && req.body.trim()) {
+      try {
+        return Promise.resolve(JSON.parse(req.body));
+      } catch {}
+    }
+  }
+  if (req.readableEnded || req.complete) {
+    return Promise.resolve(req.body || {});
   }
   return new Promise((resolve, reject) => {
     let body = "";
@@ -307,6 +315,21 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
   const method = (req.method || "GET").toUpperCase();
 
   try {
+      // Global CORS and preflight handling for all /api/ and /uploads/ routes
+      if (
+        urlWithoutQuery.startsWith("/api/") ||
+        urlWithoutQuery === "/api" ||
+        urlWithoutQuery.startsWith("/uploads/") ||
+        urlWithoutQuery.startsWith("/public/uploads/")
+      ) {
+        setCorsHeaders(res);
+        if (method === "OPTIONS") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+      }
+
       // Direct Static Image Serving for /uploads/* and /public/uploads/*
       // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
       if (urlWithoutQuery.startsWith("/uploads/") || urlWithoutQuery.startsWith("/public/uploads/")) {
@@ -539,7 +562,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             return;
           }
 
-          if (method === "POST" || method === "PUT") {
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
             try {
               const body = await parseJsonBody(req);
               let products = readProducts();
@@ -731,7 +754,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             return;
           }
 
-          if (method === "POST" || method === "PUT") {
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
             try {
               const body = await parseJsonBody(req);
               if (Array.isArray(body)) {

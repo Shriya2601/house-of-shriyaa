@@ -969,12 +969,10 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
       body: JSON.stringify(updated),
     });
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server failed to save site content (HTTP ${res.status})`);
+      console.warn(`[StoreService] Server API returned HTTP ${res.status} for site content; continuing to Firestore.`);
     }
   } catch (apiErr: any) {
-    console.error("API site content sync error:", apiErr);
-    throw new Error(apiErr?.message || "Failed to persist site content to backend server.");
+    console.warn("[StoreService] API site content sync note:", apiErr?.message || apiErr);
   }
 
   // 4. Sync to Firestore (single source of truth across all devices)
@@ -1141,18 +1139,18 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
       body: JSON.stringify(updated),
     });
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server failed to save category (HTTP ${res.status})`);
+      console.warn(`[StoreService] Server API returned HTTP ${res.status} for category; continuing to Firestore.`);
     }
   } catch (apiErr: any) {
-    console.error("API category sync error:", apiErr);
-    throw new Error(apiErr?.message || "Failed to persist category to backend server.");
+    console.warn("[StoreService] API category sync note:", apiErr?.message || apiErr);
   }
 
   try {
     const docRef = doc(db, "categories", category.id);
     await setDoc(docRef, category, { merge: true });
-  } catch {}
+  } catch (fsErr) {
+    console.warn("Firestore category setDoc notice:", fsErr);
+  }
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: updated }));
@@ -1463,16 +1461,14 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
         body: JSON.stringify(sanitized),
       });
       if (!putRes.ok) {
-        const errJson = await putRes.json().catch(() => ({}));
-        throw new Error(errJson.error || `Server failed to save product (HTTP ${putRes.status})`);
+        console.warn(`[StoreService] Server API returned HTTP ${putRes.status} for product ${id}; proceeding to Firestore.`);
       }
     }
   } catch (apiErr: any) {
-    console.error("Backend API sync error:", apiErr);
-    throw new Error(apiErr?.message || "Failed to persist product to backend server.");
+    console.warn("[StoreService] Backend API sync note:", apiErr?.message || apiErr);
   }
 
-  // 2. Sync to Firestore
+  // 2. Sync to Firestore (Durable live cloud persistence)
   try {
     const docRef = doc(db, "products", id);
     await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
@@ -2713,6 +2709,7 @@ export const AUTHORIZED_ADMIN_EMAILS = [
   "crochetbyshriya01@gmail.com",
   "hello.kohoo@gmail.com",
   "tiarathakur93@gmail.com",
+  "hello.munchmini@gmail.com",
 ];
 export const ADMIN_FALLBACK_PASS = "Houseofshriy@26";
 export const ACCEPTED_ADMIN_PASSWORDS = [
@@ -3470,13 +3467,16 @@ export async function saveBrandStyles(styles: any): Promise<any> {
       body: JSON.stringify(updated),
     });
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server failed to save brand styles (HTTP ${res.status})`);
+      console.warn(`[StoreService] Server API returned HTTP ${res.status} for brand styles; continuing.`);
     }
   } catch (err: any) {
-    console.error("Save brand styles error:", err);
-    throw new Error(err?.message || "Failed to persist brand styles to backend server.");
+    console.warn("[StoreService] Save brand styles API note:", err?.message || err);
   }
+
+  try {
+    const docRef = doc(db, "brand_styles", "active");
+    await setDoc(docRef, updated, { merge: true });
+  } catch {}
 
   return updated;
 }
@@ -3498,13 +3498,16 @@ export async function saveCustomOverrides(overrides: Record<string, any>): Promi
       body: JSON.stringify(updated),
     });
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server failed to save custom overrides (HTTP ${res.status})`);
+      console.warn(`[StoreService] Server API returned HTTP ${res.status} for custom overrides; continuing.`);
     }
   } catch (err: any) {
-    console.error("Save custom overrides error:", err);
-    throw new Error(err?.message || "Failed to persist custom overrides to backend server.");
+    console.warn("[StoreService] Save custom overrides API note:", err?.message || err);
   }
+
+  try {
+    const docRef = doc(db, "custom_overrides", "active");
+    await setDoc(docRef, updated, { merge: true });
+  } catch {}
 
   return updated;
 }

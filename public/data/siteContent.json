@@ -2,7 +2,7 @@
   "announcementText": "Test Announcement",
   "announcementCta": "Explore Collection",
   "announcementVisible": false,
-  "brandTagline": "Test Tagline",
+  "brandTagline": "Test",
   "brandDescription": "Test Cross-Device Update",
   "contactPhone": "+91 95016 98356",
   "contactEmail": "care@houseofshriya.com",
@@ -72,5 +72,5 @@
   "upiScannerUrl": "/uploads/house-of-shriya-official-upi-scanner.png",
   "upiId": "shriyapusha01-1@okaxis",
   "upiMerchantName": "House of Shriya",
-  "updatedAt": "2026-09-12T12:30:31.754Z"
+  "updatedAt": "2026-09-12T13:11:08.047Z"
 }
