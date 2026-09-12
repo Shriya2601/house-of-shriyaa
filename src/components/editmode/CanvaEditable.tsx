@@ -50,13 +50,14 @@ export default function CanvaEditable({
   // ensure the live catalog/store props always take precedence unless actively being customized in Canva edit mode:
   const isProductOrDynamicField = Boolean(productId) || id.startsWith("product_") || id.startsWith("hero_slide_");
 
-  const displayText = (isProductOrDynamicField && !isEditMode && text !== undefined)
-    ? text
-    : (override?.text !== undefined ? override.text : text !== undefined ? text : undefined);
+  // Dynamic product fields and hero slides must always reflect live data from catalog/database
+  const displayText = isProductOrDynamicField
+    ? (text !== undefined ? text : override?.text)
+    : (override?.text !== undefined ? override.text : text);
   
-  // Prioritize active custom override src if set by user in Edit Mode, then fallback to component src
-  const rawSrc = (isProductOrDynamicField && !isEditMode && src !== undefined && src !== "")
-    ? src
+  // Dynamic product images must always reflect live product images from catalog
+  const rawSrc = isProductOrDynamicField
+    ? (src || override?.src || "")
     : ((override?.src !== undefined && override?.src !== "") ? override.src : (src || ""));
   let displaySrc = normalizeImageUrl(rawSrc);
   if (displaySrc) {

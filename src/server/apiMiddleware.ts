@@ -595,24 +595,47 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                     merged.image = product.image;
                     merged.images = [product.image];
                   }
-                  if (product.image) {
-                    merged.image = product.image;
-                    if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
-                      const v0 = merged.colorVariants[0];
-                      merged.colorVariants[0] = {
-                        ...v0,
-                        image: product.image,
-                        hoverImage: product.hoverImage || v0.hoverImage || product.image,
-                        images: Array.isArray(product.images) && product.images.length > 0
-                          ? product.images
-                          : [product.image],
-                      };
-                    }
+                  if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
+                    const v0 = merged.colorVariants[0];
+                    merged.colorVariants[0] = {
+                      ...v0,
+                      colorName: product.color || v0.colorName || "Standard",
+                      colorHex: product.colorHex || v0.colorHex || "#0d4f3c",
+                      price: product.price || v0.price,
+                      originalPrice: product.originalPrice || v0.originalPrice,
+                      savings: product.savings || v0.savings,
+                      description: product.description !== undefined ? product.description : v0.description,
+                      fabricType: product.fabricType || v0.fabricType,
+                      inStock: product.inStock !== false && v0.inStock !== false,
+                      image: product.image || v0.image,
+                      hoverImage: product.hoverImage || v0.hoverImage || product.image,
+                      images: Array.isArray(product.images) && product.images.length > 0
+                        ? product.images
+                        : [product.image || v0.image].filter(Boolean),
+                    };
                   }
                   products[idx] = merged;
                 } else {
                   if (product.image && (!Array.isArray(product.images) || product.images.length === 0)) {
                     product.images = [product.image];
+                  }
+                  if (!Array.isArray(product.colorVariants) || product.colorVariants.length === 0) {
+                    product.colorVariants = [
+                      {
+                        id: `var-${product.id}-0`,
+                        colorName: product.color || "Standard",
+                        colorHex: product.colorHex || "#0d4f3c",
+                        price: product.price,
+                        originalPrice: product.originalPrice,
+                        savings: product.savings,
+                        description: product.description,
+                        fabricType: product.fabricType,
+                        inStock: product.inStock !== false,
+                        image: product.image,
+                        hoverImage: product.hoverImage || product.image,
+                        images: Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image].filter(Boolean),
+                      },
+                    ];
                   }
                   products.unshift(product);
                 }
@@ -697,7 +720,27 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               };
               const idx = products.findIndex((p) => p.id === productId);
               if (idx > -1) {
-                products[idx] = { ...products[idx], ...product, id: productId, updatedAt: new Date().toISOString() };
+                const merged = { ...products[idx], ...product, id: productId, updatedAt: new Date().toISOString() };
+                if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
+                  const v0 = merged.colorVariants[0];
+                  merged.colorVariants[0] = {
+                    ...v0,
+                    colorName: product.color || v0.colorName || "Standard",
+                    colorHex: product.colorHex || v0.colorHex || "#0d4f3c",
+                    price: product.price || v0.price,
+                    originalPrice: product.originalPrice || v0.originalPrice,
+                    savings: product.savings || v0.savings,
+                    description: product.description !== undefined ? product.description : v0.description,
+                    fabricType: product.fabricType || v0.fabricType,
+                    inStock: product.inStock !== false && v0.inStock !== false,
+                    image: product.image || v0.image,
+                    hoverImage: product.hoverImage || v0.hoverImage || product.image,
+                    images: Array.isArray(product.images) && product.images.length > 0
+                      ? product.images
+                      : [product.image || v0.image].filter(Boolean),
+                  };
+                }
+                products[idx] = merged;
               } else {
                 products.unshift(product);
               }
@@ -1316,11 +1359,31 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               const idx = orders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
               let updatedOrder: any;
 
+              const refVal = body.utrNumber || body.referenceNumber || body.paymentDetails?.utrNumber || body.paymentDetails?.transactionReference;
               if (idx > -1) {
-                updatedOrder = { ...orders[idx], ...body, updatedAt: now };
+                updatedOrder = {
+                  ...orders[idx],
+                  ...body,
+                  utrNumber: refVal || orders[idx].utrNumber,
+                  paymentDetails: {
+                    ...(orders[idx].paymentDetails || {}),
+                    ...(body.paymentDetails || {}),
+                    ...(refVal ? { utrNumber: refVal, transactionReference: refVal } : {}),
+                  },
+                  updatedAt: now,
+                };
                 orders[idx] = updatedOrder;
               } else {
-                updatedOrder = { ...body, id: orderId, updatedAt: now };
+                updatedOrder = {
+                  ...body,
+                  id: orderId,
+                  utrNumber: refVal || body.utrNumber,
+                  paymentDetails: {
+                    ...(body.paymentDetails || {}),
+                    ...(refVal ? { utrNumber: refVal, transactionReference: refVal } : {}),
+                  },
+                  updatedAt: now,
+                };
                 orders.unshift(updatedOrder);
               }
 

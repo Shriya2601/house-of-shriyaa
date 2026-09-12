@@ -38,6 +38,7 @@ import {
   Image as ImageIcon,
   Server,
   QrCode,
+  Edit3,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -53,6 +54,7 @@ import {
   adminDeleteBooking,
   adminCreateAtelierBooking,
   adminCreateOrder,
+  adminUpdateOrderReference,
   adminFetchAllOrders,
   adminUpdateOrder,
   adminDeleteOrder,
@@ -263,6 +265,11 @@ export default function AdminPortal() {
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
   const [trackingData, setTrackingData] = useState<any>(null);
   const [isLoadingTracking, setIsLoadingTracking] = useState<boolean>(false);
+
+  // Reference / UTR modal state
+  const [orderForRefEdit, setOrderForRefEdit] = useState<Order | null>(null);
+  const [refEditInput, setRefEditInput] = useState<string>("");
+  const [savingRef, setSavingRef] = useState<boolean>(false);
 
   const adminEmailId = useId();
   const adminPasswordId = useId();
@@ -725,6 +732,40 @@ export default function AdminPortal() {
     }
   };
 
+  const handleOpenRefModal = (order: Order) => {
+    setOrderForRefEdit(order);
+    const currentRef =
+      order.utrNumber ||
+      order.paymentDetails?.utrNumber ||
+      order.paymentDetails?.transactionReference ||
+      (order as any).referenceNumber ||
+      "";
+    setRefEditInput(currentRef);
+  };
+
+  const handleSaveOrderRef = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!orderForRefEdit) return;
+    const clean = refEditInput.trim();
+    setSavingRef(true);
+    try {
+      const updated = await adminUpdateOrderReference(orderForRefEdit.id, clean);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderForRefEdit.id || o.orderNumber === orderForRefEdit.orderNumber
+            ? { ...o, ...updated, utrNumber: clean }
+            : o
+        )
+      );
+      showToast(clean ? `Reference / UTR saved: ${clean}` : "Reference cleared", "success");
+      setOrderForRefEdit(null);
+    } catch (err: any) {
+      showToast(err.message || "Failed to save reference", "error");
+    } finally {
+      setSavingRef(false);
+    }
+  };
+
   // ==========================================
   // FILTERED DATA COMPUTATION
   // ==========================================
@@ -756,6 +797,10 @@ export default function AdminPortal() {
         !q ||
         o.orderNumber?.toLowerCase().includes(q) ||
         o.id?.toLowerCase().includes(q) ||
+        o.utrNumber?.toLowerCase().includes(q) ||
+        o.paymentDetails?.utrNumber?.toLowerCase().includes(q) ||
+        o.paymentDetails?.transactionReference?.toLowerCase().includes(q) ||
+        (o as any).referenceNumber?.toLowerCase().includes(q) ||
         custName.toLowerCase().includes(q) ||
         o.customer?.email?.toLowerCase().includes(q) ||
         o.customer?.phone?.includes(q) ||
@@ -1762,21 +1807,51 @@ export default function AdminPortal() {
                             <span className="text-[10px] text-stone-500 block mt-0.5">
                               {order.paymentMethod || "UPI"}
                             </span>
-                            {order.paymentDetails?.utrNumber && (
-                              <div
-                                className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded cursor-pointer hover:bg-emerald-100"
-                                onClick={() => handleCopy(`utr-${order.id}`, order.paymentDetails!.utrNumber!)}
-                                title="Click to copy UPI Reference / UTR Number"
-                              >
-                                <QrCode size={10} className="text-emerald-700" />
-                                <span>Ref: {order.paymentDetails.utrNumber}</span>
-                                {copiedId === `utr-${order.id}` ? (
-                                  <Check size={9} className="text-emerald-700 ml-0.5" />
-                                ) : (
-                                  <Copy size={9} className="text-stone-400 ml-0.5" />
-                                )}
-                              </div>
-                            )}
+                            {(() => {
+                              const refVal =
+                                order.utrNumber ||
+                                order.paymentDetails?.utrNumber ||
+                                order.paymentDetails?.transactionReference ||
+                                (order as any).referenceNumber;
+                              if (refVal) {
+                                return (
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <div
+                                      className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#0d4f3c] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded cursor-pointer hover:bg-emerald-100"
+                                      onClick={() => handleCopy(`utr-${order.id}`, refVal)}
+                                      title="Click to copy UPI Reference / UTR Number"
+                                    >
+                                      <QrCode size={10} className="text-emerald-700 shrink-0" />
+                                      <span>Ref: {refVal}</span>
+                                      {copiedId === `utr-${order.id}` ? (
+                                        <Check size={9} className="text-emerald-700 ml-0.5" />
+                                      ) : (
+                                        <Copy size={9} className="text-stone-400 ml-0.5" />
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenRefModal(order)}
+                                      title="Edit Reference / UTR"
+                                      className="p-1 text-stone-400 hover:text-[#0d4f3c] rounded hover:bg-stone-100 transition-colors cursor-pointer"
+                                    >
+                                      <Edit3 size={11} />
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRefModal(order)}
+                                  className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-[#0d4f3c] bg-emerald-50/80 hover:bg-emerald-100 border border-emerald-200/80 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                                  title="Add UPI Reference or Bank UTR"
+                                >
+                                  <Plus size={9} />
+                                  <span>Add Ref / UTR</span>
+                                </button>
+                              );
+                            })()}
                           </td>
 
                           {/* Status */}
@@ -1998,6 +2073,75 @@ export default function AdminPortal() {
           }}
         />
       )}
+
+      {/* =========================================================================
+          MODAL: EDIT ORDER PAYMENT REFERENCE / UTR NUMBER
+          ========================================================================= */}
+      {orderForRefEdit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => !savingRef && setOrderForRefEdit(null)}
+        >
+          <div
+            className="bg-[#faf8f5] w-full max-w-md rounded-2xl shadow-2xl border border-[#e8dfd5] overflow-hidden relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[#0d4f3c] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <QrCode size={18} className="text-[#d4af37]" />
+                <div>
+                  <h3 className="font-serif font-bold text-base">Payment Reference / UTR</h3>
+                  <p className="text-[11px] text-stone-200">Order #{orderForRefEdit.orderNumber}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !savingRef && setOrderForRefEdit(null)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOrderRef} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                  UPI UTR / Bank Transaction Reference
+                </label>
+                <input
+                  type="text"
+                  value={refEditInput}
+                  onChange={(e) => setRefEditInput(e.target.value)}
+                  placeholder="e.g. 12-digit UPI UTR, IMPS/NEFT Ref"
+                  className="w-full font-mono text-sm px-3.5 py-2.5 bg-white border border-[#d6cbbe] rounded-lg text-stone-900 focus:outline-none focus:border-[#0d4f3c] focus:ring-1 focus:ring-[#0d4f3c]"
+                  autoFocus
+                />
+                <p className="text-[11px] text-stone-500 mt-1.5">
+                  Enter the 12-digit UPI reference number or bank transaction ID sent by the customer.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={savingRef}
+                  onClick={() => setOrderForRefEdit(null)}
+                  className="px-4 py-2 text-xs font-bold text-stone-600 hover:text-stone-900 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingRef}
+                  className="px-5 py-2 bg-[#0d4f3c] hover:bg-[#126b52] text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {savingRef ? "Saving..." : "Save Reference"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2048,6 +2192,7 @@ function AddNewRecordModal({
   const [city, setCity] = useState("Ludhiana");
   const [state, setState] = useState("Punjab");
   const [pincode, setPincode] = useState("141001");
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Instant UPI / NetBanking");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("Paid");
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("confirmed");
@@ -2084,6 +2229,7 @@ function AddNewRecordModal({
           serviceType,
           preferredDate,
           preferredTime,
+          bookingNumber: referenceNumber.trim() || undefined,
           notes: bookingNotes.trim() || "Booked by Admin Concierge",
           status: "confirmed",
         });
@@ -2127,6 +2273,15 @@ function AddNewRecordModal({
           paymentMethod,
           paymentStatus,
           orderStatus,
+          utrNumber: referenceNumber.trim() || undefined,
+          paymentDetails: referenceNumber.trim()
+            ? {
+                methodType: "upi",
+                utrNumber: referenceNumber.trim(),
+                transactionReference: referenceNumber.trim(),
+                paidAt: new Date().toISOString(),
+              }
+            : undefined,
           notes: orderNotes.trim(),
         });
         onOrderCreated(newOrder);
@@ -2363,6 +2518,19 @@ function AddNewRecordModal({
                         <option value="delivered">Delivered / Picked Up</option>
                       </select>
                     </div>
+
+                    <div className="sm:col-span-3">
+                      <label className="block font-semibold text-stone-700 mb-1">
+                        Payment Reference / UPI UTR / Bank ID (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={referenceNumber}
+                        onChange={(e) => setReferenceNumber(e.target.value)}
+                        placeholder="e.g. 12-digit UPI UTR, IMPS Ref or Cheque No."
+                        className="w-full bg-white border border-[#d6ccc2] rounded-lg p-2 font-mono text-xs focus:border-[#0d4f3c] focus:outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2477,6 +2645,19 @@ function AddNewRecordModal({
                   onChange={(e) => setBookingNotes(e.target.value)}
                   placeholder="e.g. Looking for pure tissue silk suit in pastel peach for wedding reception..."
                   className="w-full bg-white border border-[#d6ccc2] rounded-lg p-2 focus:border-[#0d4f3c] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1">
+                  Custom Reference / Booking Ref No. (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  placeholder="e.g. VIP-CONCIERGE-01 (or leave blank to auto-generate)"
+                  className="w-full bg-white border border-[#d6ccc2] rounded-lg p-2 font-mono text-xs focus:border-[#0d4f3c] focus:outline-none"
                 />
               </div>
             </div>

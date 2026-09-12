@@ -398,7 +398,7 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
     return 0;
   };
 
-  // 1. Incoming items from server take precedence as the authoritative list
+  // 1. Incoming items from server placed into map
   for (const item of incomingList) {
     if (!item || isDeleted(item)) continue;
     const k1 = idKey(item);
@@ -407,9 +407,9 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
     if (k2) map.set(k2, item);
   }
 
-  // 2. Only preserve items from localList if they were created within the last 45s (optimistic creation)
-  // and are not yet on the server. Otherwise, if absent from server, they were deleted on server.
-  const now = Date.now();
+  // 2. Reconcile with local items:
+  // - If item exists in both: compare timestamps and preserve newest data, deep-merging non-empty fields
+  // - If item exists only in localList and is not deleted: keep it so optimistic updates/new references are never wiped out
   for (const item of localList) {
     if (!item || isDeleted(item)) continue;
     const k1 = idKey(item);
@@ -418,20 +418,31 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
     if (!key) continue;
 
     if (map.has(key)) {
-      // If local item has a strictly newer edit timestamp than the incoming server item, keep local
       const existing = map.get(key)!;
       const localTime = getTime(item);
       const incomingTime = getTime(existing);
-      if (localTime > incomingTime && now - localTime < 60000) {
-        map.set(key, item);
+      if (localTime > incomingTime) {
+        // Local edit is strictly newer: keep local item and backfill any missing server properties
+        map.set(key, { ...existing, ...item });
+      } else if (incomingTime > localTime) {
+        // Server item is strictly newer: adopt server item, preserving any local reference/UTR if server lacked it
+        const localUtr = (item as any).utrNumber || (item as any).paymentDetails?.utrNumber;
+        const localRef = (item as any).referenceNumber || (item as any).bookingNumber;
+        const mergedServer = { ...item, ...existing };
+        if (localUtr && !(mergedServer as any).utrNumber) {
+          (mergedServer as any).utrNumber = localUtr;
+        }
+        if (localRef && !(mergedServer as any).referenceNumber && !(mergedServer as any).bookingNumber) {
+          (mergedServer as any).bookingNumber = localRef;
+        }
+        map.set(key, mergedServer);
+      } else {
+        // Timestamps match or missing: merge both, local values take precedence
+        map.set(key, { ...existing, ...item });
       }
     } else {
-      // ONLY keep local item if it was created very recently (< 45s) as an optimistic save
-      // If older, it means it was deleted on the server, so do NOT resurrect it!
-      const localTime = getTime(item);
-      if (localTime > 0 && now - localTime < 45000) {
-        map.set(key, item);
-      }
+      // Local item not yet reflected on server: preserve it safely
+      map.set(key, item);
     }
   }
 
@@ -596,17 +607,17 @@ export function ensureProductVariants(product: any): Product {
       return {
         ...v,
         id: v.id || `var-${product.id || "prod"}-${idx + 1}`,
-        colorName: v.colorName || product.color || "Royal Emerald",
-        colorHex: v.colorHex || product.colorHex || "#0d4f3c",
-        price: v.price || product.price || "₹2,999",
-        originalPrice: v.originalPrice || product.originalPrice || "₹4,499",
-        savings: v.savings || product.savings || "Save 33%",
-        description: v.description || product.description || "",
-        fabricType: v.fabricType || product.fabricType || "Pure Silk",
+        colorName: idx === 0 ? (product.color || v.colorName || "Royal Emerald") : (v.colorName || product.color || "Royal Emerald"),
+        colorHex: idx === 0 ? (product.colorHex || v.colorHex || "#0d4f3c") : (v.colorHex || product.colorHex || "#0d4f3c"),
+        price: idx === 0 ? (product.price || v.price || "₹2,999") : (v.price || product.price || "₹2,999"),
+        originalPrice: idx === 0 ? (product.originalPrice || v.originalPrice || "₹4,499") : (v.originalPrice || product.originalPrice || "₹4,499"),
+        savings: idx === 0 ? (product.savings || v.savings || "Save 33%") : (v.savings || product.savings || "Save 33%"),
+        description: idx === 0 ? (product.description !== undefined ? product.description : v.description || "") : (v.description || product.description || ""),
+        fabricType: idx === 0 ? (product.fabricType || v.fabricType || "Pure Silk") : (v.fabricType || product.fabricType || "Pure Silk"),
         images: vImages,
         image: idx === 0 ? primaryImg : (vImages[0] || v.image || primaryImg),
         hoverImage: idx === 0 ? hoverImg : (vImages[1] || vImages[0] || v.hoverImage || hoverImg),
-        inStock: v.inStock !== false,
+        inStock: idx === 0 ? (product.inStock !== false && v.inStock !== false) : (v.inStock !== false),
       };
     });
   } else {
@@ -1448,6 +1459,27 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   const updated = existingIdx > -1 ? [...current] : [sanitized, ...current];
   if (existingIdx > -1) updated[existingIdx] = sanitized;
   cacheProductsLocally(updated);
+
+  // Clear any stale Canva text/style overrides for this product so edits are visible immediately
+  try {
+    const rawOverrides = localStorage.getItem("hos_custom_overrides");
+    if (rawOverrides) {
+      const parsed = JSON.parse(rawOverrides);
+      let changed = false;
+      for (const k of Object.keys(parsed)) {
+        if (k.startsWith(`product_${id}_`) || k === id) {
+          delete parsed[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem("hos_custom_overrides", JSON.stringify(parsed));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hos-overrides-updated", { detail: parsed }));
+        }
+      }
+    }
+  } catch {}
 
   // 1. Sync with Centralized Backend API endpoint (/api/products)
   try {
@@ -2994,20 +3026,30 @@ export async function adminDeleteBooking(bookingId: string): Promise<void> {
 }
 
 export async function adminCreateAtelierBooking(
-  bookingInput: Omit<AtelierBooking, "id" | "bookingNumber" | "createdAt" | "updatedAt">
+  bookingInput: Partial<AtelierBooking> & { referenceNumber?: string }
 ): Promise<AtelierBooking> {
   const now = new Date();
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  const bookingNumber = `ATELIER-ADM-${now.getFullYear().toString().slice(-2)}${(now.getMonth() + 1)
-    .toString()
-    .padStart(2, "0")}-${randomSuffix}`;
-  const bookingId = `book_adm_${Date.now()}_${randomSuffix}`;
+  const bookingNumber =
+    bookingInput.bookingNumber?.trim() ||
+    bookingInput.referenceNumber?.trim() ||
+    `ATELIER-ADM-${now.getFullYear().toString().slice(-2)}${(now.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${randomSuffix}`;
+  const bookingId = bookingInput.id || `book_adm_${Date.now()}_${randomSuffix}`;
 
   const booking: AtelierBooking = {
-    ...bookingInput,
+    fullName: bookingInput.fullName || "Valued Patron",
+    email: bookingInput.email || "patron@houseofshriya.in",
+    phone: bookingInput.phone || "9501698356",
+    serviceType: bookingInput.serviceType || "Custom Bespoke Bridal",
+    preferredDate: bookingInput.preferredDate || new Date().toISOString().split("T")[0],
+    preferredTime: bookingInput.preferredTime || "11:00 AM",
+    notes: bookingInput.notes || "Booked by Admin Concierge",
+    status: bookingInput.status || "confirmed",
     id: bookingId,
     bookingNumber,
-    createdAt: now.toISOString(),
+    createdAt: bookingInput.createdAt || now.toISOString(),
     updatedAt: now.toISOString(),
   };
 
@@ -3039,12 +3081,19 @@ export async function adminCreateAtelierBooking(
   return booking;
 }
 
-export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Order> {
+export async function adminCreateOrder(orderInput: Partial<Order> & { referenceNumber?: string }): Promise<Order> {
   const now = new Date();
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   const orderNumber =
     orderInput.orderNumber || `HOS-${now.getFullYear()}-${randomNum}`;
   const orderId = orderInput.id || `order_adm_${Date.now()}_${randomNum}`;
+
+  const refNum =
+    (orderInput as any).utrNumber ||
+    (orderInput as any).referenceNumber ||
+    orderInput.paymentDetails?.utrNumber ||
+    orderInput.paymentDetails?.transactionReference ||
+    undefined;
 
   let order: Order = {
     id: orderId,
@@ -3069,6 +3118,16 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
     orderStatus: orderInput.orderStatus || "confirmed",
     trackingCourier: orderInput.trackingCourier,
     trackingNumber: orderInput.trackingNumber,
+    utrNumber: refNum,
+    paymentDetails: refNum
+      ? {
+          methodType: (orderInput.paymentMethod?.toLowerCase().includes("cod") ? "cod" : "upi") as any,
+          utrNumber: refNum,
+          transactionReference: refNum,
+          paidAt: now.toISOString(),
+          ...(orderInput.paymentDetails || {}),
+        }
+      : orderInput.paymentDetails,
     notes: orderInput.notes || "Booked directly via House of Shriya Admin Portal",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -3139,6 +3198,70 @@ export async function adminCreateOrder(orderInput: Partial<Order>): Promise<Orde
     window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: getCachedOrders() }));
   }
   return order;
+}
+
+export async function adminUpdateOrderReference(orderId: string, referenceNumber: string): Promise<Order> {
+  const cleanRef = referenceNumber.trim();
+  const now = new Date().toISOString();
+  const currentOrders = getCachedOrders();
+  const idx = currentOrders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+
+  const existing = idx > -1 ? currentOrders[idx] : null;
+  const realId = existing?.id || orderId;
+
+  const updates = {
+    utrNumber: cleanRef,
+    paymentDetails: {
+      ...(existing?.paymentDetails || {}),
+      methodType: "upi" as const,
+      utrNumber: cleanRef,
+      transactionReference: cleanRef,
+      paidAt: existing?.paymentDetails?.paidAt || now,
+    },
+    updatedAt: now,
+  };
+
+  let updated: Order = existing ? { ...existing, ...updates } : ({ id: realId, ...updates } as any);
+
+  // 1. Update local cache immediately
+  const nextList = [...currentOrders];
+  if (idx > -1) {
+    nextList[idx] = updated;
+  } else {
+    nextList.unshift(updated);
+  }
+  cacheOrdersLocally(nextList);
+
+  // 2. Sync to Server API
+  try {
+    const res = await fetch(`/api/orders/${encodeURIComponent(realId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.order) updated = { ...updated, ...data.order };
+    }
+  } catch (err) {
+    console.warn("API update order reference notice:", err);
+  }
+
+  // 3. Sync to Firestore
+  try {
+    const docRef = doc(db, "orders", realId);
+    await updateDoc(docRef, updates);
+  } catch (err) {
+    console.warn("Firestore update order reference notice:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-order-updated", { detail: updated }));
+    window.dispatchEvent(new CustomEvent("hos-orders-updated", { detail: nextList }));
+  }
+  broadcastCrossDeviceSync("orders", updated);
+
+  return updated;
 }
 
 export async function adminFetchAllOrders(): Promise<Order[]> {
