@@ -2194,30 +2194,34 @@ export function InteractiveModal({
           <div className="space-y-4 text-xs text-[#1e1b18] py-2">
             <div className="p-4 bg-white border border-[#ebe2d8] rounded-xl space-y-3">
               <p className="text-[#1e1b18] font-medium leading-relaxed text-sm">
-                Customer Support Executive is available from Monday to Sunday,
+                Customer Support & Atelier Concierge is available Monday to Sunday.
               </p>
               <div className="pt-2 border-t border-[#f5efeb] flex flex-col gap-2.5 text-sm">
                 <a
-                  href="https://wa.me/919501698356"
+                  href={`https://wa.me/${(siteContent?.whatsappNumber || "919501698356").replace(/\D/g, "")}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2.5 text-[#0d4f3c] font-semibold hover:underline"
                 >
                   <MessageCircle size={17} className="text-[#25D366] shrink-0" />
-                  <span>9501698356</span>
+                  <span>{siteContent?.contactPhone || "+91 95016 98356"}</span>
                 </a>
                 <a
-                  href="mailto:houseofshriya.in@gmail.com"
+                  href={`mailto:${siteContent?.contactEmail || "shriyapusha01@gmail.com"}`}
                   className="flex items-center gap-2.5 text-[#0d4f3c] font-semibold hover:underline"
                 >
                   <Mail size={17} className="text-[#c5a059] shrink-0" />
-                  <span>houseofshriya.in@gmail.com</span>
+                  <span>{siteContent?.contactEmail || "shriyapusha01@gmail.com"}</span>
                 </a>
+                <div className="flex items-start gap-2 text-stone-600 text-xs pt-1 border-t border-stone-100">
+                  <MapPin size={16} className="text-[#0d4f3c] shrink-0 mt-0.5" />
+                  <span>{siteContent?.atelierAddress || "1908/2 Ahluwalia Street, Near Arna Barna Chowk, Patiala, Punjab - 147001"}</span>
+                </div>
               </div>
             </div>
 
             <a
-              href="https://wa.me/919501698356"
+              href={`https://wa.me/${(siteContent?.whatsappNumber || "919501698356").replace(/\D/g, "")}`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-2.5 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
@@ -3388,7 +3392,7 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
         <div className="footer-bottom flex flex-wrap items-center justify-between gap-2">
           <BuilderText as="span" text={siteContent?.footerNote ? siteContent.footerNote.replace(/\s*·?\s*(?:SURAT|WORLDWIDE SHIPPING).*$/i, "").trim() : "© House of Shriya. Made for your forever wardrobe."} />
           <div className="flex items-center gap-3">
-            <BuilderText as="span" text={`${siteContent?.atelierCity || "Surat, Gujarat, India"} · Worldwide Shipping`} />
+            <BuilderText as="span" text={`${siteContent?.atelierCity || "Patiala, Punjab, India"} · Worldwide Shipping`} />
           </div>
         </div>
       </div>

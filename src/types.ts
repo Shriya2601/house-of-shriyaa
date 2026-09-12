@@ -79,6 +79,7 @@ export interface SiteContent {
   contactEmail: string;
   whatsappNumber: string;
   atelierCity: string;
+  atelierAddress?: string;
   heroSlides: HeroSlide[];
   features: FeatureItem[];
   trustBadges?: any[];

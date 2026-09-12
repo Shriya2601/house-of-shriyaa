@@ -90,16 +90,17 @@ export function handleFirestoreError(
 }
 
 export const defaultSiteContent: SiteContent = {
-  announcementText: "Handcrafted Unstitched Heirlooms",
+  announcementText: "Handcrafted Heirloom Suits & Luxury Couture | Free Shipping Across India",
   announcementCta: "Shop Festive Edits",
-  announcementVisible: false,
+  announcementVisible: true,
   brandTagline: "Heirloom Indian Couture, Reimagined for the Modern Connoisseur",
   brandDescription:
-    "Rooted in centuries-old artisanal traditions of Varanasi, Chanderi, and Bengal. Every yard of silk tells an untold tale of heritage weaving, resham zari hand embroidery, and regal silhouette artistry.",
+    "Rooted in authentic artisanal traditions. Every ensemble tells an untold tale of pure fabrics, exquisite resham handwork, and regal silhouette artistry.",
   contactPhone: "+91 95016 98356",
-  contactEmail: "care@houseofshriya.com",
+  contactEmail: "shriyapusha01@gmail.com",
   whatsappNumber: "+919501698356",
-  atelierCity: "Surat, Gujarat, India",
+  atelierCity: "Patiala, Punjab, India",
+  atelierAddress: "1908/2 Ahluwalia Street, Near Arna Barna Chowk, Patiala, Punjab - 147001",
   heroSlides: [
     {
       eyebrow: "NEW ARRIVAL / Contemporary Pret",

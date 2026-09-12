@@ -43,13 +43,21 @@ export default function CanvaEditable({
   slideIndex,
   ...rest
 }: CanvaEditableProps) {
-  const { getOverride } = useEditMode();
+  const { getOverride, isEditMode } = useEditMode();
   const override = getOverride(id);
 
-  const displayText = override?.text !== undefined ? override.text : text !== undefined ? text : undefined;
+  // If this element represents a live product field (e.g. title, price, description, image) or hero dynamic slide,
+  // ensure the live catalog/store props always take precedence unless actively being customized in Canva edit mode:
+  const isProductOrDynamicField = Boolean(productId) || id.startsWith("product_") || id.startsWith("hero_slide_");
+
+  const displayText = (isProductOrDynamicField && !isEditMode && text !== undefined)
+    ? text
+    : (override?.text !== undefined ? override.text : text !== undefined ? text : undefined);
   
   // Prioritize active custom override src if set by user in Edit Mode, then fallback to component src
-  const rawSrc = (override?.src !== undefined && override?.src !== "") ? override.src : (src || "");
+  const rawSrc = (isProductOrDynamicField && !isEditMode && src !== undefined && src !== "")
+    ? src
+    : ((override?.src !== undefined && override?.src !== "") ? override.src : (src || ""));
   let displaySrc = normalizeImageUrl(rawSrc);
   if (displaySrc) {
     if (displaySrc.startsWith("/public/")) {

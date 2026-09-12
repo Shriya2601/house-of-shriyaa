@@ -500,7 +500,7 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
   }
   // Enforce minimum 10 characters to prevent Shiprocket API 422 Unprocessable Entity
   if (streetAddress.length < 10) {
-    const cityArea = addr.city || "Ludhiana";
+    const cityArea = addr.city || "Patiala";
     streetAddress = streetAddress ? `${streetAddress}, ${cityArea} Atelier Enclave` : `${cityArea} Atelier Boutique Road`;
   }
 
@@ -568,11 +568,11 @@ export function formatOrderForShiprocket(order: any, pickupLocationOverride?: st
     billing_last_name: lastName,
     billing_address: streetAddress,
     billing_address_2: addr.addressLine2 || "",
-    billing_city: addr.city || "Ludhiana",
-    billing_pincode: String(addr.pincode || "141001").replace(/\D/g, "").slice(0, 6) || "141001",
+    billing_city: addr.city || "Patiala",
+    billing_pincode: String(addr.pincode || "147001").replace(/\D/g, "").slice(0, 6) || "147001",
     billing_state: addr.state || "Punjab",
     billing_country: "India",
-    billing_email: order.customer?.email || "concierge@houseofshriya.in",
+    billing_email: order.customer?.email || "shriyapusha01@gmail.com",
     billing_phone: cleanPhone,
     shipping_is_billing: true,
     order_items: orderItems,
@@ -896,7 +896,7 @@ export async function trackShiprocketShipment(params: {
             awb_code: awb,
             courier_name: "Shiprocket Express",
             current_status: "MANIFEST_GENERATED",
-            origin: "Ludhiana Atelier, Punjab",
+            origin: "Patiala Atelier, Punjab",
             destination: "Patron Delivery Address",
             edd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", {
               day: "numeric",
@@ -916,7 +916,7 @@ export async function trackShiprocketShipment(params: {
             date: new Date().toISOString().replace("T", " ").slice(0, 19),
             status: "Package Ready for Courier Pickup",
             activity: "Signature heirloom box packed and labeled for dispatch",
-            location: "House of Shriya Atelier, Ludhiana",
+            location: "House of Shriya Atelier, Patiala",
           },
         ],
       },
@@ -953,7 +953,7 @@ export async function checkCourierServiceability(params: {
       token = await getShiprocketToken();
     } catch {}
 
-    const pickup = params.pickupPincode || "141001";
+    const pickup = params.pickupPincode || "147001";
     const delivery = params.deliveryPincode;
     const weight = params.weight || 0.8;
     const cod = params.cod ? 1 : 0;

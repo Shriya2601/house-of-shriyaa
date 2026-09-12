@@ -379,7 +379,21 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
                 type="text"
                 value={formData.atelierCity || ""}
                 onChange={(e) => handleChange("atelierCity", e.target.value)}
-                placeholder="Surat, Gujarat, India"
+                placeholder="Patiala, Punjab, India"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-stone-200 focus:border-[#0d4f3c] focus:ring-1 focus:ring-[#0d4f3c] outline-none"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-stone-700 mb-1 flex items-center gap-1.5">
+                <MapPin size={13} className="text-[#0d4f3c]" />
+                <span>Boutique & Pickup Street Address</span>
+              </label>
+              <input
+                type="text"
+                value={formData.atelierAddress || ""}
+                onChange={(e) => handleChange("atelierAddress", e.target.value)}
+                placeholder="1908/2 Ahluwalia Street, Near Arna Barna Chowk, Patiala, Punjab - 147001"
                 className="w-full px-3 py-2 text-xs rounded-lg border border-stone-200 focus:border-[#0d4f3c] focus:ring-1 focus:ring-[#0d4f3c] outline-none"
               />
             </div>
