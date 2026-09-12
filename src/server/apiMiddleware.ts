@@ -695,11 +695,10 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           if (method === "DELETE") {
             const target = products.find((p) => p.id === productId || (p as any).sku === productId);
             const filtered = products.filter(
-              (p) => p.id !== productId && (p as any).sku !== productId && (!target || p.name !== target.name)
+              (p) => p.id !== productId && (p as any).sku !== productId
             );
             recordDeletedId("products", productId);
             if (target) {
-              if (target.name) recordDeletedId("products", target.name);
               if ((target as any).sku) recordDeletedId("products", (target as any).sku);
               if (Array.isArray(target.colorVariants)) {
                 target.colorVariants.forEach((v: any) => {
@@ -748,13 +747,35 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 }
                 if (body.id) unrecordDeletedId("categories", body.id);
                 if (body.slug) unrecordDeletedId("categories", body.slug);
-                if (body.name) unrecordDeletedId("categories", body.name);
               }
               writeCategories(categories);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(JSON.stringify({ success: true, count: categories.length, categories }));
               return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
+          if (method === "DELETE") {
+            try {
+              const body = await parseJsonBody(req).catch(() => ({}));
+              const catId = parsedUrl.searchParams.get("id") || body?.id;
+              if (catId) {
+                const filtered = categories.filter(
+                  (c) => c.id !== catId && c.slug !== catId
+                );
+                recordDeletedId("categories", catId);
+                writeCategories(filtered);
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, id: catId, count: filtered.length }));
+                return;
+              }
             } catch (err: any) {
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 400;
@@ -771,9 +792,45 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           const catId = decodeURIComponent(categoryMatch[1]);
           let categories = readCategories();
 
+          if (method === "GET") {
+            const found = categories.find((c) => c.id === catId || c.slug === catId);
+            res.setHeader("Content-Type", "application/json");
+            if (found) {
+              res.statusCode = 200;
+              res.end(JSON.stringify(found));
+            } else {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: "Category not found" }));
+            }
+            return;
+          }
+
+          if (method === "PUT" || method === "POST" || method === "PATCH") {
+            try {
+              const body = await parseJsonBody(req);
+              const idx = categories.findIndex((c) => c.id === catId || c.slug === catId);
+              if (idx > -1) {
+                categories[idx] = { ...categories[idx], ...body, id: catId };
+              } else {
+                categories.push({ id: catId, ...body });
+              }
+              unrecordDeletedId("categories", catId);
+              writeCategories(categories);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, category: categories[idx > -1 ? idx : categories.length - 1] }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message }));
+              return;
+            }
+          }
+
           if (method === "DELETE") {
             const filtered = categories.filter(
-              (c) => c.id !== catId && c.slug !== catId && c.name !== catId
+              (c) => c.id !== catId && c.slug !== catId
             );
             recordDeletedId("categories", catId);
             writeCategories(filtered);

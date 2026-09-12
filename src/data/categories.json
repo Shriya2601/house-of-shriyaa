@@ -47,5 +47,9 @@
     "slug": "Seasonal Drop",
     "description": "Limited micro velvet and heirloom drops",
     "sortOrder": 7
+  },
+  {
+    "id": "test-cat",
+    "name": "Test Category"
   }
 ]

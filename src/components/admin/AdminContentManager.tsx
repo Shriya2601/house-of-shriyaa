@@ -55,6 +55,23 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
     return () => window.removeEventListener("hos-content-updated", handleLiveSync);
   }, [isSaving]);
 
+  // Debounced auto-save: automatically persist changes after typing ceases
+  useEffect(() => {
+    if (!isDirty || isSaving) return;
+    const timer = setTimeout(async () => {
+      try {
+        const { heroSlides: _unused, ...safeContent } = formData;
+        await saveSiteContent(safeContent);
+        isDirtyRef.current = false;
+        setIsDirty(false);
+      } catch (err) {
+        console.warn("Auto-save content warning:", err);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [isDirty, formData, isSaving]);
+
   const handleChange = (field: keyof SiteContent, value: any) => {
     setIsDirty(true);
     isDirtyRef.current = true;
