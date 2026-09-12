@@ -10,12 +10,13 @@
     "originalPrice": "₹1000",
     "price": "₹750",
     "inStock": true,
-    "updatedAt": "2026-09-12T08:40:52.612Z",
+    "updatedAt": "2026-09-12T08:56:51.444Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
     "fabricType": "Satin ",
     "images": [
+      "/uploads/test-pixel-1789202504441-3244.png",
       "/uploads/hos-001-main-1788707076761-551.webp",
       "/uploads/test.png",
       "/uploads/hos-001-img-0-1788707076763-589.webp",
@@ -31,7 +32,7 @@
     ],
     "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
     "category": "Satin Wear",
-    "image": "/uploads/hos-001-main-1788707076761-551.webp",
+    "image": "/uploads/test-pixel-1789202504441-3244.png",
     "sizes": [
       "Unstitched Suit"
     ],
@@ -49,6 +50,7 @@
         "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
         "fabricType": "Satin ",
         "images": [
+          "/uploads/test-pixel-1789202504441-3244.png",
           "/uploads/hos-001-main-1788707076761-551.webp",
           "/uploads/test.png",
           "/uploads/hos-001-img-0-1788707076763-589.webp",
@@ -56,7 +58,7 @@
           "/uploads/hos-001-img-1-1788707076763-948.webp",
           "/uploads/hos-001-img-2-1788707076764-576.webp"
         ],
-        "image": "/uploads/hos-001-main-1788707076761-551.webp",
+        "image": "/uploads/test-pixel-1789202504441-3244.png",
         "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
         "inStock": true
       }
