@@ -207,7 +207,16 @@ export default function AdminPortal() {
 
   // Admin Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionValid());
-  const [authEmail, setAuthEmail] = useState<string>(ADMIN_EMAIL);
+  const [authEmail, setAuthEmail] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem("hos_admin_session");
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data?.email && isAuthorizedAdminEmail(data.email)) return data.email;
+      }
+    } catch {}
+    return ADMIN_EMAIL;
+  });
   const [authPassword, setAuthPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [authLoading, setAuthLoading] = useState<boolean>(false);
