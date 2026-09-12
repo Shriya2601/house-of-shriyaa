@@ -120,9 +120,9 @@
     ],
     "savings": "Save 25%",
     "originalPrice": "₹1000",
-    "price": "₹750",
+    "price": "₹3,499",
     "inStock": true,
-    "updatedAt": "2026-09-12T18:37:58.100Z",
+    "updatedAt": "2026-09-12T18:55:25.633Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
@@ -146,14 +146,14 @@
       "Unstitched Suit"
     ],
     "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
-    "name": "Test Updated Product Title",
+    "name": "Graceful Chanderi Anarkali Suit Set",
     "colorHex": "#0d4f3c",
     "colorVariants": [
       {
         "id": "var-hos-001-0",
         "colorName": "Ivory/Cream with Royal Blue Floral Print & Blue Dupatta",
         "colorHex": "#0d4f3c",
-        "price": "₹750",
+        "price": "₹3,499",
         "originalPrice": "₹1000",
         "savings": "Save 25%",
         "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
