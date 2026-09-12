@@ -1,26 +1,135 @@
 [
   {
+    "id": "hos-1789223060754",
+    "name": "ralay",
+    "category": "Cotton Suits",
+    "price": "₹2,999",
+    "originalPrice": "₹4,499",
+    "savings": "Save 33%",
+    "fabricType": "Pure Chanderi Silk",
+    "color": "Royal Emerald",
+    "colorHex": "#0d4f3c",
+    "description": "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish.",
+    "image": "/uploads/hos-002-main-1788707076764-431.webp",
+    "hoverImage": "/uploads/hos-002-hover-1788707076765-346.webp",
+    "images": [
+      "/uploads/hos-002-main-1788707076764-431.webp",
+      "/uploads/hos-002-img-0-1788707076765-189.webp",
+      "/uploads/hos-002-img-1-1788707076766-877.webp"
+    ],
+    "inStock": true,
+    "badges": [
+      "New Drop"
+    ],
+    "tags": [
+      "Cotton Suits",
+      "Pure Chanderi Silk",
+      "New Drop"
+    ],
+    "rating": "4.9",
+    "reviews": "12",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "createdAt": "2026-09-12T14:24:20.754Z",
+    "updatedAt": "2026-09-12T14:33:58.447Z",
+    "colorVariants": [
+      {
+        "id": "var-hos-1789223060754-0",
+        "colorName": "Royal Emerald",
+        "colorHex": "#0d4f3c",
+        "price": "₹2,999",
+        "originalPrice": "₹4,499",
+        "savings": "Save 33%",
+        "description": "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish.",
+        "fabricType": "Pure Chanderi Silk",
+        "image": "/uploads/hos-002-main-1788707076764-431.webp",
+        "hoverImage": "/uploads/hos-002-hover-1788707076765-346.webp",
+        "images": [
+          "/uploads/hos-002-main-1788707076764-431.webp",
+          "/uploads/hos-002-img-0-1788707076765-189.webp",
+          "/uploads/hos-002-img-1-1788707076766-877.webp"
+        ],
+        "inStock": true
+      }
+    ]
+  },
+  {
+    "id": "hos-1789220374434",
+    "name": "party",
+    "category": "Party Wear",
+    "price": "₹2,999",
+    "originalPrice": "₹4,499",
+    "savings": "Save 33%",
+    "fabricType": "Pure Chanderi Silk",
+    "color": "Royal Emerald",
+    "colorHex": "#0d4f3c",
+    "description": "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish.",
+    "image": "/uploads/hos-002-main-1788707076764-431.webp",
+    "hoverImage": "/uploads/hos-002-hover-1788707076765-346.webp",
+    "images": [
+      "/uploads/hos-002-main-1788707076764-431.webp",
+      "/uploads/hos-002-img-0-1788707076765-189.webp",
+      "/uploads/hos-002-img-1-1788707076766-877.webp"
+    ],
+    "inStock": true,
+    "badges": [
+      "New Drop"
+    ],
+    "tags": [
+      "Party Wear",
+      "Cotton Suits",
+      "Pure Chanderi Silk",
+      "New Drop"
+    ],
+    "rating": "4.9",
+    "reviews": "12",
+    "sizes": [
+      "Unstitched Suit"
+    ],
+    "createdAt": "2026-09-12T13:39:34.434Z",
+    "updatedAt": "2026-09-12T14:33:58.447Z",
+    "colorVariants": [
+      {
+        "id": "var-hos-1789220374434-0",
+        "colorName": "Royal Emerald",
+        "colorHex": "#0d4f3c",
+        "price": "₹2,999",
+        "originalPrice": "₹4,499",
+        "savings": "Save 33%",
+        "description": "Handcrafted pure artisanal unstitched fabric with intricate zari border and bespoke heirloom finish.",
+        "fabricType": "Pure Chanderi Silk",
+        "image": "/uploads/hos-002-main-1788707076764-431.webp",
+        "hoverImage": "/uploads/hos-002-hover-1788707076765-346.webp",
+        "images": [
+          "/uploads/hos-002-main-1788707076764-431.webp",
+          "/uploads/hos-002-img-0-1788707076765-189.webp",
+          "/uploads/hos-002-img-1-1788707076766-877.webp"
+        ],
+        "inStock": true
+      }
+    ]
+  },
+  {
     "id": "hos-001",
     "reviews": "38",
     "tags": [
       "Party Wear",
-      "Festive Wear"
+      "Festive Wear",
+      "Satin Wear"
     ],
     "savings": "Save 25%",
     "originalPrice": "₹1000",
     "price": "₹750",
     "inStock": true,
-    "updatedAt": "2026-09-12T12:30:35.426Z",
+    "updatedAt": "2026-09-12T14:33:58.446Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
     "fabricType": "Satin ",
     "images": [
-      "/uploads/test-pixel-1789202504441-3244.png",
       "/uploads/hos-001-main-1788707076761-551.webp",
-      "/uploads/test.png",
       "/uploads/hos-001-img-0-1788707076763-589.webp",
-      "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
       "/uploads/hos-001-img-1-1788707076763-948.webp",
       "/uploads/hos-001-img-2-1788707076764-576.webp"
     ],
@@ -30,13 +139,13 @@
       "New Drop",
       "Stitched & Unstitched"
     ],
-    "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
+    "hoverImage": "/uploads/hos-001-hover-1788707076762-10.webp",
     "category": "Satin Wear",
-    "image": "/uploads/test-pixel-1789202504441-3244.png",
+    "image": "/uploads/hos-001-main-1788707076761-551.webp",
     "sizes": [
       "Unstitched Suit"
     ],
-    "description": "Updated luxurious handcrafted silk and satin suit set",
+    "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
     "name": "Ivory & Royal Blue Floral Satin Suit Set",
     "colorHex": "#0d4f3c",
     "colorVariants": [
@@ -49,17 +158,14 @@
         "savings": "Save 25%",
         "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
         "fabricType": "Satin ",
+        "image": "/uploads/hos-001-main-1788707076761-551.webp",
+        "hoverImage": "/uploads/hos-001-hover-1788707076762-10.webp",
         "images": [
-          "/uploads/test-pixel-1789202504441-3244.png",
           "/uploads/hos-001-main-1788707076761-551.webp",
-          "/uploads/test.png",
           "/uploads/hos-001-img-0-1788707076763-589.webp",
-          "/uploads/hos-001-img-0-1788707076763-589.webp?v=test12345",
           "/uploads/hos-001-img-1-1788707076763-948.webp",
           "/uploads/hos-001-img-2-1788707076764-576.webp"
         ],
-        "image": "/uploads/test-pixel-1789202504441-3244.png",
-        "hoverImage": "/uploads/hos-001-img-1-1788707076763-948.webp",
         "inStock": true
       }
     ]
