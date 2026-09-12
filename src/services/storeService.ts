@@ -179,7 +179,7 @@ export const defaultSiteContent: SiteContent = {
     { id: "nav_heritage", label: "Our Story", href: "/our-story" },
     { id: "nav_craft", label: "Craftsmanship", href: "/craftsmanship" },
   ],
-  ...(savedSiteContentJson as Partial<SiteContent>),
+  ...(savedSiteContentJson as unknown as Partial<SiteContent>),
 };
 
 export const defaultCategories: CategoryItem[] = (savedCategoriesJson as CategoryItem[]) || [
@@ -421,15 +421,12 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
       const existing = map.get(key)!;
       const localTime = getTime(item);
       const incomingTime = getTime(existing);
-      if (localTime > incomingTime && localTime - incomingTime < 120000) {
+      if (localTime > incomingTime) {
         map.set(key, item);
       }
     } else {
-      // Not on server: only keep if created locally in the last 45 seconds (pending sync)
-      const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
-      if (createdTime && now - createdTime < 45000) {
-        map.set(key, item);
-      }
+      // Keep local item (pending sync or local creation)
+      map.set(key, item);
     }
   }
 
@@ -966,13 +963,18 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
 
   // 3. Sync to API backend for disk persistence
   try {
-    await fetch("/api/site-content", {
+    const res = await fetch("/api/site-content", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updated),
     });
-  } catch (apiErr) {
-    console.warn("API site content sync notice:", apiErr);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server failed to save site content (HTTP ${res.status})`);
+    }
+  } catch (apiErr: any) {
+    console.error("API site content sync error:", apiErr);
+    throw new Error(apiErr?.message || "Failed to persist site content to backend server.");
   }
 
   // 4. Sync to Firestore (single source of truth across all devices)
@@ -1133,12 +1135,19 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
 
   // Sync with central backend API
   try {
-    await fetch("/api/categories", {
+    const res = await fetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updated),
     });
-  } catch {}
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server failed to save category (HTTP ${res.status})`);
+    }
+  } catch (apiErr: any) {
+    console.error("API category sync error:", apiErr);
+    throw new Error(apiErr?.message || "Failed to persist category to backend server.");
+  }
 
   try {
     const docRef = doc(db, "categories", category.id);
@@ -1201,7 +1210,7 @@ export function pausePolling(_seconds = 0): void {
   // Real-time synchronization active without artificial polling pause
 }
 
-// Helper to append/update anti-cache timestamp parameter on uploaded images
+// Helper to normalize uploaded image paths cleanly
 function applyImageCacheBuster(url: string | undefined): string {
   if (!url || typeof url !== "string") return "";
   const trimmed = url.trim();
@@ -1209,8 +1218,7 @@ function applyImageCacheBuster(url: string | undefined): string {
     const cleanPath = trimmed.startsWith("/public/uploads/")
       ? trimmed.replace("/public", "")
       : trimmed;
-    const baseUrl = cleanPath.split("?")[0];
-    return `${baseUrl}?v=${Date.now()}`;
+    return cleanPath.split("?")[0];
   }
   return trimmed;
 }
@@ -1441,16 +1449,21 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(sanitized),
     });
-    if (!apiRes.ok && apiRes.status !== 405) {
+    if (!apiRes.ok) {
       // Fallback to item-specific endpoint if collection post failed
-      await fetch(`/api/products/${encodeURIComponent(id)}`, {
+      const putRes = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sanitized),
-      }).catch(() => {});
+      });
+      if (!putRes.ok) {
+        const errJson = await putRes.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server failed to save product (HTTP ${putRes.status})`);
+      }
     }
-  } catch (apiErr) {
-    console.warn("Backend API sync notice:", apiErr);
+  } catch (apiErr: any) {
+    console.error("Backend API sync error:", apiErr);
+    throw new Error(apiErr?.message || "Failed to persist product to backend server.");
   }
 
   // 2. Sync to Firestore
@@ -3354,4 +3367,119 @@ export async function adminDeleteOrder(orderId: string): Promise<void> {
     );
   }
   broadcastCrossDeviceSync("orders", filtered);
+}
+
+/* ============================================================
+   BRAND STYLES & CANVA THEME PERSISTENCE
+============================================================ */
+
+export const BRAND_STYLES_CACHE_KEY = "hos_brand_styles";
+export const CUSTOM_OVERRIDES_CACHE_KEY = "hos_custom_overrides";
+
+export const defaultBrandStyles = {
+  primaryColor: "#0d4f3c",
+  accentColor: "#d4af37",
+  headingFont: "Cinzel",
+  bodyFont: "Plus Jakarta Sans",
+  backgroundColor: "#faf8f5",
+  headingWeight: "700" as const,
+  letterSpacing: "normal" as const,
+};
+
+export function getCachedBrandStyles(): any {
+  if (typeof window === "undefined") return defaultBrandStyles;
+  try {
+    const saved = localStorage.getItem(BRAND_STYLES_CACHE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        return { ...defaultBrandStyles, ...parsed };
+      }
+    }
+  } catch {}
+  return defaultBrandStyles;
+}
+
+export function cacheBrandStylesLocally(styles: any): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(BRAND_STYLES_CACHE_KEY, JSON.stringify(styles));
+  } catch {}
+}
+
+export function getCachedCustomOverrides(): Record<string, any> {
+  if (typeof window === "undefined") return {};
+  try {
+    const saved = localStorage.getItem(CUSTOM_OVERRIDES_CACHE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+export function cacheCustomOverridesLocally(overrides: Record<string, any>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_OVERRIDES_CACHE_KEY, JSON.stringify(overrides));
+  } catch {}
+}
+
+export async function saveBrandStyles(styles: any): Promise<any> {
+  const existing = getCachedBrandStyles();
+  const updated = { ...existing, ...styles, updatedAt: new Date().toISOString() };
+  cacheBrandStylesLocally(updated);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-brand-styles-updated", { detail: updated }));
+  }
+  broadcastCrossDeviceSync("brand_styles" as any, updated);
+
+  try {
+    const res = await fetch("/api/brand-styles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server failed to save brand styles (HTTP ${res.status})`);
+    }
+  } catch (err: any) {
+    console.error("Save brand styles error:", err);
+    throw new Error(err?.message || "Failed to persist brand styles to backend server.");
+  }
+
+  return updated;
+}
+
+export async function saveCustomOverrides(overrides: Record<string, any>): Promise<Record<string, any>> {
+  const existing = getCachedCustomOverrides();
+  const updated = { ...existing, ...overrides };
+  cacheCustomOverridesLocally(updated);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: updated }));
+  }
+  broadcastCrossDeviceSync("custom_overrides" as any, updated);
+
+  try {
+    const res = await fetch("/api/custom-overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server failed to save custom overrides (HTTP ${res.status})`);
+    }
+  } catch (err: any) {
+    console.error("Save custom overrides error:", err);
+    throw new Error(err?.message || "Failed to persist custom overrides to backend server.");
+  }
+
+  return updated;
 }

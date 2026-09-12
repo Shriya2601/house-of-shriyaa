@@ -196,6 +196,26 @@ function writeSiteContent(content: any): void {
   broadcastSseSync("site_content", content);
 }
 
+function readBrandStyles(): any {
+  const styles = readDataFile("brandStyles.json", {});
+  return styles && typeof styles === "object" ? styles : {};
+}
+
+function writeBrandStyles(styles: any): void {
+  syncDataFile("brandStyles.json", styles);
+  broadcastSseSync("brand_styles", styles);
+}
+
+function readCustomOverrides(): any {
+  const overrides = readDataFile("customOverrides.json", {});
+  return overrides && typeof overrides === "object" ? overrides : {};
+}
+
+function writeCustomOverrides(overrides: any): void {
+  syncDataFile("customOverrides.json", overrides);
+  broadcastSseSync("custom_overrides", overrides);
+}
+
 function readOrdersList(): any[] {
   const list = readDataFile("orders.json", []);
   const deleted = getDeletedIds("orders");
@@ -545,20 +565,23 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 if (idx > -1) {
                   const existing = products[idx];
                   const merged = { ...existing, ...product, id: product.id, updatedAt: new Date().toISOString() };
-                  // If product.image is provided, ALWAYS ensure colorVariants[0] and images[0] reflect the new image
+                  // If product.images is explicitly passed, use it directly without resurrecting old images
+                  if (Array.isArray(product.images) && product.images.length > 0) {
+                    merged.images = product.images;
+                  } else if (product.image) {
+                    merged.image = product.image;
+                    merged.images = [product.image];
+                  }
                   if (product.image) {
                     merged.image = product.image;
-                    merged.images = Array.isArray(merged.images) && merged.images.length > 0
-                      ? [product.image, ...merged.images.filter((img: string) => img !== product.image)]
-                      : [product.image];
                     if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
                       const v0 = merged.colorVariants[0];
                       merged.colorVariants[0] = {
                         ...v0,
                         image: product.image,
                         hoverImage: product.hoverImage || v0.hoverImage || product.image,
-                        images: Array.isArray(v0.images) && v0.images.length > 0
-                          ? [product.image, ...v0.images.filter((img: string) => img !== product.image)]
+                        images: Array.isArray(product.images) && product.images.length > 0
+                          ? product.images
                           : [product.image],
                       };
                     }
@@ -651,7 +674,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               };
               const idx = products.findIndex((p) => p.id === productId);
               if (idx > -1) {
-                products[idx] = { ...product, id: productId, updatedAt: new Date().toISOString() };
+                products[idx] = { ...products[idx], ...product, id: productId, updatedAt: new Date().toISOString() };
               } else {
                 products.unshift(product);
               }
@@ -997,6 +1020,74 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 400;
               res.end(JSON.stringify({ error: err.message || "Failed to update site content" }));
+              return;
+            }
+          }
+        }
+
+        // ============================================================
+        // BRAND STYLES & THEME: /api/brand-styles
+        // ============================================================
+        if (urlWithoutQuery === "/api/brand-styles") {
+          setAntiCacheHeaders(res);
+          if (method === "GET") {
+            const styles = readBrandStyles();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(styles));
+            return;
+          }
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
+            try {
+              const body = await parseJsonBody(req);
+              const existing = readBrandStyles();
+              const updated = {
+                ...existing,
+                ...(body && typeof body === "object" ? body : {}),
+                updatedAt: new Date().toISOString(),
+              };
+              writeBrandStyles(updated);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, brandStyles: updated }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Failed to update brand styles" }));
+              return;
+            }
+          }
+        }
+
+        // ============================================================
+        // CUSTOM OVERRIDES: /api/custom-overrides
+        // ============================================================
+        if (urlWithoutQuery === "/api/custom-overrides") {
+          setAntiCacheHeaders(res);
+          if (method === "GET") {
+            const overrides = readCustomOverrides();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(overrides));
+            return;
+          }
+          if (method === "POST" || method === "PUT" || method === "PATCH") {
+            try {
+              const body = await parseJsonBody(req);
+              const existing = readCustomOverrides();
+              const isReplace = body?.replace === true || (body?.overrides !== undefined && Object.keys(body.overrides).length === 0);
+              const incoming = body?.overrides !== undefined ? body.overrides : (typeof body === "object" && body !== null ? body : {});
+              const updated = isReplace ? incoming : { ...existing, ...incoming };
+              writeCustomOverrides(updated);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, customOverrides: updated }));
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Failed to update custom overrides" }));
               return;
             }
           }
