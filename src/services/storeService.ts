@@ -353,6 +353,19 @@ export async function syncServerDeletedIds(): Promise<void> {
   } catch {}
 }
 
+// Universal safe ISO date parser
+export function parseSafeIsoDate(rawDate: any): string {
+  if (!rawDate) return new Date().toISOString();
+  try {
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) return d.toISOString();
+    const clean = String(rawDate).replace(/,/g, "").trim();
+    const d2 = new Date(clean);
+    if (!isNaN(d2.getTime())) return d2.toISOString();
+  } catch {}
+  return new Date().toISOString();
+}
+
 // Universal timestamp & deletion-aware merge helper: protects local updates and deletions from being reverted
 export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: string; createdAt?: string }>(
   localList: T[],
@@ -373,7 +386,15 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
 
   const getTime = (item: T) => {
     const raw = item.updatedAt || item.createdAt;
-    return raw ? new Date(raw).getTime() : 0;
+    if (!raw) return 0;
+    try {
+      const t = new Date(raw).getTime();
+      if (!isNaN(t)) return t;
+      const clean = String(raw).replace(/,/g, "").trim();
+      const t2 = new Date(clean).getTime();
+      if (!isNaN(t2)) return t2;
+    } catch {}
+    return 0;
   };
 
   // 1. Incoming items from server take precedence as the authoritative list
@@ -2805,7 +2826,11 @@ export async function adminFetchAllBookings(): Promise<AtelierBooking[]> {
     console.warn("Firestore adminFetchAllBookings fetch error:", e);
   }
 
-  list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  list.sort((a, b) => {
+    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return (isNaN(tB) ? 0 : tB) - (isNaN(tA) ? 0 : tA);
+  });
   try {
     localStorage.setItem("hos_atelier_bookings", JSON.stringify(list));
   } catch {}
@@ -3145,9 +3170,10 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
       const srJson = await srRes.json();
       if (srJson?.success && Array.isArray(srJson.data)) {
         const srOrders: Order[] = srJson.data.map((item: any) => {
-          const ordNum = item.channel_order_id || `HOS-${item.id}`;
-          const existing = list.find((o) => o.orderNumber === ordNum || o.id === item.id?.toString());
-          const srCreatedAt = item.created_at || new Date().toISOString();
+          const ordNum = String(item.channel_order_id || `HOS-${item.id || Date.now()}`);
+          const existing = list.find((o) => String(o.orderNumber) === ordNum || String(o.id) === String(item.id));
+          const srCreatedAt = parseSafeIsoDate(item.created_at);
+          const srUpdatedAt = parseSafeIsoDate(item.updated_at || item.created_at);
           return {
             id: existing?.id || `ord_${item.id || ordNum.replace(/[^a-zA-Z0-9]/g, "_")}`,
             orderNumber: ordNum,
@@ -3185,7 +3211,7 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
             trackingCourier: item.courier_name || existing?.trackingCourier,
             trackingUrl: item.tracking_url || existing?.trackingUrl,
             createdAt: srCreatedAt,
-            updatedAt: item.updated_at || srCreatedAt,
+            updatedAt: srUpdatedAt,
           };
         }).filter((o: Order) => !deleted.has(o.id) && !deleted.has(o.orderNumber));
 
@@ -3196,7 +3222,11 @@ export async function adminFetchAllOrders(): Promise<Order[]> {
     console.warn("Shiprocket orders sync notice:", srErr);
   }
 
-  list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  list.sort((a, b) => {
+    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return (isNaN(tB) ? 0 : tB) - (isNaN(tA) ? 0 : tA);
+  });
   cacheOrdersLocally(list);
   return list;
 }

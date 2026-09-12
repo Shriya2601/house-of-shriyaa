@@ -177,6 +177,30 @@ function ShipmentStatusBadge({
   );
 }
 
+function formatDisplayDate(dateStr: any): string {
+  if (!dateStr) return "Recent";
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    const clean = String(dateStr).replace(/,/g, "").trim();
+    const d2 = new Date(clean);
+    if (!isNaN(d2.getTime())) {
+      return d2.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+  } catch {}
+  return String(dateStr).slice(0, 16) || "Recent";
+}
+
 export default function AdminPortal() {
   const navigate = useNavigate();
   const { products, setProducts, currentUser, setSiteContent } = useStore();
@@ -272,53 +296,70 @@ export default function AdminPortal() {
     setDataLoading(true);
     try {
       await syncServerDeletedIds().catch(() => {});
-      const [fetchedBookings, fetchedOrders] = await Promise.all([
-        adminFetchAllBookings(),
-        adminFetchAllOrders(),
-      ]);
+    } catch {}
 
-      setBookings(fetchedBookings);
-      setOrders(fetchedOrders);
-      checkShiprocketConnection();
-
-      // Fetch fresh live products and site-content from server with anti-cache headers
-      const [prodRes, contentRes] = await Promise.allSettled([
-        fetch(`/api/products?t=${Date.now()}`, {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        }),
-        fetch(`/api/site-content?t=${Date.now()}`, {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        }),
-      ]);
-
-      if (prodRes.status === "fulfilled" && prodRes.value.ok) {
-        const prodData = await prodRes.value.json();
-        if (Array.isArray(prodData)) {
+    // 1. Fetch live products from server with anti-cache headers FIRST so catalog updates immediately
+    try {
+      const prodRes = await fetch(`/api/products?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (prodRes.ok) {
+        const prodData = await prodRes.json();
+        if (Array.isArray(prodData) && prodData.length > 0) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = prodData
             .map(ensureProductVariants)
-            .filter((p: Product) => !deleted.has(p.id) && !deleted.has((p as any).sku));
+            .filter((p: Product) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
           setProducts(normalized);
           cacheProductsLocally(normalized);
         }
       }
+    } catch (prodErr) {
+      console.warn("Notice fetching fresh products:", prodErr);
+    }
 
-      if (contentRes.status === "fulfilled" && contentRes.value.ok) {
-        const contentData = await contentRes.value.json();
+    // 2. Fetch fresh live site-content from server
+    try {
+      const contentRes = await fetch(`/api/site-content?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (contentRes.ok) {
+        const contentData = await contentRes.json();
         if (contentData && typeof contentData === "object" && Object.keys(contentData).length > 0) {
           setSiteContent((prev) => ({ ...prev, ...contentData }));
           cacheSiteContentLocally(contentData);
         }
       }
-    } catch (e) {
-      console.error("Error loading admin data:", e);
-      showToast("Could not load latest records. Using cached view.", "error");
-    } finally {
-      setDataLoading(false);
-      setRefreshing(false);
+    } catch (contentErr) {
+      console.warn("Notice fetching fresh site content:", contentErr);
     }
+
+    // 3. Fetch Bookings and Orders safely in parallel
+    try {
+      const [bookingsResult, ordersResult] = await Promise.allSettled([
+        adminFetchAllBookings(),
+        adminFetchAllOrders(),
+      ]);
+
+      if (bookingsResult.status === "fulfilled" && Array.isArray(bookingsResult.value)) {
+        setBookings(bookingsResult.value);
+      }
+      if (ordersResult.status === "fulfilled" && Array.isArray(ordersResult.value)) {
+        setOrders(ordersResult.value);
+      }
+    } catch (dataErr) {
+      console.warn("Notice fetching bookings/orders:", dataErr);
+    }
+
+    // 4. Background check for Shiprocket
+    try {
+      checkShiprocketConnection();
+    } catch {}
+
+    setDataLoading(false);
+    setRefreshing(false);
   };
 
   // Real-time synchronization for AdminPortal when products, orders, bookings or content are edited or deleted
@@ -1375,11 +1416,7 @@ export default function AdminPortal() {
                               </button>
                             </div>
                             <span className="text-[10px] font-sans font-normal text-stone-500 block">
-                              {new Date(booking.createdAt).toLocaleDateString("en-IN", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })}
+                              {formatDisplayDate(booking.createdAt)}
                             </span>
                           </td>
 
@@ -1631,11 +1668,7 @@ export default function AdminPortal() {
                               </button>
                             </div>
                             <span className="text-[10px] font-sans font-normal text-stone-500 block">
-                              {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })}
+                              {formatDisplayDate(order.createdAt)}
                             </span>
                           </td>
 

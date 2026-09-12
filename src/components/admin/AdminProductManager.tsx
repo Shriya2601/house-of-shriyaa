@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Product } from "../../types";
 import { deleteProduct, saveProduct } from "../../services/storeService";
-import { getProductDisplayImage, handleImageError, normalizeImageUrl } from "../../utils/imageUtils";
+import { getProductDisplayImage, handleImageError, normalizeImageUrl, compressImageFile } from "../../utils/imageUtils";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -46,10 +46,13 @@ export default function AdminProductManager({
   const [uploadingProductId, setUploadingProductId] = useState<string | null>(null);
   const quickFileInputRef = useRef<HTMLInputElement>(null);
   const [targetProductForPhoto, setTargetProductForPhoto] = useState<Product | null>(null);
+  const targetProductRef = useRef<Product | null>(null);
 
   const handleQuickUploadClick = (p: Product, e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     setTargetProductForPhoto(p);
+    targetProductRef.current = p;
     if (quickFileInputRef.current) {
       quickFileInputRef.current.value = "";
       quickFileInputRef.current.click();
@@ -58,52 +61,24 @@ export default function AdminProductManager({
 
   const handleQuickPhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !targetProductForPhoto) return;
+    const p = targetProductRef.current || targetProductForPhoto;
+    if (!file || !p) return;
 
     const isImage =
       (file.type && file.type.startsWith("image/")) ||
-      /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(file.name);
+      /\.(jpe?g|png|webp|gif|avif|bmp|svg|heic|heif)$/i.test(file.name);
     if (!isImage) {
-      showToast("Please choose a valid image file (JPG, PNG, WebP).", "error");
+      showToast("Please choose a valid image file (JPG, PNG, WebP, HEIC).", "error");
       return;
     }
 
-    const p = targetProductForPhoto;
     setUploadingProductId(p.id);
 
     try {
-      // 1. Read file as base64 dataUrl
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("Failed to read image file"));
-        reader.readAsDataURL(file);
-      });
+      // 1. Compress image to clean lightweight JPEG/WebP dataUrl
+      const { dataUrl } = await compressImageFile(file, 1400, 0.85);
 
-      // 2. Optimistically update product photo in UI with 0ms latency
-      const optimisticProduct: Product = {
-        ...p,
-        image: dataUrl,
-        hoverImage: p.hoverImage === p.image ? dataUrl : p.hoverImage || dataUrl,
-        images: Array.isArray(p.images) && p.images.length > 0 ? [dataUrl, ...p.images.slice(1)] : [dataUrl],
-        colorVariants: Array.isArray(p.colorVariants) && p.colorVariants.length > 0
-          ? [
-              {
-                ...p.colorVariants[0],
-                image: dataUrl,
-                hoverImage: p.hoverImage === p.image ? dataUrl : p.colorVariants[0].hoverImage || dataUrl,
-                images: Array.isArray(p.colorVariants[0].images) && p.colorVariants[0].images.length > 0
-                  ? [dataUrl, ...p.colorVariants[0].images.slice(1)]
-                  : [dataUrl],
-              },
-              ...p.colorVariants.slice(1),
-            ]
-          : undefined,
-        updatedAt: new Date().toISOString(),
-      };
-      onProductUpdated(optimisticProduct);
-
-      // 3. Upload to server for clean web /uploads/ URL
+      // 2. Upload to server for clean web /uploads/ URL
       let finalUrl = dataUrl;
       try {
         const upRes = await fetch("/api/upload", {
@@ -119,7 +94,7 @@ export default function AdminProductManager({
         console.warn("Direct upload fallback to dataUrl", upErr);
       }
 
-      // 4. Save and persist permanently across store and database
+      // 3. Save and persist permanently across store and database
       const updatedProduct: Product = {
         ...p,
         image: finalUrl,
@@ -151,6 +126,7 @@ export default function AdminProductManager({
     } finally {
       setUploadingProductId(null);
       setTargetProductForPhoto(null);
+      targetProductRef.current = null;
       if (quickFileInputRef.current) quickFileInputRef.current.value = "";
     }
   };
