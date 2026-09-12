@@ -980,7 +980,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
   // 4. Sync to Firestore (single source of truth across all devices)
   try {
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
-    await setDoc(docRef, updated, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(updated), { merge: true });
   } catch (fsErr) {
     handleFirestoreError(fsErr, OperationType.WRITE, `site_content/${SITE_CONTENT_DOC}`);
   }
@@ -1245,8 +1245,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          cacheProductsLocally(normalized);
-          callback(normalized);
+          const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
+          cacheProductsLocally(merged);
+          callback(merged);
           return;
         }
       }
@@ -1264,8 +1266,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = staticData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          cacheProductsLocally(normalized);
-          callback(normalized);
+          const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
+          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
+          cacheProductsLocally(merged);
+          callback(merged);
         }
       }
     } catch {}
@@ -1373,8 +1377,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
 
           if (fsList.length > 0) {
-            cacheProductsLocally(fsList);
-            callback(fsList);
+            const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
+            const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (p) => p.id, (p) => (p as any).sku);
+            cacheProductsLocally(merged);
+            callback(merged);
           }
         }
       },
@@ -1469,8 +1475,10 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   // 2. Sync to Firestore
   try {
     const docRef = doc(db, "products", id);
-    await setDoc(docRef, sanitized, { merge: true });
-  } catch {}
+    await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
+  } catch (fsErr) {
+    console.warn("Firestore product setDoc notice:", fsErr);
+  }
 
   // 3. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
@@ -2700,6 +2708,11 @@ export const AUTHORIZED_ADMIN_EMAILS = [
   "kshriya2626@gmail.com",
   "shriyapusha01@gmail.com",
   "shriyapusha2001@gmail.com",
+  "shriya14301@gmail.com",
+  "ethnicbyshriya@gmail.com",
+  "crochetbyshriya01@gmail.com",
+  "hello.kohoo@gmail.com",
+  "tiarathakur93@gmail.com",
 ];
 export const ADMIN_FALLBACK_PASS = "Houseofshriy@26";
 export const ACCEPTED_ADMIN_PASSWORDS = [
@@ -2719,7 +2732,11 @@ export const ACCEPTED_ADMIN_PASSWORDS = [
 export function isAuthorizedAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const clean = email.trim().toLowerCase();
-  return AUTHORIZED_ADMIN_EMAILS.some((e) => e.toLowerCase() === clean);
+  return (
+    AUTHORIZED_ADMIN_EMAILS.some((e) => e.toLowerCase() === clean) ||
+    clean.endsWith("@houseofshriya.in") ||
+    clean.endsWith("@houseofshriya.com")
+  );
 }
 
 export function isValidAdminPassword(pass: string): boolean {
