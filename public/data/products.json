@@ -122,7 +122,7 @@
     "originalPrice": "₹1000",
     "price": "₹750",
     "inStock": true,
-    "updatedAt": "2026-09-12T17:03:12.078Z",
+    "updatedAt": "2026-09-12T18:37:58.100Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
@@ -146,7 +146,7 @@
       "Unstitched Suit"
     ],
     "description": "A graceful satin suit set featuring a soft, luxurious finish with beautiful blue floral detailing. Paired with a matching printed bottom and flowing dupatta, it’s perfect for festive occasions, casual gatherings, and effortless everyday elegance.",
-    "name": "Ivory & Royal Blue Floral Satin Suit Set",
+    "name": "Test Updated Product Title",
     "colorHex": "#0d4f3c",
     "colorVariants": [
       {
@@ -161,10 +161,7 @@
         "image": "/uploads/hos-001-main-1788707076761-551.webp",
         "hoverImage": "/uploads/hos-001-hover-1788707076762-10.webp",
         "images": [
-          "/uploads/hos-001-main-1788707076761-551.webp",
-          "/uploads/hos-001-img-0-1788707076763-589.webp",
-          "/uploads/hos-001-img-1-1788707076763-948.webp",
-          "/uploads/hos-001-img-2-1788707076764-576.webp"
+          "/uploads/hos-001-main-1788707076761-551.webp"
         ],
         "inStock": true
       }

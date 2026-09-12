@@ -79,11 +79,17 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
   const { siteContent, setSiteContent } = useStore();
   const [slides, setSlides] = useState<HeroSlide[]>(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      return siteContent.heroSlides.map((s, idx) => ({
+      const mapped = siteContent.heroSlides.map((s, idx) => ({
         ...DEFAULT_SLIDES[idx % DEFAULT_SLIDES.length],
         ...s,
         number: s.number || `0${idx + 1}`,
       }));
+      if (mapped.length < DEFAULT_SLIDES.length) {
+        for (let i = mapped.length; i < DEFAULT_SLIDES.length; i++) {
+          mapped.push(DEFAULT_SLIDES[i]);
+        }
+      }
+      return mapped;
     }
     return DEFAULT_SLIDES;
   });
@@ -121,6 +127,11 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
         ...s,
         number: s.number || `0${idx + 1}`,
       }));
+      if (cleanSlides.length < DEFAULT_SLIDES.length) {
+        for (let i = cleanSlides.length; i < DEFAULT_SLIDES.length; i++) {
+          cleanSlides.push(DEFAULT_SLIDES[i]);
+        }
+      }
       setSlides((prev) => {
         if (JSON.stringify(prev) !== JSON.stringify(cleanSlides)) {
           return cleanSlides;
@@ -141,6 +152,11 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
           ...s,
           number: s.number || `0${idx + 1}`,
         }));
+        if (cleanSlides.length < DEFAULT_SLIDES.length) {
+          for (let i = cleanSlides.length; i < DEFAULT_SLIDES.length; i++) {
+            cleanSlides.push(DEFAULT_SLIDES[i]);
+          }
+        }
         setSlides((prev) => {
           if (JSON.stringify(prev) !== JSON.stringify(cleanSlides)) {
             return cleanSlides;

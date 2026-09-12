@@ -808,18 +808,18 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
-          if (Array.isArray(serverData.heroSlides)) {
+          if (Array.isArray(serverData.heroSlides) && serverData.heroSlides.length > 0) {
             merged.heroSlides = serverData.heroSlides;
+          } else {
+            merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          if (Array.isArray(serverData.features)) {
+          if (Array.isArray(serverData.features) && serverData.features.length > 0) {
             merged.features = serverData.features;
           }
-          if (Array.isArray(serverData.trustBadges)) {
+          if (Array.isArray(serverData.trustBadges) && serverData.trustBadges.length > 0) {
             merged.trustBadges = serverData.trustBadges;
           }
-          currentContent = merged;
-          cacheSiteContentLocally(merged);
-          callback(merged);
+          applyContentIfNewer(merged);
           return;
         }
       }

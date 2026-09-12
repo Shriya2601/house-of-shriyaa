@@ -2547,22 +2547,30 @@ function Hero({ onPookie }: { onPookie: () => void }) {
 
   const activeSlides = useMemo(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      return siteContent.heroSlides.map((s, idx) => {
+      const mapped = siteContent.heroSlides.map((s, idx) => {
         const fallback = slides[idx % slides.length] || slides[0];
         return {
-          eyebrow: s.eyebrow !== undefined && s.eyebrow !== "" ? s.eyebrow : fallback.eyebrow,
+          eyebrow: s.eyebrow || (s as any).subtitle || fallback.eyebrow,
           number: s.number || `0${idx + 1}`,
-          collection: s.collection !== undefined && s.collection !== "" ? s.collection : fallback.collection,
+          collection: s.collection || (s as any).badge || fallback.collection,
           title: s.title !== undefined && s.title !== "" ? s.title : fallback.title,
           description: s.description !== undefined && s.description !== "" ? s.description : fallback.description,
           image: normalizeImageUrl(s.image) || fallback.image,
-          season: s.season !== undefined && s.season !== "" ? s.season : fallback.season,
-          caption: s.caption !== undefined && s.caption !== "" ? s.caption : fallback.caption,
-          mood: s.mood !== undefined && s.mood !== "" ? s.mood : fallback.mood,
-          ctaText: s.ctaText !== undefined && s.ctaText !== "" ? s.ctaText : fallback.ctaText,
+          season: s.season || fallback.season,
+          caption: s.caption || fallback.caption,
+          mood: s.mood || fallback.mood,
+          ctaText: s.ctaText || fallback.ctaText,
           ctaTarget: s.ctaTarget || fallback.ctaTarget || "catalog-section",
         };
       });
+
+      // If fewer slides were stored, supplement with the boutique defaults so all 3 slides stay available
+      if (mapped.length < slides.length) {
+        for (let i = mapped.length; i < slides.length; i++) {
+          mapped.push(slides[i]);
+        }
+      }
+      return mapped;
     }
     return slides;
   }, [siteContent]);

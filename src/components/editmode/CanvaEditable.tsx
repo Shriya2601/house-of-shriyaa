@@ -46,19 +46,17 @@ export default function CanvaEditable({
   const { getOverride, isEditMode } = useEditMode();
   const override = getOverride(id);
 
-  // If this element represents a live product field (e.g. title, price, description, image) or hero dynamic slide,
-  // ensure the live catalog/store props always take precedence unless actively being customized in Canva edit mode:
-  const isProductOrDynamicField = Boolean(productId) || id.startsWith("product_") || id.startsWith("hero_slide_");
+  // Live props (text, src) passed from StoreContext / CMS / catalog must ALWAYS take precedence on the storefront:
+  const displayText =
+    text !== undefined && (!isEditMode || override?.text === undefined)
+      ? text
+      : (override?.text !== undefined ? override.text : text);
 
-  // Dynamic product fields and hero slides must always reflect live data from catalog/database
-  const displayText = isProductOrDynamicField
-    ? (text !== undefined ? text : override?.text)
-    : (override?.text !== undefined ? override.text : text);
-  
-  // Dynamic product images must always reflect live product images from catalog
-  const rawSrc = isProductOrDynamicField
-    ? (src || override?.src || "")
-    : ((override?.src !== undefined && override?.src !== "") ? override.src : (src || ""));
+  // Live image source must always take precedence unless actively overridden in visual edit mode:
+  const rawSrc =
+    src && (!isEditMode || !override?.src)
+      ? src
+      : (override?.src || src || "");
   let displaySrc = normalizeImageUrl(rawSrc);
   if (displaySrc) {
     if (displaySrc.startsWith("/public/")) {
