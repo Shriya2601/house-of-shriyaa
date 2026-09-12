@@ -198,7 +198,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v9_2026_09_12_fix_upload";
+const APP_CACHE_VERSION = "hos_v10_2026_09_12_sync_fix";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -422,12 +422,16 @@ export function mergeEntitiesByTimestamp<T extends { id?: string; updatedAt?: st
       const existing = map.get(key)!;
       const localTime = getTime(item);
       const incomingTime = getTime(existing);
-      if (localTime > incomingTime) {
+      if (localTime > incomingTime && now - localTime < 60000) {
         map.set(key, item);
       }
     } else {
-      // Keep local item (pending sync or local creation)
-      map.set(key, item);
+      // ONLY keep local item if it was created very recently (< 45s) as an optimistic save
+      // If older, it means it was deleted on the server, so do NOT resurrect it!
+      const localTime = getTime(item);
+      if (localTime > 0 && now - localTime < 45000) {
+        map.set(key, item);
+      }
     }
   }
 
@@ -802,7 +806,9 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges)) {
             merged.trustBadges = serverData.trustBadges;
           }
-          applyContentIfNewer(merged);
+          currentContent = merged;
+          cacheSiteContentLocally(merged);
+          callback(merged);
           return;
         }
       }
@@ -1244,10 +1250,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
-          cacheProductsLocally(merged);
-          callback(merged);
+          cacheProductsLocally(normalized);
+          callback(normalized);
           return;
         }
       }
@@ -1265,10 +1269,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
           const normalized = staticData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          const merged = mergeEntitiesByTimestamp(current, normalized, deleted, (p) => p.id, (p) => (p as any).sku);
-          cacheProductsLocally(merged);
-          callback(merged);
+          cacheProductsLocally(normalized);
+          callback(normalized);
         }
       }
     } catch {}

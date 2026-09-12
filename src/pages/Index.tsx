@@ -2811,7 +2811,10 @@ function Catalog({
 
   const visibleProducts = useMemo(() => {
     const deleted = getLocallyDeletedIds("products");
-    const sourceList = Array.isArray(dynamicProducts) && dynamicProducts.length > 0 ? dynamicProducts : products;
+    const sourceList =
+      Array.isArray(dynamicProducts) && (dynamicProducts.length > 0 || !loadingCatalog)
+        ? dynamicProducts
+        : products;
     const listToFilter = sourceList.filter(
       (p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name)
     );
