@@ -77,6 +77,7 @@ import {
 } from "../services/shiprocketClient";
 import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Product } from "../types";
 import AdminProductManager from "../components/admin/AdminProductManager";
+import AdminCategoryManager from "../components/admin/AdminCategoryManager";
 import AddProductModal from "../components/admin/AddProductModal";
 import AdminBannerManager from "../components/admin/AdminBannerManager";
 import AdminContentManager from "../components/admin/AdminContentManager";
@@ -205,7 +206,7 @@ function formatDisplayDate(dateStr: any): string {
 
 export default function AdminPortal() {
   const navigate = useNavigate();
-  const { products, setProducts, currentUser, setSiteContent } = useStore();
+  const { products, setProducts, currentUser, setSiteContent, categories, setCategories } = useStore();
 
   // Admin Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionValid());
@@ -225,7 +226,9 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "site-content" | "payment-scanner" | "shiprocket-logs">("products");
+  const [activeTab, setActiveTab] = useState<
+    "bookings" | "orders" | "products" | "categories" | "banners" | "site-content" | "payment-scanner" | "shiprocket-logs"
+  >("products");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -1043,7 +1046,11 @@ export default function AdminPortal() {
                   setIsAddModalOpen(true);
                 }
               }}
-              className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider bg-[#d4af37] hover:bg-[#c29d2b] text-[#0d4f3c] rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              className={`px-3.5 py-2 text-xs font-bold uppercase tracking-wider bg-[#d4af37] hover:bg-[#c29d2b] text-[#0d4f3c] rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+                activeTab === "categories" || activeTab === "site-content" || activeTab === "payment-scanner" || activeTab === "shiprocket-logs"
+                  ? "hidden"
+                  : ""
+              }`}
             >
               <Plus size={15} />
               <span>
@@ -1201,6 +1208,29 @@ export default function AdminPortal() {
             </button>
 
             <button
+              id="admin-tab-categories"
+              onClick={() => {
+                setActiveTab("categories");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "categories"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <Navigation size={14} />
+              <span>Categories</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "categories" ? "bg-white/20 text-white" : "bg-stone-300 text-stone-700"
+                }`}
+              >
+                {categories.length}
+              </span>
+            </button>
+
+            <button
               id="admin-tab-banners"
               onClick={() => {
                 setActiveTab("banners");
@@ -1287,8 +1317,8 @@ export default function AdminPortal() {
             </button>
           </div>
 
-          {/* Search & Filter Inputs */}
-          {activeTab !== "banners" ? (
+          {/* Search & Filter Inputs (Only for bookings/orders tables) */}
+          {activeTab === "bookings" || activeTab === "orders" ? (
             <div className="flex flex-wrap items-center gap-2.5 flex-1 md:justify-end">
               <div className="relative flex-1 max-w-xs min-w-[200px]">
                 <Search size={14} className="absolute left-3 top-2.5 text-stone-400" />
@@ -1341,7 +1371,7 @@ export default function AdminPortal() {
             <div className="flex items-center gap-2 flex-1 md:justify-end text-xs text-stone-500">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
                 <Sparkles size={12} />
-                <span>3 Rotating Slideshow Banners • Live Storefront Sync</span>
+                <span>Boutique Live Sync Active</span>
               </span>
             </div>
           )}
@@ -1367,6 +1397,26 @@ export default function AdminPortal() {
           <AdminContentManager showToast={showToast} />
         ) : activeTab === "payment-scanner" ? (
           <AdminPaymentScanner showToast={showToast} />
+        ) : activeTab === "categories" ? (
+          <AdminCategoryManager
+            categories={categories}
+            products={products}
+            onCategoryUpdated={(updatedCat) => {
+              setCategories((prev) => {
+                const idx = prev.findIndex((c) => c.id === updatedCat.id);
+                if (idx > -1) {
+                  const next = [...prev];
+                  next[idx] = updatedCat;
+                  return next;
+                }
+                return [...prev, updatedCat];
+              });
+            }}
+            onCategoryDeleted={(deletedId) => {
+              setCategories((prev) => prev.filter((c) => c.id !== deletedId));
+            }}
+            showToast={showToast}
+          />
         ) : activeTab === "products" ? (
           <AdminProductManager
             products={products}

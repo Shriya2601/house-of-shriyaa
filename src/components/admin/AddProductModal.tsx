@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   X,
   Sparkles,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Product } from "../../types";
 import { saveProduct } from "../../services/storeService";
+import { useStore } from "../../context/StoreContext";
 import {
   normalizeImageUrl,
   handleImageError,
@@ -133,13 +134,32 @@ export default function AddProductModal({
   productToEdit,
   onSuccess,
 }: AddProductModalProps) {
+  const { categories: storeCategories } = useStore();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Form fields
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Cotton Suits");
+  const [customCategory, setCustomCategory] = useState("");
+  const [isCustomCat, setIsCustomCat] = useState(false);
   const [price, setPrice] = useState("₹2,999");
+
+  const categoryOptions = useMemo(() => {
+    const list: string[] = [];
+    const seen = new Set<string>();
+    const add = (val?: string) => {
+      const clean = val?.trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        list.push(clean);
+      }
+    };
+    if (category) add(category);
+    (storeCategories || []).forEach((c) => add(c?.name));
+    STANDARD_CATEGORIES.forEach((c) => add(c));
+    return list;
+  }, [storeCategories, category]);
   const [originalPrice, setOriginalPrice] = useState("₹4,499");
   const [fabricType, setFabricType] = useState("Pure Chanderi Silk");
   const [color, setColor] = useState("Royal Emerald");
@@ -405,10 +425,18 @@ export default function AddProductModal({
       ...extraImages.filter((u) => u && u !== finalMainImg && u !== finalHoverImage),
     ].filter(Boolean) as string[];
 
+    const finalCategory = (isCustomCat && customCategory.trim() ? customCategory.trim() : category.trim()) || "Cotton Suits";
+    const existingTags = (productToEdit?.tags || []).filter(
+      (t) => t && t.toLowerCase() !== (productToEdit?.category || "").toLowerCase()
+    );
+    const computedTags = Array.from(
+      new Set([finalCategory, ...existingTags, fabricType.trim(), selectedBadge].filter(Boolean))
+    );
+
     const productPayload: Product = {
       id: prodId,
       name: name.trim(),
-      category: category.trim(),
+      category: finalCategory,
       price: price.trim(),
       originalPrice: originalPrice.trim(),
       savings,
@@ -421,7 +449,7 @@ export default function AddProductModal({
       images: finalImages,
       inStock,
       badges: selectedBadge ? [selectedBadge] : ["New Drop"],
-      tags: productToEdit?.tags || [category.trim(), fabricType.trim(), selectedBadge].filter(Boolean),
+      tags: computedTags,
       rating: productToEdit?.rating || "4.9",
       reviews: productToEdit?.reviews || "12",
       sizes: ["Unstitched Suit"],
@@ -943,19 +971,39 @@ export default function AddProductModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Category</label>
-                <select
-                  id="product-select-category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-stone-300 rounded-lg bg-white focus:outline-hidden focus:border-[#0d4f3c]"
-                >
-                  {STANDARD_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-stone-700">Category</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomCat(!isCustomCat)}
+                    className="text-[11px] text-[#0d4f3c] font-medium hover:underline cursor-pointer"
+                  >
+                    {isCustomCat ? "Choose from list" : "+ Custom category"}
+                  </button>
+                </div>
+                {isCustomCat ? (
+                  <input
+                    id="product-input-custom-category"
+                    type="text"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="Enter custom category name..."
+                    className="w-full text-sm px-3 py-2 border border-stone-300 rounded-lg focus:outline-hidden focus:border-[#0d4f3c]"
+                  />
+                ) : (
+                  <select
+                    id="product-select-category"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full text-sm px-3 py-2 border border-stone-300 rounded-lg bg-white focus:outline-hidden focus:border-[#0d4f3c]"
+                  >
+                    {categoryOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>

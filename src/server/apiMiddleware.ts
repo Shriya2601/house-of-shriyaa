@@ -164,7 +164,7 @@ function readProducts(): any[] {
   const list = readDataFile("products.json", []);
   const deleted = getDeletedIds("products");
   return (Array.isArray(list) ? list : []).filter(
-    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku) && !deleted.has(p.name)
+    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku)
   );
 }
 
@@ -177,7 +177,7 @@ function readCategories(): any[] {
   const list = readDataFile("categories.json", []);
   const deleted = getDeletedIds("categories");
   return (Array.isArray(list) ? list : []).filter(
-    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug)) && (!c.name || !deleted.has(c.name))
+    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug))
   );
 }
 
@@ -595,7 +595,15 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                     merged.image = product.image;
                     merged.images = [product.image];
                   }
-                  if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
+                  if (product.tags) {
+                    merged.tags = product.tags;
+                  }
+                  if (product.inStock !== undefined) {
+                    merged.inStock = product.inStock;
+                  }
+                  if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
+                    merged.colorVariants = product.colorVariants;
+                  } else if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
                     const v0 = merged.colorVariants[0];
                     merged.colorVariants[0] = {
                       ...v0,
@@ -606,7 +614,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                       savings: product.savings || v0.savings,
                       description: product.description !== undefined ? product.description : v0.description,
                       fabricType: product.fabricType || v0.fabricType,
-                      inStock: product.inStock !== false && v0.inStock !== false,
+                      inStock: product.inStock !== undefined ? product.inStock : v0.inStock !== false,
                       image: product.image || v0.image,
                       hoverImage: product.hoverImage || v0.hoverImage || product.image,
                       images: Array.isArray(product.images) && product.images.length > 0

@@ -664,8 +664,7 @@ export function getCachedProducts(): Product[] {
               p &&
               p.id &&
               !deleted.has(p.id) &&
-              !deleted.has((p as any).sku) &&
-              !deleted.has(p.name)
+              !deleted.has((p as any).sku)
           );
       }
     }
@@ -677,8 +676,7 @@ export function getCachedProducts(): Product[] {
         p &&
         p.id &&
         !deleted.has(p.id) &&
-        !deleted.has((p as any).sku) &&
-        !deleted.has(p.name)
+        !deleted.has((p as any).sku)
     );
 }
 
@@ -1021,7 +1019,7 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data
-            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
+            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug)))
             .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
           cacheCategoriesLocally(filtered);
           callback(filtered);
@@ -1040,7 +1038,7 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data
-            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
+            .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug)))
             .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
           cacheCategoriesLocally(filtered);
           callback(filtered);
@@ -1070,7 +1068,7 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
           const deleted = getLocallyDeletedIds("categories");
           const fsList = snapshot.docs
             .map((d) => ({ id: d.id, ...d.data() } as CategoryItem))
-            .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name))
+            .filter((c) => c && !deleted.has(c.id) && !deleted.has(c.slug))
             .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
           if (fsList.length > 0) {
@@ -1088,7 +1086,7 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
       if (Array.isArray(event.data.data)) {
         const deleted = getLocallyDeletedIds("categories");
         const filtered = event.data.data.filter(
-          (c: any) => c && !deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)
+          (c: any) => c && !deleted.has(c.id) && !deleted.has(c.slug)
         );
         filtered.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
         cacheCategoriesLocally(filtered);
@@ -1165,12 +1163,15 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
 
   try {
     const docRef = doc(db, "categories", category.id);
-    await setDoc(docRef, category, { merge: true });
+    setDoc(docRef, category, { merge: true }).catch((fsErr) => {
+      console.warn("Firestore category setDoc notice:", fsErr);
+    });
   } catch (fsErr) {
     console.warn("Firestore category setDoc notice:", fsErr);
   }
 
   if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-category-saved", { detail: category }));
     window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: updated }));
   }
   broadcastCrossDeviceSync("categories", updated);
@@ -1182,9 +1183,8 @@ export async function deleteCategory(id: string): Promise<void> {
   const target = current.find((c) => c.id === id);
   if (target) {
     if (target.slug) recordLocallyDeletedId("categories", target.slug);
-    if (target.name) recordLocallyDeletedId("categories", target.name);
   }
-  const filtered = current.filter((c) => c.id !== id);
+  const filtered = current.filter((c) => c.id !== id && (!target?.slug || c.slug !== target.slug));
   cacheCategoriesLocally(filtered);
 
   // 1. Sync with central backend API
@@ -1213,10 +1213,11 @@ export async function deleteCategory(id: string): Promise<void> {
   // 3. Firestore deletion
   try {
     const docRef = doc(db, "categories", id);
-    await deleteDoc(docRef);
+    deleteDoc(docRef).catch(() => {});
   } catch {}
 
   if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-category-deleted", { detail: { id } }));
     window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: filtered }));
   }
   broadcastCrossDeviceSync("categories", filtered);
@@ -1503,10 +1504,12 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     console.warn("[StoreService] Backend API sync note:", apiErr?.message || apiErr);
   }
 
-  // 2. Sync to Firestore (Durable live cloud persistence)
+  // 2. Sync to Firestore (Durable live cloud persistence) - non-blocking
   try {
     const docRef = doc(db, "products", id);
-    await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
+    setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true }).catch((fsErr) => {
+      console.warn("Firestore product setDoc notice:", fsErr);
+    });
   } catch (fsErr) {
     console.warn("Firestore product setDoc notice:", fsErr);
   }
@@ -1557,12 +1560,12 @@ export async function deleteProduct(id: string): Promise<void> {
   // 3. Firestore deletion
   try {
     const docRef = doc(db, "products", id);
-    await deleteDoc(docRef);
+    deleteDoc(docRef).catch(() => {});
   } catch {}
 
   // 4. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id, name: target?.name } }));
+    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
   }
   broadcastCrossDeviceSync("products", current);

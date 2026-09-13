@@ -431,13 +431,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Real-time deletion listeners
     const handleProdDel = (e: any) => {
       const id = e.detail?.id;
-      const name = e.detail?.name;
-      if (id || name) {
-        setProducts((prev) => prev.filter((p) => p.id !== id && (!name || p.name !== name)));
-        setCart((prev) => prev.filter((item) => item.product.id !== id && (!name || item.product.name !== name)));
+      if (id) {
+        setProducts((prev) => prev.filter((p) => p.id !== id && (p as any).sku !== id));
+        setCart((prev) => prev.filter((item) => item.product.id !== id));
         setWishlist((prev) => {
           const next = new Set(prev);
-          if (id) next.delete(id);
+          next.delete(id);
           return next;
         });
       }
@@ -446,7 +445,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const prod = e.detail;
       if (prod && prod.id) {
         setProducts((prev) => {
-          const idx = prev.findIndex((p) => p.id === prod.id);
+          const idx = prev.findIndex((p) => p.id === prod.id || (p as any).sku === prod.id);
           if (idx > -1) {
             const next = [...prev];
             next[idx] = prod;
@@ -458,7 +457,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
     const handleCatDel = (e: any) => {
       const id = e.detail?.id;
-      if (id) setCategories((prev) => prev.filter((c) => c.id !== id));
+      if (id) setCategories((prev) => prev.filter((c) => c.id !== id && c.slug !== id));
     };
     const handleCatSaved = (e: any) => {
       const cat = e.detail;
