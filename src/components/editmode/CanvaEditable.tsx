@@ -48,15 +48,12 @@ export default function CanvaEditable({
 
   // Live props (text, src) passed from StoreContext / CMS / catalog must ALWAYS take precedence on the storefront:
   const displayText =
-    text !== undefined && (!isEditMode || override?.text === undefined)
+    text !== undefined
       ? text
-      : (override?.text !== undefined ? override.text : text);
+      : (override?.text !== undefined ? override.text : "");
 
   // Live image source must always take precedence unless actively overridden in visual edit mode:
-  const rawSrc =
-    src && (!isEditMode || !override?.src)
-      ? src
-      : (override?.src || src || "");
+  const rawSrc = src || override?.src || "";
   let displaySrc = normalizeImageUrl(rawSrc);
   if (displaySrc) {
     if (displaySrc.startsWith("/public/")) {

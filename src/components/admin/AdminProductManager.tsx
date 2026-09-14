@@ -182,6 +182,26 @@ export default function AdminProductManager({
     setIsModalOpen(true);
   };
 
+  const handleToggleStock = async (p: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newStock = p.inStock === false;
+    const updated: Product = {
+      ...p,
+      inStock: newStock,
+      colorVariants: Array.isArray(p.colorVariants)
+        ? p.colorVariants.map((v) => ({ ...v, inStock: newStock }))
+        : undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    onProductUpdated(updated);
+    try {
+      await saveProduct(updated);
+      showToast(`"${p.name}" marked as ${newStock ? "In Stock" : "Sold Out"}`);
+    } catch {
+      showToast("Failed to update stock status", "error");
+    }
+  };
+
   const handleDelete = (p: Product) => {
     setProductToDelete(p);
   };

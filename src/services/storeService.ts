@@ -1317,8 +1317,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
   const handleSingleProductSaved = (e: any) => {
     if (e.detail && e.detail.id) {
-      const deleted = getLocallyDeletedIds("products");
-      if (deleted.has(e.detail.id)) return;
+      unrecordLocallyDeletedId("products", e.detail.id);
       const current = getCachedProducts();
       const idx = current.findIndex((p) => p.id === e.detail.id);
       const normalized = ensureProductVariants(e.detail);
@@ -1332,10 +1331,7 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
   const handleProductDeleted = (e: any) => {
     const deletedId = e.detail?.id;
     if (deletedId) {
-      const deleted = getLocallyDeletedIds("products");
-      const current = getCachedProducts().filter(
-        (p) => p.id !== deletedId && !deleted.has(p.id) && !deleted.has((p as any).sku)
-      );
+      const current = getCachedProducts().filter((p) => p.id !== deletedId);
       cacheProductsLocally(current);
       callback(current);
     }
@@ -1470,7 +1466,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
       const parsed = JSON.parse(rawOverrides);
       let changed = false;
       for (const k of Object.keys(parsed)) {
-        if (k.startsWith(`product_${id}_`) || k === id) {
+        if (k.startsWith(`product_${id}_`) || k === id || (sanitized.name && k.includes(sanitized.name))) {
           delete parsed[k];
           changed = true;
         }
@@ -1484,7 +1480,14 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     }
   } catch {}
 
-  // 1. Sync with Centralized Backend API endpoint (/api/products)
+  // 1. Immediately dispatch real-time events for instant local & cross-device updates (0ms responsiveness)
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
+  }
+  broadcastCrossDeviceSync("products", updated);
+
+  // 2. Sync with Centralized Backend API endpoint (/api/products)
   try {
     const apiRes = await fetch("/api/products", {
       method: "POST",
@@ -1506,20 +1509,16 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     console.warn("[StoreService] Backend API sync note:", apiErr?.message || apiErr);
   }
 
-  // 2. Sync to Firestore (Durable live cloud persistence)
-  try {
-    const docRef = doc(db, "products", id);
-    await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
-  } catch (fsErr) {
+  // 3. Sync to Firestore in the background with timeout guard so UI is never blocked
+  Promise.race([
+    (async () => {
+      const docRef = doc(db, "products", id);
+      await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
+    })(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore sync timeout")), 2500)),
+  ]).catch((fsErr) => {
     console.warn("Firestore product setDoc notice:", fsErr);
-  }
-
-  // 3. Dispatch real-time events for instant local & cross-device updates
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
-    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
-  }
-  broadcastCrossDeviceSync("products", updated);
+  });
 
   return { id, success: true, product: sanitized };
 }
@@ -1541,14 +1540,42 @@ export async function deleteProduct(id: string): Promise<void> {
   );
   cacheProductsLocally(current);
 
-  // 1. Central Backend API deletion
+  // Clear any Canva text/style overrides for this deleted product
+  try {
+    const rawOverrides = localStorage.getItem("hos_custom_overrides");
+    if (rawOverrides) {
+      const parsed = JSON.parse(rawOverrides);
+      let changed = false;
+      for (const k of Object.keys(parsed)) {
+        if (k.startsWith(`product_${id}_`) || k === id) {
+          delete parsed[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem("hos_custom_overrides", JSON.stringify(parsed));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hos-overrides-updated", { detail: parsed }));
+        }
+      }
+    }
+  } catch {}
+
+  // 1. Immediately dispatch real-time events for instant local & cross-device updates (0ms responsiveness)
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
+  }
+  broadcastCrossDeviceSync("products", current);
+
+  // 2. Central Backend API deletion
   try {
     await fetch(`/api/products/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   } catch {}
 
-  // 2. Central Deleted-IDs registration
+  // 3. Central Deleted-IDs registration
   try {
     await fetch("/api/deleted-ids", {
       method: "POST",
@@ -1557,18 +1584,14 @@ export async function deleteProduct(id: string): Promise<void> {
     });
   } catch {}
 
-  // 3. Firestore deletion
-  try {
-    const docRef = doc(db, "products", id);
-    await deleteDoc(docRef);
-  } catch {}
-
-  // 4. Dispatch real-time events for instant local & cross-device updates
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id, name: target?.name } }));
-    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
-  }
-  broadcastCrossDeviceSync("products", current);
+  // 4. Firestore deletion in background with timeout guard so UI is never blocked
+  Promise.race([
+    (async () => {
+      const docRef = doc(db, "products", id);
+      await deleteDoc(docRef);
+    })(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore delete timeout")), 2500)),
+  ]).catch(() => {});
 }
 
 export interface FactoryResetResult {

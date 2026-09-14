@@ -164,7 +164,7 @@ function readProducts(): any[] {
   const list = readDataFile("products.json", []);
   const deleted = getDeletedIds("products");
   return (Array.isArray(list) ? list : []).filter(
-    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku) && !deleted.has(p.name)
+    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku)
   );
 }
 
@@ -177,7 +177,7 @@ function readCategories(): any[] {
   const list = readDataFile("categories.json", []);
   const deleted = getDeletedIds("categories");
   return (Array.isArray(list) ? list : []).filter(
-    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug)) && (!c.name || !deleted.has(c.name))
+    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug))
   );
 }
 

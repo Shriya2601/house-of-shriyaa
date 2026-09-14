@@ -65,11 +65,11 @@ export default function ProductDetails() {
     const deleted = getLocallyDeletedIds("products");
     if (id && (deleted.has(id) || deleted.has(id.trim()))) return null;
     const found = products.find((p) => p.id === id);
-    if (found && !deleted.has(found.id) && !deleted.has((found as any).sku) && !deleted.has(found.name)) {
+    if (found && !deleted.has(found.id) && !deleted.has((found as any).sku)) {
       return found;
     }
     const fallback = fallbackCatalog.find((p) => p.id === id);
-    if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku) && !deleted.has(fallback.name)) {
+    if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku)) {
       return fallback;
     }
     return null;
