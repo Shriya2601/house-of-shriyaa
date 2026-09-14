@@ -25,6 +25,7 @@ import FactoryResetModal from "./FactoryResetModal";
 
 interface AdminProductManagerProps {
   products: Product[];
+  onProductAdded?: (product: Product) => void;
   onProductUpdated: (product: Product) => void;
   onProductDeleted: (id: string) => void;
   onCatalogReset?: () => void;
@@ -33,6 +34,7 @@ interface AdminProductManagerProps {
 
 export default function AdminProductManager({
   products,
+  onProductAdded,
   onProductUpdated,
   onProductDeleted,
   onCatalogReset,
@@ -524,7 +526,13 @@ export default function AdminProductManager({
           onClose={() => setIsModalOpen(false)}
           productToEdit={editingProduct}
           onSuccess={(savedProduct) => {
-            onProductUpdated(savedProduct);
+            if (editingProduct) {
+              onProductUpdated(savedProduct);
+            } else if (onProductAdded) {
+              onProductAdded(savedProduct);
+            } else {
+              onProductUpdated(savedProduct);
+            }
             showToast(
               editingProduct
                 ? `Product "${savedProduct.name}" updated successfully!`

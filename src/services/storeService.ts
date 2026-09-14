@@ -237,8 +237,21 @@ export function getLocallyDeletedIds(type: string): Set<string> {
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
+        let cleaned = false;
+        const validItems: string[] = [];
         for (const item of arr) {
-          if (item) set.add(item);
+          if (item && typeof item === "string") {
+            // For products, only genuine unique IDs/SKUs are valid deleted targets; never product names
+            if (type === "products" && !item.startsWith("hos-") && !item.startsWith("var-") && !item.startsWith("prod-")) {
+              cleaned = true;
+              continue;
+            }
+            validItems.push(item);
+            set.add(item);
+          }
+        }
+        if (cleaned) {
+          localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(validItems));
         }
       }
     }
@@ -664,8 +677,7 @@ export function getCachedProducts(): Product[] {
               p &&
               p.id &&
               !deleted.has(p.id) &&
-              !deleted.has((p as any).sku) &&
-              !deleted.has(p.name)
+              !deleted.has((p as any).sku)
           );
       }
     }
@@ -680,8 +692,7 @@ export function getCachedProducts(): Product[] {
         p &&
         p.id &&
         !deleted.has(p.id) &&
-        !deleted.has((p as any).sku) &&
-        !deleted.has(p.name)
+        !deleted.has((p as any).sku)
     );
 }
 
@@ -1374,28 +1385,51 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     syncChannel.addEventListener("message", handleBroadcastMessage);
   }
 
-  // 6. Firestore real-time listener (when available)
+  // 6. Firestore real-time listener for instant zero-refresh cross-device synchronization
   let unsubFs = () => {};
   try {
     const colRef = collection(db, "products");
     unsubFs = onSnapshot(
       colRef,
       (snapshot) => {
+        const deleted = getLocallyDeletedIds("products");
+
+        // React to remote deletions in Firestore immediately
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "removed") {
+            recordLocallyDeletedId("products", change.doc.id);
+          }
+        });
+
         if (!snapshot.empty) {
-          const deleted = getLocallyDeletedIds("products");
           const fsList = snapshot.docs
             .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
-            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
 
           if (fsList.length > 0) {
             const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
             const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (p) => p.id, (p) => (p as any).sku);
             cacheProductsLocally(merged);
             callback(merged);
+
+            // Dispatch global event for instant in-tab & across-component synchronization
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: merged }));
+            }
+          }
+        } else {
+          // If Firestore is empty, auto-seed with cached products in the background so future onSnapshot triggers
+          if (typeof window !== "undefined" && !localStorage.getItem("hos_factory_reset_completed")) {
+            const current = getCachedProducts();
+            if (current.length > 0) {
+              syncCatalogToFirestore(current).catch(() => {});
+            }
           }
         }
       },
-      () => {}
+      (error) => {
+        console.warn("[Firestore] onSnapshot products listener notice:", error);
+      }
     );
   } catch {}
 
@@ -1417,6 +1451,19 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       syncChannel.removeEventListener("message", handleBroadcastMessage);
     }
   };
+}
+
+// Background utility to ensure Firestore always has the active product catalog synced
+export async function syncCatalogToFirestore(prods: Product[]): Promise<void> {
+  if (!Array.isArray(prods) || prods.length === 0) return;
+  const deleted = getLocallyDeletedIds("products");
+  const valid = prods.filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+  for (const p of valid) {
+    try {
+      const docRef = doc(db, "products", p.id);
+      await setDoc(docRef, sanitizeForFirestore(p), { merge: true });
+    } catch {}
+  }
 }
 
 export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean; product?: Product }> {
@@ -1681,7 +1728,7 @@ export async function seedInitialProductsIfEmpty(): Promise<void> {
   if (hasSaved === null) {
     const clean = defaultProducts
       .map(ensureProductVariants)
-      .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
+      .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
     cacheProductsLocally(clean);
   }
 }

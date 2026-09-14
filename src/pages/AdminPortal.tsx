@@ -328,10 +328,17 @@ export default function AdminPortal() {
       if (prodRes.ok) {
         const prodData = await prodRes.json();
         if (Array.isArray(prodData)) {
+          // Unrecord active products from locally deleted set so stale browser cache never hides active products
+          prodData.forEach((p: any) => {
+            if (p && p.id) {
+              unrecordLocallyDeletedId("products", p.id);
+              if (p.name) unrecordLocallyDeletedId("products", p.name);
+            }
+          });
           const deleted = getLocallyDeletedIds("products");
           const normalized = prodData
             .map(ensureProductVariants)
-            .filter((p: Product) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku) && !deleted.has(p.name));
+            .filter((p: Product) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
           setProducts(normalized);
           cacheProductsLocally(normalized);
         }
@@ -1412,6 +1419,17 @@ export default function AdminPortal() {
         ) : activeTab === "products" ? (
           <AdminProductManager
             products={products}
+            onProductAdded={(newProd) => {
+              setProducts((prev) => {
+                const idx = prev.findIndex((p) => p.id === newProd.id);
+                if (idx > -1) {
+                  const next = [...prev];
+                  next[idx] = newProd;
+                  return next;
+                }
+                return [newProd, ...prev];
+              });
+            }}
             onProductUpdated={(updatedProd) => {
               setProducts((prev) => {
                 const idx = prev.findIndex((p) => p.id === updatedProd.id);
