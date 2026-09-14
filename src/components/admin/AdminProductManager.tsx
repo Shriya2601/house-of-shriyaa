@@ -455,17 +455,24 @@ export default function AdminProductManager({
 
                       {/* Stock */}
                       <td className="py-3 px-3">
-                        {p.inStock !== false ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-                            <CheckCircle2 size={11} />
-                            <span>In Stock</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-                            <XCircle size={11} />
-                            <span>Sold Out</span>
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleStock(p, e)}
+                          title="Click to toggle In Stock / Sold Out"
+                          className="cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                        >
+                          {p.inStock !== false ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                              <CheckCircle2 size={11} />
+                              <span>In Stock</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                              <XCircle size={11} />
+                              <span>Sold Out</span>
+                            </span>
+                          )}
+                        </button>
                       </td>
 
                       {/* Actions */}

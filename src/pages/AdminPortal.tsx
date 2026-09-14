@@ -40,6 +40,7 @@ import {
   QrCode,
   Edit3,
   RotateCcw,
+  Tag,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -78,6 +79,7 @@ import {
 } from "../services/shiprocketClient";
 import { AtelierBooking, Order, OrderStatus, PaymentStatus, PaymentMethod, Product } from "../types";
 import AdminProductManager from "../components/admin/AdminProductManager";
+import AdminCategoryManager from "../components/admin/AdminCategoryManager";
 import AddProductModal from "../components/admin/AddProductModal";
 import AdminBannerManager from "../components/admin/AdminBannerManager";
 import AdminContentManager from "../components/admin/AdminContentManager";
@@ -207,7 +209,7 @@ function formatDisplayDate(dateStr: any): string {
 
 export default function AdminPortal() {
   const navigate = useNavigate();
-  const { products, setProducts, currentUser, setSiteContent } = useStore();
+  const { products, setProducts, currentUser, setSiteContent, categories } = useStore();
 
   // Admin Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionValid());
@@ -1216,6 +1218,29 @@ export default function AdminPortal() {
             </button>
 
             <button
+              id="admin-tab-categories"
+              onClick={() => {
+                setActiveTab("categories");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === "categories"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <Tag size={14} />
+              <span>Categories</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === "categories" ? "bg-white/20 text-white" : "bg-stone-300 text-stone-700"
+                }`}
+              >
+                {categories.length}
+              </span>
+            </button>
+
+            <button
               id="admin-tab-banners"
               onClick={() => {
                 setActiveTab("banners");
@@ -1378,6 +1403,8 @@ export default function AdminPortal() {
           />
         ) : activeTab === "banners" ? (
           <AdminBannerManager showToast={showToast} />
+        ) : activeTab === "categories" ? (
+          <AdminCategoryManager showToast={showToast} />
         ) : activeTab === "site-content" ? (
           <AdminContentManager showToast={showToast} />
         ) : activeTab === "payment-scanner" ? (

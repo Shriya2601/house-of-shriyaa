@@ -193,7 +193,7 @@ export function NavigationDrawer({
   wishlistCount: number;
 }) {
   if (!isOpen) return null;
-  const { currentUser, customerProfile, customerOrders, siteContent } = useStore();
+  const { currentUser, customerProfile, customerOrders, siteContent, categories, products } = useStore();
   const whatsappUrl = getWhatsAppHelpUrl(siteContent?.whatsappNumber);
 
   const initials = currentUser
@@ -319,144 +319,107 @@ export function NavigationDrawer({
                   <span className="nav-item-sub">Explore full handcrafted catalog</span>
                 </div>
               </div>
-              <span className="nav-item-badge">8 Pieces</span>
+              <span className="nav-item-badge">{products.length} Pieces</span>
             </button>
 
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Cotton Suits");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Shirt size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Cotton Suits</span>
-                  <span className="nav-item-sub">Pure Mulmul & Hand-block sets</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
+            {categories && categories.length > 0 ? (
+              categories.map((cat) => {
+                const count = products.filter((p) => p.category === cat.name).length;
+                return (
+                  <button
+                    key={cat.id || cat.name}
+                    className="nav-item-btn"
+                    onClick={() => {
+                      onSelectCategory(cat.name);
+                      onClose();
+                    }}
+                  >
+                    <div className="nav-item-left">
+                      <div className="nav-item-icon"><Shirt size={17} /></div>
+                      <div className="nav-item-text">
+                        <span className="nav-item-title">{cat.name}</span>
+                        <span className="nav-item-sub">{cat.description || "Handcrafted collection"}</span>
+                      </div>
+                    </div>
+                    {count > 0 ? (
+                      <span className="nav-item-badge">{count} {count === 1 ? "Piece" : "Pieces"}</span>
+                    ) : (
+                      <ChevronRight size={15} className="text-[#c5a059]" />
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              <>
+                <button
+                  className="nav-item-btn"
+                  onClick={() => {
+                    onSelectCategory("Cotton Suits");
+                    onClose();
+                  }}
+                >
+                  <div className="nav-item-left">
+                    <div className="nav-item-icon"><Shirt size={17} /></div>
+                    <div className="nav-item-text">
+                      <span className="nav-item-title">Cotton Suits</span>
+                      <span className="nav-item-sub">Pure Mulmul & Hand-block sets</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={15} className="text-[#c5a059]" />
+                </button>
 
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Daily Wear Suits");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Sparkles size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Daily Wear Suits</span>
-                  <span className="nav-item-sub">Comfortable modal & linen sets</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
+                <button
+                  className="nav-item-btn"
+                  onClick={() => {
+                    onSelectCategory("Daily Wear Suits");
+                    onClose();
+                  }}
+                >
+                  <div className="nav-item-left">
+                    <div className="nav-item-icon"><Sparkles size={17} /></div>
+                    <div className="nav-item-text">
+                      <span className="nav-item-title">Daily Wear Suits</span>
+                      <span className="nav-item-sub">Comfortable modal & linen sets</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={15} className="text-[#c5a059]" />
+                </button>
 
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Co-ord Sets");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Layers size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Co-ord Sets</span>
-                  <span className="nav-item-sub">Contemporary tunics & palazzos</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
+                <button
+                  className="nav-item-btn"
+                  onClick={() => {
+                    onSelectCategory("Co-ord Sets");
+                    onClose();
+                  }}
+                >
+                  <div className="nav-item-left">
+                    <div className="nav-item-icon"><Layers size={17} /></div>
+                    <div className="nav-item-text">
+                      <span className="nav-item-title">Co-ord Sets</span>
+                      <span className="nav-item-sub">Contemporary tunics & palazzos</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={15} className="text-[#c5a059]" />
+                </button>
 
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Satin Wear");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Crown size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Satin Wear</span>
-                  <span className="nav-item-sub">Glossy silks & evening ensembles</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
-
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Party Wear");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Sparkles size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Party Wear</span>
-                  <span className="nav-item-sub">Alia cut, Anarkalis & Shararas</span>
-                </div>
-              </div>
-              <span className="nav-item-badge">Trending</span>
-            </button>
-
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Festive Wear");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Tag size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Festive Wear</span>
-                  <span className="nav-item-sub">Banarasi Katan & Kashmiri Tilla</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
-
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Daily & College Wear");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><GraduationCap size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Daily & College Wear</span>
-                  <span className="nav-item-sub">Youthful co-ords & breezy kurtis</span>
-                </div>
-              </div>
-              <ChevronRight size={15} className="text-[#c5a059]" />
-            </button>
-
-            <button
-              className="nav-item-btn"
-              onClick={() => {
-                onSelectCategory("Seasonal Drop");
-                onClose();
-              }}
-            >
-              <div className="nav-item-left">
-                <div className="nav-item-icon"><Zap size={17} /></div>
-                <div className="nav-item-text">
-                  <span className="nav-item-title">Seasonal Drop</span>
-                  <span className="nav-item-sub">Velvet 9000 & Festive Angrakha</span>
-                </div>
-              </div>
-              <span className="nav-item-badge">Limited</span>
-            </button>
+                <button
+                  className="nav-item-btn"
+                  onClick={() => {
+                    onSelectCategory("Satin Wear");
+                    onClose();
+                  }}
+                >
+                  <div className="nav-item-left">
+                    <div className="nav-item-icon"><Crown size={17} /></div>
+                    <div className="nav-item-text">
+                      <span className="nav-item-title">Satin Wear</span>
+                      <span className="nav-item-sub">Glossy silks & evening ensembles</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={15} className="text-[#c5a059]" />
+                </button>
+              </>
+            )}
           </div>
 
           {/* SECTION 2: MY ORDERS */}
@@ -2547,7 +2510,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
 
   const activeSlides = useMemo(() => {
     if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      const mapped = siteContent.heroSlides.map((s, idx) => {
+      return siteContent.heroSlides.map((s, idx) => {
         const fallback = slides[idx % slides.length] || slides[0];
         return {
           eyebrow: s.eyebrow || (s as any).subtitle || fallback.eyebrow,
@@ -2563,14 +2526,6 @@ function Hero({ onPookie }: { onPookie: () => void }) {
           ctaTarget: s.ctaTarget || fallback.ctaTarget || "catalog-section",
         };
       });
-
-      // If fewer slides were stored, supplement with the boutique defaults so all 3 slides stay available
-      if (mapped.length < slides.length) {
-        for (let i = mapped.length; i < slides.length; i++) {
-          mapped.push(slides[i]);
-        }
-      }
-      return mapped;
     }
     return slides;
   }, [siteContent]);
@@ -2771,13 +2726,56 @@ function Hero({ onPookie }: { onPookie: () => void }) {
 }
 
 function FeatureStrip() {
-  const features = [
+  const { siteContent } = useStore();
+  const iconMap: Record<string, any> = {
+    Crown,
+    Sparkles,
+    Check,
+    PackageCheck,
+    Heart,
+    ShieldCheck,
+    Truck,
+    Gift,
+    Shirt,
+  };
+
+  const defaultFeatures = [
     { icon: Crown, title: "Heritage Craftsmanship", text: "Artisanal hand-woven heirlooms" },
     { icon: Sparkles, title: "100% Pure Handlooms", text: "Authentic Banarasi & Chanderi" },
     { icon: Check, title: "Instant UPI & Cards", text: "Zero-hassle secure checkout" },
     { icon: PackageCheck, title: "Worldwide Express", text: "Fast insured courier delivery" },
   ];
-  return <div className="feature-strip"><div className="site-container feature-grid">{features.map(({ icon: Icon, title, text }) => <div className="feature-item" key={title}><span data-editable="true"><Icon size={17} /></span><div><BuilderText as="strong" text={title} /><BuilderText as="small" text={text} /></div></div>)}</div></div>;
+
+  const featuresToDisplay = useMemo(() => {
+    if (Array.isArray(siteContent?.features) && siteContent.features.length > 0) {
+      return siteContent.features.map((f, idx) => {
+        const fallback = defaultFeatures[idx % defaultFeatures.length];
+        const IconComponent = (f.iconName && iconMap[f.iconName]) || fallback.icon;
+        return {
+          icon: IconComponent,
+          title: f.title || fallback.title,
+          text: f.text || (f as any).subtitle || fallback.text,
+        };
+      });
+    }
+    return defaultFeatures;
+  }, [siteContent?.features]);
+
+  return (
+    <div className="feature-strip">
+      <div className="site-container feature-grid">
+        {featuresToDisplay.map(({ icon: Icon, title, text }, i) => (
+          <div className="feature-item" key={`${title}-${i}`}>
+            <span data-editable="true"><Icon size={17} /></span>
+            <div>
+              <BuilderText as="strong" text={title} />
+              <BuilderText as="small" text={text} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Catalog({

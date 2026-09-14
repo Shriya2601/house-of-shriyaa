@@ -15,6 +15,13 @@ import {
   Crown,
   Info,
   ExternalLink,
+  ShieldCheck,
+  Truck,
+  Check,
+  PackageCheck,
+  Heart,
+  Gift,
+  Shirt,
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent, defaultSiteContent } from "../../services/storeService";
@@ -79,6 +86,28 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
       ...prev,
       [field]: value,
     }));
+  };
+
+  const handleFeatureChange = (index: number, field: "title" | "text" | "iconName", value: string) => {
+    setIsDirty(true);
+    isDirtyRef.current = true;
+    setFormData((prev) => {
+      const currentFeatures =
+        prev.features && prev.features.length > 0
+          ? [...prev.features]
+          : [...(defaultSiteContent.features || [])];
+      if (!currentFeatures[index]) {
+        currentFeatures[index] = { title: "", text: "", iconName: "Sparkles" };
+      }
+      currentFeatures[index] = {
+        ...currentFeatures[index],
+        [field]: value,
+      };
+      return {
+        ...prev,
+        features: currentFeatures,
+      };
+    });
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -310,6 +339,81 @@ export default function AdminContentManager({ showToast }: AdminContentManagerPr
                   className="w-full px-3 py-2 text-xs rounded-lg border border-stone-200 focus:border-[#0d4f3c] focus:ring-1 focus:ring-[#0d4f3c] outline-none"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Storefront Trust Badges & Benefit Features */}
+          <div className="bg-white rounded-xl border border-[#e5ddd3] p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-[#0d4f3c]" />
+                <h3 className="font-serif font-bold text-sm text-[#1e1b18]">
+                  Storefront Trust Badges & Benefit Cards
+                </h3>
+              </div>
+              <span className="text-[11px] text-stone-500">4 Highlight Cards</span>
+            </div>
+            <p className="text-xs text-stone-500">
+              These 4 value propositions appear directly below the main hero slideshow on your live storefront.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {([0, 1, 2, 3] as const).map((idx) => {
+                const feat = (formData.features && formData.features[idx]) || (defaultSiteContent.features && defaultSiteContent.features[idx]) || {
+                  title: `Feature 0${idx + 1}`,
+                  text: "",
+                  iconName: "Sparkles",
+                };
+                return (
+                  <div key={idx} className="p-3.5 bg-stone-50/70 rounded-lg border border-stone-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-mono font-bold text-[#0d4f3c]">Card 0{idx + 1}</span>
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[10px] text-stone-500 font-medium">Icon:</label>
+                        <select
+                          value={feat.iconName || "Sparkles"}
+                          onChange={(e) => handleFeatureChange(idx, "iconName", e.target.value)}
+                          className="text-xs bg-white border border-stone-200 rounded px-2 py-0.5 outline-none text-stone-700"
+                        >
+                          <option value="Crown">Crown</option>
+                          <option value="Sparkles">Sparkles</option>
+                          <option value="Check">Check</option>
+                          <option value="PackageCheck">Package Check</option>
+                          <option value="ShieldCheck">Shield</option>
+                          <option value="Truck">Truck</option>
+                          <option value="Heart">Heart</option>
+                          <option value="Gift">Gift</option>
+                          <option value="Shirt">Shirt</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-stone-700 mb-0.5">
+                        Heading
+                      </label>
+                      <input
+                        type="text"
+                        value={feat.title || ""}
+                        onChange={(e) => handleFeatureChange(idx, "title", e.target.value)}
+                        placeholder="Feature title..."
+                        className="w-full px-2.5 py-1.5 text-xs bg-white rounded-md border border-stone-200 focus:border-[#0d4f3c] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-stone-700 mb-0.5">
+                        Subtitle / Short Note
+                      </label>
+                      <input
+                        type="text"
+                        value={feat.text || ""}
+                        onChange={(e) => handleFeatureChange(idx, "text", e.target.value)}
+                        placeholder="Short descriptive benefit..."
+                        className="w-full px-2.5 py-1.5 text-xs bg-white rounded-md border border-stone-200 focus:border-[#0d4f3c] outline-none"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
