@@ -39,6 +39,7 @@ import {
   Server,
   QrCode,
   Edit3,
+  RotateCcw,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -84,6 +85,7 @@ import AdminPaymentScanner from "../components/admin/AdminPaymentScanner";
 import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
 import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
 import ShiprocketLogsView from "../components/admin/ShiprocketLogsView";
+import FactoryResetModal from "../components/admin/FactoryResetModal";
 
 function ShipmentStatusBadge({
   order,
@@ -238,6 +240,7 @@ export default function AdminPortal() {
 
   // Add Booking / Order / Product Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [isAdminFactoryResetOpen, setIsAdminFactoryResetOpen] = useState<boolean>(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState<boolean>(false);
   const [addType, setAddType] = useState<"booking" | "order">("order"); // Default to order since user requested "if customer buy from admin end"
 
@@ -322,7 +325,7 @@ export default function AdminPortal() {
       });
       if (prodRes.ok) {
         const prodData = await prodRes.json();
-        if (Array.isArray(prodData) && prodData.length > 0) {
+        if (Array.isArray(prodData)) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = prodData
             .map(ensureProductVariants)
@@ -1031,6 +1034,18 @@ export default function AdminPortal() {
               <span className="hidden sm:inline">Storefront</span>
             </Link>
 
+            {activeTab === "products" && (
+              <button
+                id="admin-header-btn-factory-reset"
+                onClick={() => setIsAdminFactoryResetOpen(true)}
+                className="p-2 sm:px-3 sm:py-2 text-xs text-rose-300 hover:text-white bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Wipe catalog and restore clean state"
+              >
+                <RotateCcw size={14} />
+                <span className="hidden sm:inline">Factory Reset</span>
+              </button>
+            )}
+
             <button
               id="admin-btn-add-new"
               onClick={() => {
@@ -1383,6 +1398,9 @@ export default function AdminPortal() {
             }}
             onProductDeleted={(deletedId) => {
               setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+            }}
+            onCatalogReset={() => {
+              setProducts([]);
             }}
             showToast={showToast}
           />
@@ -2018,6 +2036,19 @@ export default function AdminPortal() {
             showToast(`Couture order ${newO.orderNumber} booked successfully!`);
             loadDashboardData();
           }}
+        />
+      )}
+
+      {/* Factory Reset Catalog Modal */}
+      {isAdminFactoryResetOpen && (
+        <FactoryResetModal
+          isOpen={isAdminFactoryResetOpen}
+          onClose={() => setIsAdminFactoryResetOpen(false)}
+          currentProducts={products}
+          onResetSuccess={() => {
+            setProducts([]);
+          }}
+          showToast={showToast}
         />
       )}
 

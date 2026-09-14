@@ -465,7 +465,7 @@ const syncChannel: BroadcastChannel | null =
     : null;
 
 export function broadcastCrossDeviceSync(
-  type: "products" | "orders" | "categories" | "site_content" | "bookings",
+  type: "products" | "orders" | "categories" | "site_content" | "bookings" | "brand_styles" | "custom_overrides" | "factory_reset",
   data?: any
 ) {
   if (syncChannel) {
@@ -670,6 +670,9 @@ export function getCachedProducts(): Product[] {
       }
     }
   } catch {}
+  if (typeof window !== "undefined" && localStorage.getItem("hos_factory_reset_completed")) {
+    return [];
+  }
   return defaultProducts
     .map(ensureProductVariants)
     .filter(
@@ -1568,7 +1571,88 @@ export async function deleteProduct(id: string): Promise<void> {
   broadcastCrossDeviceSync("products", current);
 }
 
+export interface FactoryResetResult {
+  success: boolean;
+  message: string;
+  wipedProductsCount: number;
+  wipedImagesCount: number;
+  purgedFiles?: string[];
+  timestamp?: string;
+}
+
+/**
+ * Factory Reset: Completely wipes all product data, variations, and image references,
+ * purging orphaned product media files and resetting the store catalog to a pristine clean state.
+ */
+export async function factoryResetCatalog(options: { wipeImages?: boolean } = {}): Promise<FactoryResetResult> {
+  const wipeImages = options.wipeImages !== false;
+
+  // 1. Wipe Firestore products collection documents if available
+  try {
+    const colRef = collection(db, "products");
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const deletePromises = snap.docs.map((docSnap) => deleteDoc(doc(db, "products", docSnap.id)));
+      await Promise.allSettled(deletePromises);
+    }
+  } catch (fsErr) {
+    console.warn("Notice: Firestore products cleanup notice:", fsErr);
+  }
+
+  // 2. Call backend factory-reset API with anti-cache timestamp
+  let apiResult: FactoryResetResult = {
+    success: true,
+    message: "Store catalog successfully restored to clean state.",
+    wipedProductsCount: 0,
+    wipedImagesCount: 0,
+  };
+
+  try {
+    const res = await fetch(`/api/admin/factory-reset?t=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wipeImages }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      apiResult = {
+        ...apiResult,
+        ...data,
+      };
+    }
+  } catch (apiErr) {
+    console.warn("Factory reset API fetch notice:", apiErr);
+  }
+
+  // 3. Clear all client local storage caches & mark factory reset completed
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify([]));
+      localStorage.setItem("hos_deleted_products", JSON.stringify([]));
+      localStorage.setItem("hos_factory_reset_completed", Date.now().toString());
+      localStorage.setItem("hos_cart", JSON.stringify([]));
+      localStorage.setItem("hos_wishlist", JSON.stringify([]));
+    } catch {}
+
+    // 4. Dispatch real-time events across the entire application and open tabs
+    window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: [] }));
+    window.dispatchEvent(new CustomEvent("hos-factory-reset-completed", { detail: apiResult }));
+    window.dispatchEvent(new CustomEvent("hos-cart-updated", { detail: [] }));
+    window.dispatchEvent(new CustomEvent("hos-wishlist-updated", { detail: [] }));
+  }
+
+  // 5. Broadcast across devices
+  broadcastCrossDeviceSync("products", []);
+  broadcastCrossDeviceSync("factory_reset", { timestamp: Date.now() });
+
+  return apiResult;
+}
+
 export async function seedInitialProductsIfEmpty(): Promise<void> {
+  if (typeof window !== "undefined" && localStorage.getItem("hos_factory_reset_completed")) {
+    // If factory reset was completed, respect the clean state and do not resurrect old catalog
+    return;
+  }
   const deleted = getLocallyDeletedIds("products");
   const hasSaved = localStorage.getItem(PRODUCTS_CACHE_KEY);
   if (hasSaved === null) {

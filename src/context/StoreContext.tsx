@@ -36,6 +36,8 @@ import {
   customerSignOut,
   customerResetPassword,
   confirmOrderPayment,
+  factoryResetCatalog,
+  type FactoryResetResult,
 } from "../services/storeService";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -113,6 +115,7 @@ interface StoreContextType {
   setSiteContent: React.Dispatch<React.SetStateAction<SiteContent>>;
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   updateProduct: (id: string, updates: Partial<Product>) => void;
+  factoryReset: (options?: { wipeImages?: boolean }) => Promise<FactoryResetResult>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -524,9 +527,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const handleFactoryResetCompleted = () => {
+      setProducts([]);
+      setCart([]);
+      setWishlist(new Set());
+    };
+
     window.addEventListener("hos-product-deleted", handleProdDel);
     window.addEventListener("hos-product-saved", handleProdSaved);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
+    window.addEventListener("hos-factory-reset-completed", handleFactoryResetCompleted);
     window.addEventListener("hos-content-updated", handleContentUpdated);
     window.addEventListener("hos-category-deleted", handleCatDel);
     window.addEventListener("hos-category-saved", handleCatSaved);
@@ -543,6 +553,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("hos-product-deleted", handleProdDel);
       window.removeEventListener("hos-product-saved", handleProdSaved);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);
+      window.removeEventListener("hos-factory-reset-completed", handleFactoryResetCompleted);
       window.removeEventListener("hos-content-updated", handleContentUpdated);
       window.removeEventListener("hos-category-deleted", handleCatDel);
       window.removeEventListener("hos-category-saved", handleCatSaved);
@@ -865,6 +876,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSiteContent,
         setProducts,
         updateProduct,
+        factoryReset: factoryResetCatalog,
       }}
     >
       {children}

@@ -14,24 +14,28 @@ import {
   XCircle,
   Camera,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { Product } from "../../types";
 import { deleteProduct, saveProduct } from "../../services/storeService";
 import { getProductDisplayImage, handleImageError, normalizeImageUrl, compressImageFile } from "../../utils/imageUtils";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
+import FactoryResetModal from "./FactoryResetModal";
 
 interface AdminProductManagerProps {
   products: Product[];
   onProductUpdated: (product: Product) => void;
   onProductDeleted: (id: string) => void;
-  showToast: (msg: string, type?: "success" | "error") => void;
+  onCatalogReset?: () => void;
+  showToast: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
 export default function AdminProductManager({
   products,
   onProductUpdated,
   onProductDeleted,
+  onCatalogReset,
   showToast,
 }: AdminProductManagerProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -41,6 +45,7 @@ export default function AdminProductManager({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isFactoryResetModalOpen, setIsFactoryResetModalOpen] = useState(false);
 
   // Quick photo upload state directly from product list
   const [uploadingProductId, setUploadingProductId] = useState<string | null>(null);
@@ -246,15 +251,28 @@ export default function AdminProductManager({
           </select>
         </div>
 
-        {/* Action Button: Add Product */}
-        <button
-          id="btn-admin-add-product"
-          onClick={handleOpenAddModal}
-          className="px-4 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#083629] text-white rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-        >
-          <Plus size={15} />
-          <span>Add New Product</span>
-        </button>
+        {/* Action Buttons: Factory Reset & Add Product */}
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-admin-factory-reset"
+            type="button"
+            onClick={() => setIsFactoryResetModalOpen(true)}
+            className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            title="Restore store catalog to a clean slate"
+          >
+            <RotateCcw size={14} />
+            <span>Factory Reset</span>
+          </button>
+
+          <button
+            id="btn-admin-add-product"
+            onClick={handleOpenAddModal}
+            className="px-4 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#083629] text-white rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+          >
+            <Plus size={15} />
+            <span>Add New Product</span>
+          </button>
+        </div>
       </div>
 
       {/* Products Table Card */}
@@ -270,7 +288,37 @@ export default function AdminProductManager({
           </div>
         </div>
 
-        {filteredProducts.length === 0 ? (
+        {products.length === 0 ? (
+          /* Pristine Clean State after Factory Reset */
+          <div className="p-10 sm:p-14 text-center space-y-4 bg-stone-50/50">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-white border border-[#e5ddd3] shadow-xs flex items-center justify-center text-[#d4af37]">
+              <Sparkles size={28} />
+            </div>
+            <div className="max-w-md mx-auto space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">
+                <CheckCircle2 size={12} />
+                Clean State Active
+              </span>
+              <h4 className="font-serif font-bold text-lg text-stone-900">
+                Ready for Fresh Catalog
+              </h4>
+              <p className="text-xs text-stone-600 leading-relaxed">
+                Your boutique catalog currently has 0 products and no active image references.
+                Begin adding your new handcrafted suits, sets, or celebration weaves.
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                id="btn-admin-clean-add-product"
+                onClick={handleOpenAddModal}
+                className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#083629] text-white rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>+ Add Your First Product</span>
+              </button>
+            </div>
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <Package size={36} className="mx-auto text-stone-300" />
             <p className="text-sm font-serif font-medium text-stone-600">
@@ -467,6 +515,21 @@ export default function AdminProductManager({
         className="hidden"
         onChange={handleQuickPhotoFile}
       />
+
+      {/* Factory Reset Modal */}
+      {isFactoryResetModalOpen && (
+        <FactoryResetModal
+          isOpen={isFactoryResetModalOpen}
+          onClose={() => setIsFactoryResetModalOpen(false)}
+          currentProducts={products}
+          onResetSuccess={() => {
+            if (onCatalogReset) {
+              onCatalogReset();
+            }
+          }}
+          showToast={showToast}
+        />
+      )}
 
       {/* Confirm Product Deletion Dialog */}
       <ConfirmDialog

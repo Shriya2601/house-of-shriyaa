@@ -550,6 +550,180 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           return;
         }
 
+        // 1.5. FACTORY RESET: /api/admin/factory-reset, /api/products/factory-reset, /api/factory-reset
+        if (
+          urlWithoutQuery === "/api/admin/factory-reset" ||
+          urlWithoutQuery === "/api/products/factory-reset" ||
+          urlWithoutQuery === "/api/factory-reset"
+        ) {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+
+          if (method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          if (method === "POST" || method === "DELETE") {
+            try {
+              const body = await parseJsonBody(req).catch(() => ({}));
+              const wipeImages = body.wipeImages !== false;
+
+              // 1. Gather all current products and referenced image filenames
+              const currentProducts = readProducts();
+              const productCount = currentProducts.length;
+
+              const referencedFilenames = new Set<string>();
+              for (const p of currentProducts) {
+                const addImg = (url: any) => {
+                  if (typeof url === "string" && (url.includes("/uploads/") || url.startsWith("uploads/"))) {
+                    referencedFilenames.add(path.basename(url.split("?")[0]));
+                  }
+                };
+                if (p) {
+                  addImg(p.image);
+                  addImg(p.hoverImage);
+                  if (Array.isArray(p.images)) p.images.forEach(addImg);
+                  if (Array.isArray(p.colorVariants)) {
+                    for (const v of p.colorVariants) {
+                      if (v) {
+                        addImg(v.image);
+                        addImg(v.hoverImage);
+                        if (Array.isArray(v.images)) v.images.forEach(addImg);
+                      }
+                    }
+                  }
+                }
+              }
+
+              // 2. Clear products list across storage & caches
+              writeProducts([]);
+
+              // 3. Clear deleted_products.json
+              syncDataFile("deleted_products.json", []);
+              memoryDataCache["deleted_products.json"] = { data: [], mtimeMs: Date.now() };
+
+              // 4. Reset category counters to 0
+              try {
+                const categories = readCategories();
+                if (Array.isArray(categories)) {
+                  const updatedCategories = categories.map((c: any) => ({
+                    ...c,
+                    itemCount: 0,
+                  }));
+                  writeCategories(updatedCategories);
+                }
+              } catch (catErr) {
+                console.warn("[Factory Reset] Notice resetting categories:", catErr);
+              }
+
+              // 5. Purge product image files from storage if requested
+              let deletedImagesCount = 0;
+              const purgedFiles: string[] = [];
+
+              if (wipeImages) {
+                // Determine protected filenames from siteContent (hero slides, UPI scanner, etc.)
+                const siteContent = readSiteContent();
+                const protectedFiles = new Set<string>([
+                  ".gitkeep",
+                  "house-of-shriya-official-upi-scanner.png",
+                ]);
+
+                if (Array.isArray(siteContent?.heroSlides)) {
+                  for (const s of siteContent.heroSlides) {
+                    if (typeof s?.image === "string" && s.image.includes("/uploads/")) {
+                      protectedFiles.add(path.basename(s.image.split("?")[0]));
+                    }
+                  }
+                }
+
+                const uploadsDirs = [
+                  path.resolve(process.cwd(), "public/uploads"),
+                  path.resolve(process.cwd(), "dist/uploads"),
+                ];
+
+                for (const uDir of uploadsDirs) {
+                  if (fs.existsSync(uDir)) {
+                    try {
+                      const files = fs.readdirSync(uDir);
+                      for (const f of files) {
+                        if (
+                          protectedFiles.has(f) ||
+                          f === ".gitkeep" ||
+                          f.includes("upi-scanner") ||
+                          f.startsWith("hero-slide-")
+                        ) {
+                          continue;
+                        }
+
+                        // Target product images, test uploads, or explicitly referenced images
+                        const isProductOrTest =
+                          referencedFilenames.has(f) ||
+                          f.startsWith("hos-") ||
+                          f.startsWith("prod_") ||
+                          f.startsWith("prod-") ||
+                          f.startsWith("test") ||
+                          f.startsWith("my-photo-test");
+
+                        if (isProductOrTest) {
+                          const targetPath = path.join(uDir, f);
+                          try {
+                            if (fs.existsSync(targetPath)) {
+                              fs.unlinkSync(targetPath);
+                            }
+                            memoryUploadsCache.delete(f);
+                            if (!purgedFiles.includes(f)) {
+                              purgedFiles.push(f);
+                              deletedImagesCount++;
+                            }
+                          } catch (e) {
+                            console.warn(`[Factory Reset] Could not delete ${f}:`, e);
+                          }
+                        }
+                      }
+                    } catch (readDirErr) {
+                      console.warn(`[Factory Reset] Read dir error on ${uDir}:`, readDirErr);
+                    }
+                  }
+                }
+              }
+
+              // 6. Broadcast reset event across active SSE clients
+              broadcastSseSync("factory_reset", {
+                wipedProductsCount: productCount,
+                wipedImagesCount: deletedImagesCount,
+                timestamp: new Date().toISOString(),
+              });
+
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  message: "Factory reset completed successfully. Store restored to a clean state.",
+                  wipedProductsCount: productCount,
+                  wipedImagesCount: deletedImagesCount,
+                  purgedFiles,
+                  timestamp: new Date().toISOString(),
+                })
+              );
+              return;
+            } catch (resetErr: any) {
+              console.error("[API] Factory reset error:", resetErr);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 500;
+              res.end(JSON.stringify({ success: false, error: resetErr?.message || "Failed to execute factory reset" }));
+              return;
+            }
+          }
+
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: `Method ${method} not allowed on /api/admin/factory-reset` }));
+          return;
+        }
+
         // 2. PRODUCTS COLLECTION: /api/products
         if (urlWithoutQuery === "/api/products") {
           setAntiCacheHeaders(res);
