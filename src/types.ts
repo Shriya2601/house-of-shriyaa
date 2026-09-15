@@ -299,3 +299,11 @@ export interface DailyCreditsState {
     action: string;
   }[];
 }
+
+export interface NewsletterSubscription {
+  id?: string;
+  email: string;
+  subscribedAt: string;
+  source?: string;
+  status?: "active" | "unsubscribed";
+}

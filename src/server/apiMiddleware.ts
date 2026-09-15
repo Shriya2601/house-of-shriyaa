@@ -256,6 +256,16 @@ function writeBookingsList(bookings: any[]): void {
   broadcastSseSync("bookings", bookings);
 }
 
+function readNewsletterList(): any[] {
+  const list = readDataFile("newsletter_subscriptions.json", []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeNewsletterList(subscribers: any[]): void {
+  syncDataFile("newsletter_subscriptions.json", subscribers);
+  broadcastSseSync("newsletter_subscriptions", subscribers);
+}
+
 function setCorsHeaders(res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
@@ -1829,6 +1839,88 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             res.statusCode = 200;
             res.end(JSON.stringify({ success: true, id: bookingId, count: filtered.length }));
             return;
+          }
+        }
+
+        // ============================================================
+        // 6F. NEWSLETTER SUBSCRIPTIONS: /api/newsletter & /api/newsletter/subscribe
+        // ============================================================
+        if (urlWithoutQuery === "/api/newsletter" || urlWithoutQuery === "/api/newsletter/subscribe") {
+          setAntiCacheHeaders(res);
+          setCorsHeaders(res);
+
+          if (method === "GET") {
+            const subscribers = readNewsletterList();
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(JSON.stringify(subscribers));
+            return;
+          }
+
+          if (method === "POST") {
+            try {
+              const body = await parseJsonBody(req);
+              const email = (body?.email || "").trim().toLowerCase();
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!email || !emailRegex.test(email)) {
+                res.setHeader("Content-Type", "application/json");
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: "Please provide a valid email address." }));
+                return;
+              }
+
+              let subscribers = readNewsletterList();
+              const docId = email.replace(/[^a-z0-9]/g, "_");
+              const now = new Date().toISOString();
+
+              const existingIdx = subscribers.findIndex(
+                (s) => s && s.email && s.email.toLowerCase() === email
+              );
+
+              let updatedItem: any;
+              let isNew = false;
+              if (existingIdx > -1) {
+                updatedItem = {
+                  ...subscribers[existingIdx],
+                  ...body,
+                  email,
+                  status: "active",
+                  updatedAt: now,
+                };
+                subscribers[existingIdx] = updatedItem;
+              } else {
+                isNew = true;
+                updatedItem = {
+                  id: docId,
+                  email,
+                  subscribedAt: body?.subscribedAt || now,
+                  source: body?.source || "footer",
+                  status: "active",
+                };
+                subscribers.unshift(updatedItem);
+              }
+
+              writeNewsletterList(subscribers);
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 200;
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  isNew,
+                  message: isNew
+                    ? "Thank you for subscribing! You will receive our private previews and artisan drops."
+                    : "You are already subscribed to House of Shriya private drops.",
+                  subscription: updatedItem,
+                  totalSubscribers: subscribers.length,
+                })
+              );
+              return;
+            } catch (err: any) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: err.message || "Failed to process newsletter subscription" }));
+              return;
+            }
           }
         }
 

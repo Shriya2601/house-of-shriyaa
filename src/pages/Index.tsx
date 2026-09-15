@@ -8,7 +8,7 @@ import { useEditMode, CanvaEditable } from "../components/editmode";
 import SimpleIntroScreen from "../components/intro/SimpleIntroScreen";
 import CustomerAuthModal from "../components/customer/CustomerAuthModal";
 import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/WhatsAppHelpButton";
-import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment, getLocallyDeletedIds } from "../services/storeService";
+import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment, getLocallyDeletedIds, subscribeToNewsletter } from "../services/storeService";
 import { lookupPincode } from "../utils/pincodeLookup";
 import { normalizeImageUrl } from "../utils/imageUtils";
 import { SavedAddress, Order, AtelierBooking } from "../types";
@@ -3335,6 +3335,33 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
   const { siteContent } = useStore();
   const whatsappHelpPookieUrl = "https://wa.me/919501698356?text=" + encodeURIComponent("Hi House of Shriya! POOKIE NEED A HELP ✨");
 
+  const [email, setEmail] = useState("");
+  const [subStatus, setSubStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [feedbackMsg, setFeedbackMsg] = useState("");
+
+  const handleSubscribe = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      setSubStatus("error");
+      setFeedbackMsg("Please enter a valid email address.");
+      return;
+    }
+
+    setSubStatus("loading");
+    setFeedbackMsg("");
+    try {
+      const res = await subscribeToNewsletter(cleanEmail, "footer");
+      setSubStatus("success");
+      setFeedbackMsg(res.message || "Thank you for subscribing! You will receive our private previews.");
+      setEmail("");
+    } catch (err: any) {
+      setSubStatus("error");
+      setFeedbackMsg(err?.message || "Unable to subscribe right now. Please try again.");
+    }
+  };
+
   return (
     <footer className="site-footer">
       <div className="site-container">
@@ -3391,10 +3418,51 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
             <div>
               <BuilderText as="strong" text="Stay in the know" />
               <BuilderText as="p" text="Private previews, artisan stories, and first access to every drop." />
-              <div className="footer-input">
-                <input data-editable="true" placeholder="Your email address" aria-label="Email address" />
-                <button data-editable="true" aria-label="Subscribe"><ArrowRight size={15} /></button>
-              </div>
+              <form onSubmit={handleSubscribe} className="footer-input" aria-label="Newsletter subscription form">
+                <input
+                  data-editable="true"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (subStatus !== "idle") {
+                      setSubStatus("idle");
+                      setFeedbackMsg("");
+                    }
+                  }}
+                  disabled={subStatus === "loading"}
+                  placeholder="Your email address"
+                  aria-label="Email address"
+                  required
+                />
+                <button
+                  data-editable="true"
+                  type="submit"
+                  disabled={subStatus === "loading"}
+                  aria-label="Subscribe"
+                  title="Subscribe to private previews"
+                >
+                  {subStatus === "loading" ? (
+                    <Loader2 size={15} className="animate-spin text-[#d4af37]" />
+                  ) : subStatus === "success" ? (
+                    <Check size={15} className="text-[#a7f3d0]" />
+                  ) : (
+                    <ArrowRight size={15} />
+                  )}
+                </button>
+              </form>
+              {subStatus === "success" && (
+                <p className="mt-2 text-[0.68rem] text-[#a7f3d0] flex items-center gap-1.5 animate-fadeIn font-medium">
+                  <Check size={12} className="shrink-0 text-[#10b981]" />
+                  <span>{feedbackMsg}</span>
+                </p>
+              )}
+              {subStatus === "error" && (
+                <p className="mt-2 text-[0.68rem] text-[#fca5a5] flex items-center gap-1.5 animate-fadeIn font-medium">
+                  <AlertCircle size={12} className="shrink-0 text-[#ef4444]" />
+                  <span>{feedbackMsg}</span>
+                </p>
+              )}
             </div>
           </div>
         </div>

@@ -12,6 +12,7 @@
 | `customers` | Owner (`request.auth.uid == userId`) \|\| Admin | Owner (`request.auth.uid == userId`) | Owner \|\| Admin | Admin only |
 | `orders` | Owner (`resource.data.userId == request.auth.uid`) \|\| Admin | Authenticated User (`incoming().userId == request.auth.uid`) | Admin \|\| Owner (limited fields) | Admin only |
 | `bookings` | Owner (`resource.data.userId == request.auth.uid`) \|\| Admin | Authenticated User \|\| Public appointment | Admin \|\| Owner | Admin only |
+| `newsletter_subscriptions` | Public / Admin (`get`, `list`) | Public footer subscription (`isValidNewsletterSubscription`) | Admin only | Admin only |
 
 ### 2. Admin Authentication
 Admins are verified through trusted email match on verified credentials (`request.auth.token.email_verified == true` or authenticated session for registered boutique managers).

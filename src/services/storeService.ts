@@ -34,6 +34,7 @@ import {
   CustomerProfile,
   SavedAddress,
   AtelierBooking,
+  NewsletterSubscription,
 } from "../types";
 import { products as defaultProducts } from "../data/products";
 import savedSiteContentJson from "../data/siteContent.json";
@@ -3790,4 +3791,121 @@ export async function saveCustomOverrides(overrides: Record<string, any>): Promi
   } catch {}
 
   return updated;
+}
+
+/* ============================================================
+   NEWSLETTER SUBSCRIPTION SERVICE (FIRESTORE & LOCAL BACKEND)
+============================================================ */
+
+export const NEWSLETTER_CACHE_KEY = "hos_newsletter_cache";
+
+export function getCachedNewsletterSubscribers(): NewsletterSubscription[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(NEWSLETTER_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function cacheNewsletterSubscribersLocally(subscribers: NewsletterSubscription[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(NEWSLETTER_CACHE_KEY, JSON.stringify(subscribers));
+  } catch {}
+}
+
+export async function subscribeToNewsletter(
+  email: string,
+  source: string = "footer"
+): Promise<{ success: boolean; message: string; isNew?: boolean }> {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+    throw new Error("Please enter a valid email address.");
+  }
+
+  const docId = `sub_${cleanEmail.replace(/[^a-z0-9]/g, "_")}`;
+  const now = new Date().toISOString();
+
+  const subscriptionData: NewsletterSubscription = {
+    id: docId,
+    email: cleanEmail,
+    subscribedAt: now,
+    source,
+    status: "active",
+  };
+
+  // 1. Update local cache immediately
+  const localList = getCachedNewsletterSubscribers();
+  const existingIdx = localList.findIndex((s) => s.email.toLowerCase() === cleanEmail);
+  if (existingIdx > -1) {
+    localList[existingIdx] = { ...localList[existingIdx], ...subscriptionData };
+  } else {
+    localList.unshift(subscriptionData);
+  }
+  cacheNewsletterSubscribersLocally(localList);
+
+  // 2. Persist to Firestore collection 'newsletter_subscriptions'
+  try {
+    const docRef = doc(db, "newsletter_subscriptions", docId);
+    await setDoc(docRef, subscriptionData, { merge: true });
+  } catch (fsErr: unknown) {
+    handleFirestoreError(fsErr, OperationType.WRITE, `newsletter_subscriptions/${docId}`);
+  }
+
+  // 3. Central backend API sync
+  try {
+    const res = await fetch("/api/newsletter/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscriptionData),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        isNew: data.isNew,
+        message: data.message || "Thank you for subscribing! You will receive our private previews and artisan drops.",
+      };
+    }
+  } catch (apiErr) {
+    console.warn("[StoreService] Newsletter API sync note:", apiErr);
+  }
+
+  return {
+    success: true,
+    isNew: existingIdx === -1,
+    message: "Thank you for subscribing! You will receive our private previews and artisan drops.",
+  };
+}
+
+export async function getNewsletterSubscribers(): Promise<NewsletterSubscription[]> {
+  try {
+    const q = query(collection(db, "newsletter_subscriptions"), orderBy("subscribedAt", "desc"), limit(100));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const list = snap.docs.map((d) => d.data() as NewsletterSubscription);
+      cacheNewsletterSubscribersLocally(list);
+      return list;
+    }
+  } catch (fsErr) {
+    handleFirestoreError(fsErr, OperationType.LIST, "newsletter_subscriptions");
+  }
+
+  try {
+    const res = await fetch("/api/newsletter");
+    if (res.ok) {
+      const list = await res.json();
+      if (Array.isArray(list)) {
+        cacheNewsletterSubscribersLocally(list);
+        return list;
+      }
+    }
+  } catch {}
+
+  return getCachedNewsletterSubscribers();
 }

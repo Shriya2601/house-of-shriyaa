@@ -113,6 +113,18 @@
         "status": { "type": "string", "description": "Booking status: confirmed, pending, completed, cancelled" },
         "createdAt": { "type": "string", "description": "Booking creation ISO timestamp" }
       }
+    },
+    "newsletter_subscriptions": {
+      "title": "Newsletter Subscriptions",
+      "description": "Email newsletter subscribers who signed up via the website footer.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "description": "Subscriber email address" },
+        "subscribedAt": { "type": "string", "description": "ISO timestamp of subscription" },
+        "source": { "type": "string", "description": "Source of subscription (e.g. footer)" },
+        "status": { "type": "string", "description": "Subscription status (active, unsubscribed)" }
+      },
+      "required": ["email", "subscribedAt"]
     }
   },
   "firestore": {
@@ -143,6 +155,10 @@
     "/categories/{categoryId}": {
       "schema": "categories",
       "description": "Product categories"
+    },
+    "/newsletter_subscriptions/{subscriptionId}": {
+      "schema": "newsletter_subscriptions",
+      "description": "Newsletter email subscribers list"
     }
   }
 }

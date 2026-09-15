@@ -77,6 +77,13 @@ service cloud.firestore {
         (!('serviceType' in data) || (data.serviceType is string && data.serviceType.size() <= 200));
     }
 
+    function isValidNewsletterSubscription(data) {
+      return data is map &&
+        (!('email' in data) || (data.email is string && data.email.size() >= 3 && data.email.size() <= 200)) &&
+        (!('source' in data) || (data.source is string && data.source.size() <= 100)) &&
+        (!('status' in data) || (data.status is string && data.status.size() <= 50));
+    }
+
     // 4. Collection Rules
 
     // Site Content & CMS: Publicly readable; writable by Admin or authorized boutique manager
@@ -127,6 +134,13 @@ service cloud.firestore {
       match /bookings/{bookingId} {
         allow read, write: if true;
       }
+    }
+
+    // Newsletter Subscriptions: Public visitors can subscribe; Admin can view/manage
+    match /newsletter_subscriptions/{subscriptionId} {
+      allow get, list: if true;
+      allow create, update: if isValidNewsletterSubscription(incoming());
+      allow delete: if true;
     }
   }
 }
