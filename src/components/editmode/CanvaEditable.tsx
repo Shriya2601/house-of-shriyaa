@@ -83,6 +83,7 @@ export default function CanvaEditable({
       alt: alt || label || "",
       className,
       style: computedStyle,
+      referrerPolicy: "no-referrer",
       onError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
         const target = e.currentTarget;
         if (target.src && target.src.includes("?v=") && !target.dataset.retried) {

@@ -383,16 +383,17 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       });
 
       // Instantly show local photo with 0ms delay on admin screen
-      setSlides((prev) =>
-        prev.map((s, idx) =>
-          idx === targetIdx
-            ? {
-                ...s,
-                image: compressedDataUrl,
-              }
-            : s
-        )
+      const currentList = slidesRef.current.length > 0 ? slidesRef.current : slides;
+      const immediateSlides = currentList.map((s, idx) =>
+        idx === targetIdx
+          ? {
+              ...s,
+              image: compressedDataUrl,
+            }
+          : s
       );
+      setSlides(immediateSlides);
+      slidesRef.current = immediateSlides;
 
       // Attempt server upload to /api/upload for permanent file storage
       let uploadedUrl = compressedDataUrl;
@@ -419,7 +420,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
       }
 
       // Update slide image state synchronously and immediately persist to disk & live website
-      const nextSlides = slidesRef.current.map((s, idx) =>
+      const nextSlides = (slidesRef.current.length > 0 ? slidesRef.current : immediateSlides).map((s, idx) =>
         idx === targetIdx
           ? {
               ...s,
@@ -659,6 +660,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                   src={normalizeImageUrl(s.image)}
                   alt={s.title}
                   className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src =
                       "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
@@ -789,6 +791,7 @@ export default function AdminBannerManager({ showToast }: AdminBannerManagerProp
                 src={normalizeImageUrl(currentSlide.image)}
                 alt={currentSlide.title}
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                referrerPolicy="no-referrer"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src =
                     "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";

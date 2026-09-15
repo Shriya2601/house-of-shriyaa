@@ -21,9 +21,9 @@ export function normalizeImageUrl(url?: string | null, fallback = ""): string {
     }
   }
 
-  // Generic Kommodo share link: route through proxy if not a direct image file
-  if (trimmed.includes("kommodo.ai/i/")) {
-    const idMatch = trimmed.match(/kommodo\.ai\/i\/([a-zA-Z0-9_-]+)/);
+  // Generic Kommodo/Komodo share link: route through proxy if not a direct image file
+  if (trimmed.includes("kommodo.ai/i/") || trimmed.includes("komodo.ai/i/")) {
+    const idMatch = trimmed.match(/komm?odo\.ai\/i\/([a-zA-Z0-9_-]+)/);
     if (idMatch && idMatch[1] && KNOWN_KOMMODO_MAP[idMatch[1]]) {
       return KNOWN_KOMMODO_MAP[idMatch[1]];
     }

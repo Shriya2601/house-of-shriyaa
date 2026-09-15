@@ -11,7 +11,7 @@ import WhatsAppHelpButton, { getWhatsAppHelpUrl } from "../components/whatsapp/W
 import { customerSignOut, findOrderByOrderNumber, generateCustomerReferralCode, confirmOrderPayment, getLocallyDeletedIds, subscribeToNewsletter } from "../services/storeService";
 import { lookupPincode } from "../utils/pincodeLookup";
 import { normalizeImageUrl } from "../utils/imageUtils";
-import { SavedAddress, Order, AtelierBooking } from "../types";
+import { SavedAddress, Order, AtelierBooking, HeroSlide } from "../types";
 import {
   AlertCircle,
   ArrowRight,
@@ -2497,11 +2497,22 @@ function Hero({ onPookie }: { onPookie: () => void }) {
   const { siteContent } = useStore();
   const [activeSlide, setActiveSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [, setForceTick] = useState(0);
+  const [liveSlides, setLiveSlides] = useState<HeroSlide[] | null>(() => siteContent?.heroSlides || null);
+  const [forceTick, setForceTick] = useState(0);
+
+  // Sync with store updates
+  useEffect(() => {
+    if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
+      setLiveSlides(siteContent.heroSlides);
+    }
+  }, [siteContent]);
 
   // Instant storefront reactivity for live admin updates
   useEffect(() => {
-    const handleUpdate = () => {
+    const handleUpdate = (e: any) => {
+      if (e?.detail?.heroSlides && Array.isArray(e.detail.heroSlides) && e.detail.heroSlides.length > 0) {
+        setLiveSlides(e.detail.heroSlides);
+      }
       setForceTick((t) => t + 1);
     };
     window.addEventListener("hos-content-updated", handleUpdate);
@@ -2509,8 +2520,9 @@ function Hero({ onPookie }: { onPookie: () => void }) {
   }, []);
 
   const activeSlides = useMemo(() => {
-    if (siteContent?.heroSlides && siteContent.heroSlides.length > 0) {
-      return siteContent.heroSlides.map((s, idx) => {
+    const slidesToUse = liveSlides && liveSlides.length > 0 ? liveSlides : siteContent?.heroSlides;
+    if (slidesToUse && slidesToUse.length > 0) {
+      return slidesToUse.map((s, idx) => {
         const fallback = slides[idx % slides.length] || slides[0];
         return {
           eyebrow: s.eyebrow || (s as any).subtitle || fallback.eyebrow,
@@ -2518,7 +2530,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
           collection: s.collection || (s as any).badge || fallback.collection,
           title: s.title !== undefined && s.title !== "" ? s.title : fallback.title,
           description: s.description !== undefined && s.description !== "" ? s.description : fallback.description,
-          image: normalizeImageUrl(s.image) || fallback.image,
+          image: normalizeImageUrl(s.image) || s.image || fallback.image,
           season: s.season || fallback.season,
           caption: s.caption || fallback.caption,
           mood: s.mood || fallback.mood,
@@ -2528,7 +2540,7 @@ function Hero({ onPookie }: { onPookie: () => void }) {
       });
     }
     return slides;
-  }, [siteContent]);
+  }, [siteContent, liveSlides, forceTick]);
 
   useEffect(() => {
     if (activeSlides.length <= 1 || isPaused) return;

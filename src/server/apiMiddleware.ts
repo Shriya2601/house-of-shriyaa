@@ -1282,11 +1282,11 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 for (let i = 0; i < body.heroSlides.length; i++) {
                   const s = body.heroSlides[i];
                   if (s && s.image && typeof s.image === "string") {
-                    if (s.image.includes("kommodo.ai/i/eA9kgNNZCuEDbWDBS8JI")) {
+                    if (s.image.includes("eA9kgNNZCuEDbWDBS8JI")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
-                    } else if (s.image.includes("kommodo.ai/i/4UmFSGtcoZdZF37bKc3R")) {
+                    } else if (s.image.includes("4UmFSGtcoZdZF37bKc3R")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
-                    } else if (s.image.includes("kommodo.ai/i/")) {
+                    } else if (s.image.includes("kommodo.ai/i/") || s.image.includes("komodo.ai/i/")) {
                       try {
                         const fetchRes = await fetch(s.image, { headers: { "User-Agent": "Mozilla/5.0" } });
                         if (fetchRes.ok) {

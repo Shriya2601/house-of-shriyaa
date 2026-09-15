@@ -107,7 +107,11 @@ export default function AdminLivePreviewStudio({
   const handleSaveCurrentSlide = async () => {
     setIsSavingBanner(true);
     try {
-      await saveSiteContent({ heroSlides });
+      const slidesToSave =
+        siteContent?.heroSlides && siteContent.heroSlides.length > 0
+          ? siteContent.heroSlides
+          : heroSlides;
+      await saveSiteContent({ heroSlides: slidesToSave });
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Slide 0${selectedSlideIndex + 1} published live to boutique!`, "success");
       notifyIframeRefresh();

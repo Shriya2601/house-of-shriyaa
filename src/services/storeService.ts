@@ -790,7 +790,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
 
   let active = true;
 
-  const applyContentIfNewer = (incoming: SiteContent) => {
+  const applyContentIfNewer = (incoming: SiteContent, force = false) => {
     if (!incoming || typeof incoming !== "object") return;
     const incomingTime = incoming.updatedAt ? new Date(incoming.updatedAt).getTime() : 0;
     const currentTime = currentContent?.updatedAt ? new Date(currentContent.updatedAt).getTime() : 0;
@@ -804,7 +804,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       incoming.heroSlides = currentContent.heroSlides;
     }
 
-    if (incomingTime >= currentTime || !currentContent?.updatedAt) {
+    if (force || incomingTime >= currentTime || !currentContent?.updatedAt) {
       currentContent = incoming;
       cacheSiteContentLocally(incoming);
       callback(incoming);
@@ -834,7 +834,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges) && serverData.trustBadges.length > 0) {
             merged.trustBadges = serverData.trustBadges;
           }
-          applyContentIfNewer(merged);
+          // Server response is authoritative - force apply
+          applyContentIfNewer(merged, true);
           return;
         }
       }
@@ -855,7 +856,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
             merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          applyContentIfNewer(merged);
+          applyContentIfNewer(merged, true);
         }
       }
     } catch {}
@@ -925,7 +926,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         if (Array.isArray(event.data.data.trustBadges)) {
           merged.trustBadges = event.data.data.trustBadges;
         }
-        applyContentIfNewer(merged);
+        applyContentIfNewer(merged, true);
       } else {
         fetchLiveSiteContent();
       }
