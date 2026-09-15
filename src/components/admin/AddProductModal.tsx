@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   X,
   Sparkles,
@@ -27,7 +27,9 @@ interface AddProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   productToEdit?: Product | null;
-  onSuccess: (product: Product) => void;
+  onSuccess?: (product: Product) => void;
+  onSave?: (product: Product) => void;
+  categories?: any[];
 }
 
 const SAMPLE_IMAGES = [
@@ -132,9 +134,19 @@ export default function AddProductModal({
   onClose,
   productToEdit,
   onSuccess,
+  onSave,
+  categories = [],
 }: AddProductModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const categoryList = useMemo(() => {
+    const custom = (categories || [])
+      .map((c: any) => (typeof c === "string" ? c : c?.name))
+      .filter(Boolean);
+    const combined = Array.from(new Set([...custom, ...STANDARD_CATEGORIES]));
+    return combined;
+  }, [categories]);
 
   // Form fields
   const [name, setName] = useState("");
@@ -184,7 +196,10 @@ export default function AddProductModal({
   useEffect(() => {
     if (productToEdit) {
       setName(productToEdit.name || "");
-      setCategory(productToEdit.category || "Cotton Suits");
+      setCategory(
+        productToEdit.category ||
+          (categoryList.length > 0 ? categoryList[0] : "Cotton Suits")
+      );
       setPrice(productToEdit.price || "₹2,999");
       setOriginalPrice(productToEdit.originalPrice || "₹4,499");
       setFabricType(productToEdit.fabricType || "Pure Chanderi Silk");
@@ -207,7 +222,7 @@ export default function AddProductModal({
     } else {
       // Reset form
       setName("");
-      setCategory("Cotton Suits");
+      setCategory(categoryList.length > 0 ? categoryList[0] : "Cotton Suits");
       setPrice("₹2,999");
       setOriginalPrice("₹4,499");
       setFabricType("Pure Chanderi Silk");
@@ -225,7 +240,7 @@ export default function AddProductModal({
       setSelectedBadge("New Drop");
     }
     setError(null);
-  }, [productToEdit, isOpen]);
+  }, [productToEdit, isOpen, categoryList]);
 
   if (!isOpen) return null;
 
@@ -362,6 +377,11 @@ export default function AddProductModal({
       return;
     }
 
+    if (isProcessingMain || isProcessingHover || isProcessingExtra) {
+      setError("Please wait a moment while photos finish processing...");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -399,10 +419,29 @@ export default function AddProductModal({
       } catch {}
     }
 
+    const resolvedExtraImages: string[] = [];
+    for (let i = 0; i < extraImages.length; i++) {
+      let extraImg = extraImages[i];
+      if (extraImg.startsWith("data:")) {
+        try {
+          const upRes = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dataUrl: extraImg, filename: `extra-${i}-${prodId}` }),
+          });
+          if (upRes.ok) {
+            const upJson = await upRes.json();
+            if (upJson.url) extraImg = upJson.url;
+          }
+        } catch {}
+      }
+      resolvedExtraImages.push(extraImg);
+    }
+
     const finalImages = [
       finalMainImg,
       finalHoverImage && finalHoverImage !== finalMainImg ? finalHoverImage : null,
-      ...extraImages.filter((u) => u && u !== finalMainImg && u !== finalHoverImage),
+      ...resolvedExtraImages.filter((u) => u && u !== finalMainImg && u !== finalHoverImage),
     ].filter(Boolean) as string[];
 
     const productPayload: Product = {
@@ -466,7 +505,13 @@ export default function AddProductModal({
 
     try {
       const res = await saveProduct(productPayload);
-      onSuccess(res?.product || productPayload);
+      const savedProd = res?.product || productPayload;
+      if (typeof onSave === "function") {
+        onSave(savedProd);
+      }
+      if (typeof onSuccess === "function") {
+        onSuccess(savedProd);
+      }
       onClose();
     } catch (err: any) {
       console.error("Save product error:", err);
@@ -950,7 +995,7 @@ export default function AddProductModal({
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full text-sm px-3 py-2 border border-stone-300 rounded-lg bg-white focus:outline-hidden focus:border-[#0d4f3c]"
                 >
-                  {STANDARD_CATEGORIES.map((c) => (
+                  {categoryList.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -1125,13 +1170,21 @@ export default function AddProductModal({
             <button
               id="btn-submit-add-product"
               type="submit"
-              disabled={submitting || isProcessingMain || isProcessingHover}
+              disabled={submitting || isProcessingMain || isProcessingHover || isProcessingExtra}
               className="px-4 sm:px-5 py-2 text-xs font-bold uppercase tracking-wider bg-[#0d4f3c] hover:bg-[#09382b] text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
             >
-              <Plus size={15} />
+              {submitting ? (
+                <RefreshCw size={15} className="animate-spin" />
+              ) : productToEdit ? (
+                <Check size={15} />
+              ) : (
+                <Plus size={15} />
+              )}
               <span>
                 {submitting
                   ? "Saving to Boutique..."
+                  : isProcessingMain || isProcessingHover || isProcessingExtra
+                  ? "Processing Photo..."
                   : productToEdit
                   ? "Update Product"
                   : "Save & Add Product"}

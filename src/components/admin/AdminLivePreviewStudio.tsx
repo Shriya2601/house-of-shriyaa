@@ -226,10 +226,30 @@ export default function AdminLivePreviewStudio({
         images: Array.isArray(activeProduct.images) && activeProduct.images.length > 0
           ? [finalUrl, ...activeProduct.images.slice(1)]
           : [finalUrl],
+        colorVariants:
+          Array.isArray(activeProduct.colorVariants) && activeProduct.colorVariants.length > 0
+            ? [
+                {
+                  ...activeProduct.colorVariants[0],
+                  image: finalUrl,
+                  hoverImage:
+                    activeProduct.hoverImage === activeProduct.image
+                      ? finalUrl
+                      : activeProduct.colorVariants[0].hoverImage || finalUrl,
+                  images:
+                    Array.isArray(activeProduct.colorVariants[0].images) &&
+                    activeProduct.colorVariants[0].images.length > 0
+                      ? [finalUrl, ...activeProduct.colorVariants[0].images.slice(1)]
+                      : [finalUrl],
+                },
+                ...activeProduct.colorVariants.slice(1),
+              ]
+            : activeProduct.colorVariants,
       };
 
-      setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-      await saveProduct(updated);
+      const res = await saveProduct(updated);
+      const savedProd = res?.product || updated;
+      setProducts((prev) => prev.map((p) => (p.id === savedProd.id ? savedProd : p)));
 
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Photo for "${updated.name}" updated & published live!`, "success");

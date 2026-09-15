@@ -523,8 +523,12 @@ export default function AdminProductManager({
       {isModalOpen && (
         <AddProductModal
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingProduct(null);
+          }}
           productToEdit={editingProduct}
+          categories={categories}
           onSuccess={(savedProduct) => {
             if (editingProduct) {
               onProductUpdated(savedProduct);
@@ -538,6 +542,15 @@ export default function AdminProductManager({
                 ? `Product "${savedProduct.name}" updated successfully!`
                 : `Product "${savedProduct.name}" added to boutique successfully!`
             );
+          }}
+          onSave={(savedProduct) => {
+            if (editingProduct) {
+              onProductUpdated(savedProduct);
+            } else if (onProductAdded) {
+              onProductAdded(savedProduct);
+            } else {
+              onProductUpdated(savedProduct);
+            }
           }}
         />
       )}

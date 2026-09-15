@@ -905,6 +905,12 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               const idx = products.findIndex((p) => p.id === productId);
               if (idx > -1) {
                 const merged = { ...products[idx], ...product, id: productId, updatedAt: new Date().toISOString() };
+                if (Array.isArray(product.images) && product.images.length > 0) {
+                  merged.images = product.images;
+                } else if (product.image) {
+                  merged.image = product.image;
+                  merged.images = [product.image];
+                }
                 if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
                   const v0 = merged.colorVariants[0];
                   merged.colorVariants[0] = {
@@ -932,7 +938,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               writeProducts(products);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
-              res.end(JSON.stringify({ success: true, product, count: products.length }));
+              res.end(JSON.stringify({ success: true, product: products[idx > -1 ? idx : 0], count: products.length }));
               return;
             } catch (err: any) {
               res.setHeader("Content-Type", "application/json");
