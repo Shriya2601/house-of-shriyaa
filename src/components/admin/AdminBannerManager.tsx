@@ -1808,5 +1808,3 @@ export default function AdminBannerManager({
     </div>
   );
 }
-```tsx
-  }
