@@ -82,6 +82,7 @@ import AdminProductManager from "../components/admin/AdminProductManager";
 import AdminCategoryManager from "../components/admin/AdminCategoryManager";
 import AddProductModal from "../components/admin/AddProductModal";
 import AdminBannerManager from "../components/admin/AdminBannerManager";
+import AdminLivePreviewStudio from "../components/admin/AdminLivePreviewStudio";
 import AdminContentManager from "../components/admin/AdminContentManager";
 import AdminPaymentScanner from "../components/admin/AdminPaymentScanner";
 import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal";
@@ -229,7 +230,9 @@ export default function AdminPortal() {
   const [authError, setAuthError] = useState<string>("");
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<"bookings" | "orders" | "products" | "banners" | "site-content" | "payment-scanner" | "shiprocket-logs">("products");
+  const [activeTab, setActiveTab] = useState<
+    "live-preview" | "products" | "categories" | "banners" | "site-content" | "bookings" | "orders" | "payment-scanner" | "shiprocket-logs"
+  >("live-preview");
   const [bookings, setBookings] = useState<AtelierBooking[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
@@ -1036,12 +1039,28 @@ export default function AdminPortal() {
 
             <Link
               to="/"
+              target="_blank"
+              rel="noopener noreferrer"
               className="p-2 sm:px-3 sm:py-2 text-xs bg-white/10 hover:bg-white/20 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="View Public Storefront"
+              title="View Public Storefront in New Tab"
             >
               <Store size={14} />
-              <span className="hidden sm:inline">Storefront</span>
+              <span className="hidden sm:inline">Storefront ↗</span>
             </Link>
+
+            <button
+              id="admin-header-btn-live-studio"
+              onClick={() => setActiveTab("live-preview")}
+              className={`p-2 sm:px-3.5 sm:py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === "live-preview"
+                  ? "bg-[#d4af37] text-[#0d4f3c] shadow-sm ring-2 ring-white/20"
+                  : "bg-white/10 hover:bg-white/20 text-white"
+              }`}
+              title="Open Live Store Preview & Visual Editor"
+            >
+              <Eye size={14} className={activeTab === "live-preview" ? "text-[#0d4f3c]" : "text-[#d4af37]"} />
+              <span className="hidden sm:inline">Live Studio Preview</span>
+            </button>
 
             {activeTab === "products" && (
               <button
@@ -1154,7 +1173,32 @@ export default function AdminPortal() {
         {/* Tab & Filter Bar */}
         <div className="bg-white rounded-xl border border-[#e5ddd3] p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           {/* Segmented Tab Switcher */}
-          <div className="flex items-center bg-[#f0ebe3] p-1 rounded-lg shrink-0">
+          <div className="flex items-center bg-[#f0ebe3] p-1 rounded-lg shrink-0 overflow-x-auto max-w-full">
+            <button
+              id="admin-tab-live-preview"
+              onClick={() => {
+                setActiveTab("live-preview");
+                setStatusFilter("all");
+              }}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+                activeTab === "live-preview"
+                  ? "bg-[#0d4f3c] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <Eye size={14} className={activeTab === "live-preview" ? "text-[#d4af37]" : "text-stone-500"} />
+              <span>Live Studio & Preview</span>
+              <span
+                className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                  activeTab === "live-preview"
+                    ? "bg-[#d4af37] text-[#0d4f3c]"
+                    : "bg-[#d4af37]/30 text-[#0d4f3c]"
+                }`}
+              >
+                LIVE
+              </span>
+            </button>
+
             <button
               id="admin-tab-bookings"
               onClick={() => {
@@ -1400,6 +1444,11 @@ export default function AdminPortal() {
             <RefreshCw size={24} className="animate-spin mx-auto text-[#0d4f3c]" />
             <p className="text-xs font-medium">Fetching real-time records from atelier database...</p>
           </div>
+        ) : activeTab === "live-preview" ? (
+          <AdminLivePreviewStudio
+            showToast={showToast}
+            onOpenProductModal={() => setIsProductModalOpen(true)}
+          />
         ) : activeTab === "shiprocket-logs" ? (
           <ShiprocketLogsView
             onOpenConfigModal={() => setIsShiprocketConfigOpen(true)}

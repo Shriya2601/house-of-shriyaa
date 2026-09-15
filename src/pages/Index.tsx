@@ -3478,13 +3478,41 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
 }
 
 export default function Index() {
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (
+          params.get("preview_mode") === "admin" ||
+          params.get("nointro") === "true" ||
+          params.get("canva") === "true" ||
+          window.self !== window.top
+        ) {
+          return false;
+        }
+      } catch {}
+    }
+    return true;
+  });
   const [pookieMessage, setPookieMessage] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("All Collections");
   const [searchQuery, setSearchQuery] = useState("");
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Sync listener when inside an iframe or preview frame
+  useEffect(() => {
+    const handleWindowMessage = (event: MessageEvent) => {
+      if (event.data?.type === "hos-sync-refresh") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: event.data.siteContent }));
+        }
+      }
+    };
+    window.addEventListener("message", handleWindowMessage);
+    return () => window.removeEventListener("message", handleWindowMessage);
+  }, []);
 
   // Use persistent store wishlist and toggleWishlist
   const { wishlist, toggleWishlist } = useStore();
