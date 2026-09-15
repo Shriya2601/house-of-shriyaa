@@ -46,7 +46,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     description:
       "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
     image:
-      "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
+      "https://kommodo.ai/i/OSeP8KXZKOwa1kTFdvK2",
     season: "ROYAL HERITAGE 2026",
     caption: "Pastels • Delicate Embroidery • Effortless Grace",
     mood: "Antique Zari & Handlooms",
