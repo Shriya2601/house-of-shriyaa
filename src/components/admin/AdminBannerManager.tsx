@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { useStore } from "../../context/StoreContext";
-import { saveSiteContent } from "../../services/storeService";
+import { saveSiteContent, withTimeout } from "../../services/storeService";
 import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
 import { HeroSlide } from "../../types";
 import { normalizeImageUrl } from "../../utils/imageUtils";
@@ -736,13 +736,20 @@ export default function AdminBannerManager({
 
       try {
         const bannerRef = ref(storage, `banners/hero-slide-${targetIndex + 1}-${Date.now()}.jpg`);
-        await uploadString(bannerRef, compressedDataUrl, "data_url", { contentType: "image/jpeg" });
-        finalImageUrl = await getDownloadURL(bannerRef);
-      } catch (uploadError) {
-        console.warn(
-          "Permanent image upload notice. Using image data fallback.",
-          uploadError
+        await withTimeout(
+          uploadString(bannerRef, compressedDataUrl, "data_url", { contentType: "image/jpeg" }),
+          30000,
+          "Firebase Storage banner upload timed out after 30 seconds."
         );
+        finalImageUrl = await withTimeout(
+          getDownloadURL(bannerRef),
+          30000,
+          "Could not retrieve Firebase banner URL."
+        );
+      } catch (uploadError) {
+        console.error("[Firebase Upload Error]", uploadError);
+        const msg = uploadError instanceof Error ? uploadError.message : String(uploadError);
+        alert(`Banner upload failed: ${msg}`);
       }
 
       /*

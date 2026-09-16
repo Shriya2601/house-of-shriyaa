@@ -282,7 +282,7 @@ export default function AddProductModal({
 
   // Handle Main Image File Select
   const handleMainFileChange = async (file: File) => {
-    console.log("[FirebaseStorage] 1. File selected for main photo:", file.name, file.size, file.type);
+    console.log("[Upload 1] File selected:", file.name, file.size, file.type);
     setMainUploadState("uploading");
     setMainUploadError(null);
     setError(null);
@@ -290,9 +290,9 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      console.log("[FirebaseStorage] 2. Data URL created for main photo:", { sizeText, length: dataUrl.length });
+      console.log("[Upload 2] Data URL ready");
 
-      // Immediate visual preview so admin sees the photo in 0ms
+      // Immediate visual preview
       setImage(dataUrl);
       setMainImageDetails({ name: file.name, size: sizeText });
 
@@ -300,6 +300,7 @@ export default function AddProductModal({
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "main");
       setImage(downloadUrl);
       setMainUploadState("uploaded");
+      console.log("[Upload SUCCESS]", downloadUrl);
 
       if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
         setHoverImage(downloadUrl);
@@ -307,7 +308,7 @@ export default function AddProductModal({
         setHoverUploadState("uploaded");
       }
     } catch (error: any) {
-      console.error("Firebase product image upload failed:", error);
+      console.error("[Upload FAILED]", error);
       const message = error instanceof Error ? error.message : String(error);
       setMainUploadError(message);
       setMainUploadState("error");
@@ -321,7 +322,7 @@ export default function AddProductModal({
 
   // Handle Hover Image File Select
   const handleHoverFileChange = async (file: File) => {
-    console.log("[FirebaseStorage] 1. File selected for hover photo:", file.name, file.size, file.type);
+    console.log("[Upload 1] File selected (hover):", file.name, file.size, file.type);
     setHoverUploadState("uploading");
     setHoverUploadError(null);
     setError(null);
@@ -329,7 +330,7 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      console.log("[FirebaseStorage] 2. Data URL created for hover photo:", { sizeText, length: dataUrl.length });
+      console.log("[Upload 2] Data URL ready (hover)");
 
       setHoverImage(dataUrl);
       setHoverImageDetails({ name: file.name, size: sizeText });
@@ -337,8 +338,9 @@ export default function AddProductModal({
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "hover");
       setHoverImage(downloadUrl);
       setHoverUploadState("uploaded");
+      console.log("[Upload SUCCESS] (hover)", downloadUrl);
     } catch (error: any) {
-      console.error("Firebase product image upload failed:", error);
+      console.error("[Upload FAILED] (hover)", error);
       const message = error instanceof Error ? error.message : String(error);
       setHoverUploadError(message);
       setHoverUploadState("error");
@@ -351,7 +353,7 @@ export default function AddProductModal({
 
   // Handle Additional Gallery Image File Select
   const handleExtraFileChange = async (file: File) => {
-    console.log("[FirebaseStorage] 1. File selected for gallery photo:", file.name, file.size, file.type);
+    console.log("[Upload 1] File selected (gallery):", file.name, file.size, file.type);
     setExtraUploadState("uploading");
     setExtraUploadError(null);
     setError(null);
@@ -359,13 +361,14 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl } = await compressImageFile(file);
-      console.log("[FirebaseStorage] 2. Data URL created for gallery photo:", { length: dataUrl.length });
+      console.log("[Upload 2] Data URL ready (gallery)");
 
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, `gallery-${Date.now()}`);
       setExtraImages((prev) => [...prev, downloadUrl]);
       setExtraUploadState("uploaded");
+      console.log("[Upload SUCCESS] (gallery)", downloadUrl);
     } catch (error: any) {
-      console.error("Firebase product image upload failed:", error);
+      console.error("[Upload FAILED] (gallery)", error);
       const message = error instanceof Error ? error.message : String(error);
       setExtraUploadError(message);
       setExtraUploadState("error");
