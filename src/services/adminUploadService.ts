@@ -68,37 +68,48 @@ export async function uploadImageToAdminStorage(
   let response: Response;
 
   try {
+    let blob: Blob;
+    let filename = `${slot}-${Date.now()}.jpg`;
+
     if (fileOrDataUrl instanceof Blob) {
-      const formData = new FormData();
-      const filename = (fileOrDataUrl as File).name || `${slot}-${Date.now()}.jpg`;
-      formData.append("file", fileOrDataUrl, filename);
-      formData.append("slot", slot);
-      if (productId) formData.append("productId", productId);
-
-      onProgress?.(45);
-
-      response = await fetch("/api/admin/upload", {
-        method: "POST",
-        headers: {
-          "x-admin-token": token,
-        },
-        body: formData,
-      });
+      blob = fileOrDataUrl;
+      if ((fileOrDataUrl as File).name) {
+        filename = (fileOrDataUrl as File).name;
+      }
     } else {
-      onProgress?.(45);
-      response = await fetch("/api/admin/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": token,
-        },
-        body: JSON.stringify({
-          dataUrl: fileOrDataUrl,
-          slot,
-          productId,
-        }),
-      });
+      // Convert base64 data URL to Blob for pure multipart/form-data upload
+      const match = fileOrDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const mime = match[1];
+        const binary = atob(match[2]);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        blob = new Blob([array], { type: mime });
+        const ext = mime.split("/")[1]?.replace("+xml", "") || "jpg";
+        filename = `${slot}-${Date.now()}.${ext}`;
+      } else {
+        throw new Error("Invalid image format provided for upload.");
+      }
     }
+
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    formData.append("slot", slot);
+    if (productId) formData.append("productId", productId);
+
+    onProgress?.(45);
+
+    // POST multipart/form-data directly to production upload route
+    // Note: Do NOT set Content-Type header manually - browser sets boundary automatically
+    response = await fetch("/api/admin/upload", {
+      method: "POST",
+      headers: {
+        "x-admin-token": token,
+      },
+      body: formData,
+    });
 
     onProgress?.(80);
 

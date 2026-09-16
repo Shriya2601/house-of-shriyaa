@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "include": [
+    "/api/*",
+    "/uploads/*"
+  ],
+  "exclude": [
+    "/assets/*",
+    "/data/*",
+    "/favicon.ico"
+  ]
+}

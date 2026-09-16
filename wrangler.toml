@@ -1,0 +1,16 @@
+name = "house-of-shriya"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+# Production Cloudflare R2 bucket bindings for permanent image storage
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "house-of-shriya-images"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "house-of-shriya-images"
+
+[[r2_buckets]]
+binding = "IMAGES_BUCKET"
+bucket_name = "house-of-shriya-images"
