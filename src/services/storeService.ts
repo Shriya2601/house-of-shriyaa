@@ -21,7 +21,7 @@ import {
   type User,
   updateProfile,
 } from "firebase/auth";
-import { db, auth } from "../lib/firebase";
+import { db, auth, storage, ref, uploadString, getDownloadURL, deleteObject } from "../lib/firebase";
 import {
   Product,
   ColorVariant,
@@ -1255,68 +1255,261 @@ function applyImageCacheBuster(url: string | undefined): string {
   return trimmed;
 }
 
+/**
+ * Uploads an image data URL directly to Firebase Storage.
+ * Generates path: products/{productId}/{type}-{uniqueId}.jpg
+ * Returns the permanent Firebase Storage download URL.
+ */
+export async function uploadProductImageToFirebase(
+  productId: string,
+  type: "main" | "hover" | "gallery" | string,
+  dataUrlOrUrl: string
+): Promise<string> {
+  if (!dataUrlOrUrl || typeof dataUrlOrUrl !== "string") return "";
+  const trimmed = dataUrlOrUrl.trim();
+  if (!trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+
+  const cleanProdId = (productId || `hos-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const cleanType = (type || "photo").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const storagePath = `products/${cleanProdId}/${cleanType}-${uniqueId}.jpg`;
+
+  const storageRef = ref(storage, storagePath);
+  await uploadString(storageRef, trimmed, "data_url", {
+    contentType: "image/jpeg",
+  });
+  return await getDownloadURL(storageRef);
+}
+
+/**
+ * Safely cleans up an old Firebase Storage image after a replacement succeeds.
+ * Never throws or blocks on failure.
+ */
+export async function cleanupOldStorageImage(oldUrl?: string | null, newUrl?: string | null): Promise<void> {
+  if (!oldUrl || !newUrl || oldUrl === newUrl || typeof oldUrl !== "string") return;
+  if (oldUrl.includes("firebasestorage.googleapis.com") || oldUrl.includes("storage.googleapis.com")) {
+    try {
+      const storageRef = ref(storage, oldUrl);
+      await deleteObject(storageRef);
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+}
+
+/**
+ * Ensures all image fields are uploaded to Firebase Storage before writing to Firestore.
+ */
+async function ensureAllImagesUploaded(
+  prodId: string,
+  product: Partial<Product>
+): Promise<{
+  image: string;
+  hoverImage: string;
+  images: string[];
+  colorVariants?: ColorVariant[];
+}> {
+  let mainImg = product.image || "";
+  if (mainImg.startsWith("data:")) {
+    mainImg = await uploadProductImageToFirebase(prodId, "main", mainImg);
+  }
+
+  let hoverImg = product.hoverImage || mainImg;
+  if (hoverImg.startsWith("data:")) {
+    hoverImg = await uploadProductImageToFirebase(prodId, "hover", hoverImg);
+  }
+
+  let imagesList: string[] = [];
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    imagesList = await Promise.all(
+      product.images.map(async (img, idx) => {
+        if (img && typeof img === "string" && img.startsWith("data:")) {
+          return await uploadProductImageToFirebase(prodId, `gallery-${idx}`, img);
+        }
+        return img || "";
+      })
+    );
+    imagesList = imagesList.filter(Boolean);
+  } else {
+    imagesList = [mainImg, hoverImg].filter(Boolean);
+  }
+
+  if (mainImg && !imagesList.includes(mainImg)) {
+    imagesList = [mainImg, ...imagesList];
+  }
+
+  let updatedVariants: ColorVariant[] | undefined = undefined;
+  if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
+    updatedVariants = await Promise.all(
+      product.colorVariants.map(async (v, vIdx) => {
+        let vImg = vIdx === 0 ? mainImg : (v.image || mainImg);
+        if (vImg && vImg.startsWith("data:")) {
+          vImg = await uploadProductImageToFirebase(prodId, `var-${vIdx}-main`, vImg);
+        }
+
+        let vHover = vIdx === 0 ? hoverImg : (v.hoverImage || hoverImg);
+        if (vHover && vHover.startsWith("data:")) {
+          vHover = await uploadProductImageToFirebase(prodId, `var-${vIdx}-hover`, vHover);
+        }
+
+        let vImages: string[] = [];
+        if (Array.isArray(v.images) && v.images.length > 0) {
+          vImages = await Promise.all(
+            v.images.map(async (img, gIdx) => {
+              if (img && typeof img === "string" && img.startsWith("data:")) {
+                return await uploadProductImageToFirebase(prodId, `var-${vIdx}-gal-${gIdx}`, img);
+              }
+              return img || "";
+            })
+          );
+          vImages = vImages.filter(Boolean);
+        } else {
+          vImages = vIdx === 0 ? imagesList : [vImg, vHover].filter(Boolean);
+        }
+
+        return {
+          ...v,
+          image: vImg,
+          hoverImage: vHover,
+          images: vImages,
+        };
+      })
+    );
+  }
+
+  return {
+    image: mainImg,
+    hoverImage: hoverImg,
+    images: imagesList,
+    colorVariants: updatedVariants,
+  };
+}
+
+/**
+ * Authoritatively retrieves the latest products directly from Firestore.
+ * Updates local cache and guarantees stale disk/localStorage files never overwrite live data.
+ */
+export async function getAuthoritativeProducts(): Promise<Product[]> {
+  const deleted = getLocallyDeletedIds("products");
+  try {
+    const colRef = collection(db, "products");
+    const snapshot = await getDocs(colRef);
+    if (!snapshot.empty) {
+      const fsList = snapshot.docs
+        .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
+        .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+
+      if (fsList.length > 0) {
+        cacheProductsLocally(fsList);
+        return fsList;
+      }
+    }
+  } catch (err) {
+    console.warn("[StoreService] Error fetching authoritative products from Firestore:", err);
+  }
+  return getCachedProducts();
+}
+
+
 export function subscribeProducts(callback: (products: Product[]) => void): () => void {
   // Immediately serve cached products for instant layout
   callback(getCachedProducts());
 
   let active = true;
+  let hasLoadedFromFirestore = false;
 
-  // Active sync function: fetches from central backend API with anti-cache headers
-  const fetchLiveProducts = async () => {
+  // Query authoritative Firestore products immediately
+  getAuthoritativeProducts().then((fsList) => {
     if (!active) return;
+    if (fsList && fsList.length > 0) {
+      hasLoadedFromFirestore = true;
+      callback(fsList);
+    }
+  }).catch(() => {});
+
+  // Real-time Firestore listener - AUTHORITATIVE PRODUCTION SOURCE
+  let unsubFs = () => {};
+  try {
+    const colRef = collection(db, "products");
+    unsubFs = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!active) return;
+        const deleted = getLocallyDeletedIds("products");
+
+        // React to remote deletions in Firestore immediately
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "removed") {
+            recordLocallyDeletedId("products", change.doc.id);
+          }
+        });
+
+        if (!snapshot.empty) {
+          const fsList = snapshot.docs
+            .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+
+          if (fsList.length > 0) {
+            hasLoadedFromFirestore = true;
+            // FIRESTORE IS THE SINGLE AUTHORITATIVE SOURCE OF TRUTH.
+            // Do NOT merge older localStorage or static JSON over fresh Firestore data.
+            cacheProductsLocally(fsList);
+            callback(fsList);
+
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: fsList }));
+            }
+            return;
+          }
+        } else {
+          // If Firestore is completely empty and no factory reset was performed, auto-seed in background
+          if (typeof window !== "undefined" && !localStorage.getItem("hos_factory_reset_completed")) {
+            const current = getCachedProducts();
+            if (current.length > 0) {
+              syncCatalogToFirestore(current).catch(() => {});
+            }
+          }
+        }
+      },
+      (error) => {
+        console.warn("[Firestore] onSnapshot products listener notice:", error);
+      }
+    );
+  } catch (err) {
+    console.warn("[Firestore] Failed to attach products listener:", err);
+  }
+
+  // Fallback fetch ONLY IF Firestore has not loaded after 2 seconds
+  const fetchFallbackProducts = async () => {
+    await new Promise((r) => setTimeout(r, 2000));
+    if (!active || hasLoadedFromFirestore) return;
 
     try {
       const res = await fetch(`/api/products?t=${Date.now()}`, {
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (res.ok) {
+      if (res.ok && !hasLoadedFromFirestore) {
         const apiData = await res.json();
-        if (Array.isArray(apiData)) {
+        if (Array.isArray(apiData) && !hasLoadedFromFirestore) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          cacheProductsLocally(normalized);
-          callback(normalized);
-          return;
-        }
-      }
-    } catch {}
-
-    // Fallback to static JSON file if server endpoint temporarily unavailable
-    try {
-      const staticRes = await fetch(`/data/products.json?t=${Date.now()}`, {
-        cache: "no-store",
-      });
-      if (staticRes.ok) {
-        const staticData = await staticRes.json();
-        if (Array.isArray(staticData)) {
-          const deleted = getLocallyDeletedIds("products");
-          const normalized = staticData
-            .map(ensureProductVariants)
-            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          cacheProductsLocally(normalized);
-          callback(normalized);
+          if (!hasLoadedFromFirestore) {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
         }
       }
     } catch {}
   };
 
-  // 1. Initial live fetch immediately
-  fetchLiveProducts();
+  fetchFallbackProducts();
 
-  // 2. Active background polling interval (every 3s) for fast cross-device synchronization (Mobile, Tablet, Laptop)
-  const pollTimer = setInterval(fetchLiveProducts, 3000);
-
-  // 3. Listen to window focus & visibility changes (e.g. when user switches from Mobile to Laptop or switches tabs)
-  const handleFocusOrVisible = () => {
-    if (typeof document !== "undefined" && !document.hidden) {
-      fetchLiveProducts();
-    }
-  };
-
-  // 4. Listen to local/custom events dispatched during admin operations
+  // Listen to local/custom events dispatched during admin operations
   const handleCatalogUpdate = (e: any) => {
     if (Array.isArray(e.detail)) {
       const deleted = getLocallyDeletedIds("products");
@@ -1350,25 +1543,19 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     }
   };
 
-  // 5. BroadcastChannel handler for 0ms cross-tab & cross-window updates
+  // BroadcastChannel handler for cross-tab & cross-window updates
   const handleBroadcastMessage = (event: MessageEvent) => {
-    if (event.data?.type === "products") {
-      if (Array.isArray(event.data.data)) {
-        const deleted = getLocallyDeletedIds("products");
-        const normalized = event.data.data
-          .map(ensureProductVariants)
-          .filter((p: any) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-        cacheProductsLocally(normalized);
-        callback(normalized);
-      } else {
-        fetchLiveProducts();
-      }
+    if (event.data?.type === "products" && Array.isArray(event.data.data)) {
+      const deleted = getLocallyDeletedIds("products");
+      const normalized = event.data.data
+        .map(ensureProductVariants)
+        .filter((p: any) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+      cacheProductsLocally(normalized);
+      callback(normalized);
     }
   };
 
   if (typeof window !== "undefined") {
-    window.addEventListener("focus", handleFocusOrVisible);
-    window.addEventListener("online", handleFocusOrVisible);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdate);
     window.addEventListener("hos-product-saved", handleSingleProductSaved);
     window.addEventListener("hos-product-deleted", handleProductDeleted);
@@ -1379,75 +1566,17 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     });
   }
 
-  if (typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", handleFocusOrVisible);
-  }
-
   if (syncChannel) {
     syncChannel.addEventListener("message", handleBroadcastMessage);
   }
 
-  // 6. Firestore real-time listener for instant zero-refresh cross-device synchronization
-  let unsubFs = () => {};
-  try {
-    const colRef = collection(db, "products");
-    unsubFs = onSnapshot(
-      colRef,
-      (snapshot) => {
-        const deleted = getLocallyDeletedIds("products");
-
-        // React to remote deletions in Firestore immediately
-        snapshot.docChanges().forEach((change) => {
-          if (change.type === "removed") {
-            recordLocallyDeletedId("products", change.doc.id);
-          }
-        });
-
-        if (!snapshot.empty) {
-          const fsList = snapshot.docs
-            .map((d) => ensureProductVariants({ id: d.id, ...d.data() }))
-            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-
-          if (fsList.length > 0) {
-            const current = getCachedProducts().filter((p) => p && !deleted.has(p.id) && !deleted.has((p as any).sku));
-            const merged = mergeEntitiesByTimestamp(current, fsList, deleted, (p) => p.id, (p) => (p as any).sku);
-            cacheProductsLocally(merged);
-            callback(merged);
-
-            // Dispatch global event for instant in-tab & across-component synchronization
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: merged }));
-            }
-          }
-        } else {
-          // If Firestore is empty, auto-seed with cached products in the background so future onSnapshot triggers
-          if (typeof window !== "undefined" && !localStorage.getItem("hos_factory_reset_completed")) {
-            const current = getCachedProducts();
-            if (current.length > 0) {
-              syncCatalogToFirestore(current).catch(() => {});
-            }
-          }
-        }
-      },
-      (error) => {
-        console.warn("[Firestore] onSnapshot products listener notice:", error);
-      }
-    );
-  } catch {}
-
   return () => {
     active = false;
-    clearInterval(pollTimer);
     unsubFs();
     if (typeof window !== "undefined") {
-      window.removeEventListener("focus", handleFocusOrVisible);
-      window.removeEventListener("online", handleFocusOrVisible);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdate);
       window.removeEventListener("hos-product-saved", handleSingleProductSaved);
       window.removeEventListener("hos-product-deleted", handleProductDeleted);
-    }
-    if (typeof document !== "undefined") {
-      document.removeEventListener("visibilitychange", handleFocusOrVisible);
     }
     if (syncChannel) {
       syncChannel.removeEventListener("message", handleBroadcastMessage);
@@ -1468,29 +1597,20 @@ export async function syncCatalogToFirestore(prods: Product[]): Promise<void> {
   }
 }
 
-export async function saveProduct(product: Partial<Product> & { id?: string }): Promise<{ id: string; success: boolean; product?: Product }> {
+export async function saveProduct(
+  product: Partial<Product> & { id?: string }
+): Promise<{ id: string; success: boolean; product?: Product }> {
   const id = product.id || `hos-${Date.now()}`;
   unrecordLocallyDeletedId("products", id);
   if (product.name) unrecordLocallyDeletedId("products", product.name);
   if ((product as any).sku) unrecordLocallyDeletedId("products", (product as any).sku);
 
-  // Apply cache-busting timestamp to /uploads/ URLs to ensure Cloudflare / browsers never serve stale cached images
-  const cleanImage = applyImageCacheBuster(product.image);
-  const cleanHover = applyImageCacheBuster(product.hoverImage || cleanImage);
-  const cleanImages = (product.images || [cleanImage, cleanHover])
-    .filter(Boolean)
-    .map(applyImageCacheBuster);
+  // 1. Ensure all data URLs are uploaded to Firebase Storage BEFORE saving to Firestore
+  const uploaded = await ensureAllImagesUploaded(id, product);
 
-  const updatedVariants = Array.isArray(product.colorVariants)
-    ? product.colorVariants.map((v, idx) => ({
-        ...v,
-        image: idx === 0 ? cleanImage : applyImageCacheBuster(v.image || cleanImage),
-        hoverImage: idx === 0 ? cleanHover : applyImageCacheBuster(v.hoverImage || cleanHover),
-        images: idx === 0
-          ? [cleanImage, ...(Array.isArray(v.images) ? v.images.slice(1).map(applyImageCacheBuster) : [cleanHover])]
-          : (Array.isArray(v.images) && v.images.length > 0 ? v.images.map(applyImageCacheBuster) : cleanImages),
-      }))
-    : undefined;
+  const cleanImage = uploaded.image;
+  const cleanHover = uploaded.hoverImage || cleanImage;
+  const cleanImages = uploaded.images;
 
   const sanitized = ensureProductVariants({
     ...product,
@@ -1498,17 +1618,34 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     image: cleanImage,
     hoverImage: cleanHover,
     images: cleanImages,
-    colorVariants: updatedVariants,
+    colorVariants: uploaded.colorVariants,
     updatedAt: new Date().toISOString(),
   });
 
+  const firestoreData = sanitizeForFirestore(sanitized);
+
+  // 2. Authoritative Firestore Save: Must await setDoc and immediately verify with getDoc
+  const docRef = doc(db, "products", id);
+  await setDoc(docRef, firestoreData, { merge: true });
+
+  const verifySnap = await getDoc(docRef);
+  if (!verifySnap.exists()) {
+    throw new Error(`Product document ${id} does not exist in Firestore after saving.`);
+  }
+
+  const verifiedProduct = ensureProductVariants({
+    id: verifySnap.id,
+    ...verifySnap.data(),
+  });
+
+  // 3. Update local cache with verified Firestore product
   const current = getCachedProducts();
   const existingIdx = current.findIndex((p) => p.id === id);
-  const updated = existingIdx > -1 ? [...current] : [sanitized, ...current];
-  if (existingIdx > -1) updated[existingIdx] = sanitized;
+  const updated = existingIdx > -1 ? [...current] : [verifiedProduct, ...current];
+  if (existingIdx > -1) updated[existingIdx] = verifiedProduct;
   cacheProductsLocally(updated);
 
-  // Clear any stale Canva text/style overrides for this product so edits are visible immediately
+  // 4. Clear any stale Canva text/style overrides for this product so edits are visible immediately
   try {
     const rawOverrides = localStorage.getItem("hos_custom_overrides");
     if (rawOverrides) {
@@ -1529,47 +1666,21 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     }
   } catch {}
 
-  // 1. Immediately dispatch real-time events for instant local & cross-device updates (0ms responsiveness)
+  // 5. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: verifiedProduct }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
   }
   broadcastCrossDeviceSync("products", updated);
 
-  // 2. Sync with Centralized Backend API endpoint (/api/products)
-  try {
-    const apiRes = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sanitized),
-    });
-    if (!apiRes.ok) {
-      // Fallback to item-specific endpoint if collection post failed
-      const putRes = await fetch(`/api/products/${encodeURIComponent(id)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sanitized),
-      });
-      if (!putRes.ok) {
-        console.warn(`[StoreService] Server API returned HTTP ${putRes.status} for product ${id}; proceeding to Firestore.`);
-      }
-    }
-  } catch (apiErr: any) {
-    console.warn("[StoreService] Backend API sync note:", apiErr?.message || apiErr);
-  }
+  // 6. Optional best-effort sync with server API (non-blocking)
+  fetch("/api/products", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(verifiedProduct),
+  }).catch(() => {});
 
-  // 3. Sync to Firestore in the background with timeout guard so UI is never blocked
-  Promise.race([
-    (async () => {
-      const docRef = doc(db, "products", id);
-      await setDoc(docRef, sanitizeForFirestore(sanitized), { merge: true });
-    })(),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore sync timeout")), 2500)),
-  ]).catch((fsErr) => {
-    console.warn("Firestore product setDoc notice:", fsErr);
-  });
-
-  return { id, success: true, product: sanitized };
+  return { id, success: true, product: verifiedProduct };
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -1633,14 +1744,13 @@ export async function deleteProduct(id: string): Promise<void> {
     });
   } catch {}
 
-  // 4. Firestore deletion in background with timeout guard so UI is never blocked
-  Promise.race([
-    (async () => {
-      const docRef = doc(db, "products", id);
-      await deleteDoc(docRef);
-    })(),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore delete timeout")), 2500)),
-  ]).catch(() => {});
+  // 4. Authoritative Firestore deletion: await deleteDoc directly
+  try {
+    const docRef = doc(db, "products", id);
+    await deleteDoc(docRef);
+  } catch (fsErr) {
+    console.warn("Firestore deleteDoc notice:", fsErr);
+  }
 }
 
 export interface FactoryResetResult {

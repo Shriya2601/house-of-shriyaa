@@ -32,6 +32,7 @@ export const db =
 
 // Firebase Storage is used for product images because Cloudflare/server filesystems are not durable.
 export const storage = getStorage(app);
+export { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Safely initialize Analytics if supported in browser environment
 export let analytics: ReturnType<typeof getAnalytics> | null = null;

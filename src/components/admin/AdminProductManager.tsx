@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { Product } from "../../types";
-import { deleteProduct, saveProduct } from "../../services/storeService";
+import { deleteProduct, saveProduct, uploadProductImageToFirebase, cleanupOldStorageImage } from "../../services/storeService";
 import { getProductDisplayImage, handleImageError, normalizeImageUrl, compressImageFile } from "../../utils/imageUtils";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -85,21 +85,9 @@ export default function AdminProductManager({
       // 1. Compress image to clean lightweight JPEG/WebP dataUrl
       const { dataUrl } = await compressImageFile(file, 1400, 0.85);
 
-      // 2. Upload to server for clean web /uploads/ URL
-      let finalUrl = dataUrl;
-      try {
-        const upRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl, filename: `prod-${p.id}` }),
-        });
-        if (upRes.ok) {
-          const upJson = await upRes.json();
-          if (upJson.url) finalUrl = upJson.url;
-        }
-      } catch (upErr) {
-        console.warn("Direct upload fallback to dataUrl", upErr);
-      }
+      // 2. Upload directly to Firebase Storage for permanent URL
+      const finalUrl = await uploadProductImageToFirebase(p.id, "main", dataUrl);
+      const oldImage = p.image;
 
       // 3. Save and persist permanently across store and database
       const updatedProduct: Product = {
@@ -125,6 +113,12 @@ export default function AdminProductManager({
 
       const res = await saveProduct(updatedProduct);
       const savedProd = res?.product || updatedProduct;
+
+      // Clean up old image if it was in storage and has changed
+      if (oldImage && oldImage !== finalUrl) {
+        cleanupOldStorageImage(oldImage, finalUrl).catch(() => {});
+      }
+
       onProductUpdated(savedProd);
       showToast(`Photo for "${p.name}" updated successfully!`, "success");
     } catch (err: any) {

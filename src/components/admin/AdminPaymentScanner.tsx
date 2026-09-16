@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
+import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
 import { normalizeImageUrl } from "../../utils/imageUtils";
 
 interface AdminPaymentScannerProps {
@@ -72,24 +73,10 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
       // Instant preview
       setScannerUrl(dataUrl);
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataUrl,
-          filename: `scanner-qr-${Date.now()}`,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Upload failed. Server returned " + res.status);
-      }
-
-      const data = await res.json();
-      const uploadedUrl = data.url || data.relativeUrl;
-      if (!uploadedUrl) {
-        throw new Error("Invalid response from upload server");
-      }
+      // Upload directly to Firebase Storage
+      const scannerRef = ref(storage, `payment/scanner-qr-${Date.now()}.jpg`);
+      await uploadString(scannerRef, dataUrl, "data_url", { contentType: "image/jpeg" });
+      const uploadedUrl = await getDownloadURL(scannerRef);
 
       setScannerUrl(uploadedUrl);
 

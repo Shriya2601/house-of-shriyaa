@@ -21,6 +21,7 @@ import {
 
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent } from "../../services/storeService";
+import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
 import { HeroSlide } from "../../types";
 import { normalizeImageUrl } from "../../utils/imageUtils";
 
@@ -729,44 +730,17 @@ export default function AdminBannerManager({
 
       /*
        * Step 2:
-       * Try permanent server storage.
-       *
-       * If /api/upload exists, the permanent URL will be used.
-       * If it does not exist, the compressed image remains as fallback.
+       * Upload directly to Firebase Storage for permanent URL.
        */
       let finalImageUrl = compressedDataUrl;
 
       try {
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            dataUrl: compressedDataUrl,
-            filename: `hero-slide-${targetIndex + 1}-${Date.now()}.jpg`,
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-
-          if (
-            result &&
-            typeof result.url === "string" &&
-            result.url.trim()
-          ) {
-            finalImageUrl = result.url.trim();
-          }
-        } else {
-          console.warn(
-            "Image upload endpoint returned:",
-            response.status
-          );
-        }
+        const bannerRef = ref(storage, `banners/hero-slide-${targetIndex + 1}-${Date.now()}.jpg`);
+        await uploadString(bannerRef, compressedDataUrl, "data_url", { contentType: "image/jpeg" });
+        finalImageUrl = await getDownloadURL(bannerRef);
       } catch (uploadError) {
         console.warn(
-          "Permanent image upload unavailable. Using local image data.",
+          "Permanent image upload notice. Using image data fallback.",
           uploadError
         );
       }

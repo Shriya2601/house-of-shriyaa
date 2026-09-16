@@ -14,7 +14,11 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Product } from "../../types";
-import { saveProduct } from "../../services/storeService";
+import {
+  saveProduct,
+  uploadProductImageToFirebase,
+  cleanupOldStorageImage,
+} from "../../services/storeService";
 import {
   normalizeImageUrl,
   handleImageError,
@@ -181,14 +185,12 @@ export default function AddProductModal({
   const [inStock, setInStock] = useState(true);
   const [selectedBadge, setSelectedBadge] = useState("New Drop");
 
-  // Helper to immediately purge removed image from server disk & prevent caching
+  // Helper to immediately purge removed image from storage
   const purgeOldImage = async (url: string) => {
     if (!url || typeof url !== "string") return;
     try {
-      if (url.startsWith("/uploads/")) {
-        await fetch(`/api/upload?url=${encodeURIComponent(url)}`, {
-          method: "DELETE",
-        });
+      if (url.includes("firebasestorage.googleapis.com") || url.includes("storage.googleapis.com")) {
+        cleanupOldStorageImage(url, "").catch(() => {});
       }
     } catch {}
   };
@@ -259,6 +261,7 @@ export default function AddProductModal({
   const handleMainFileChange = async (file: File) => {
     setIsProcessingMain(true);
     setError(null);
+    const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
       // Instant visual preview so admin sees the photo in 0ms
@@ -269,25 +272,19 @@ export default function AddProductModal({
         setHoverImageDetails({ name: file.name, size: sizeText });
       }
 
-      // Concurrently persist to server for permanent URL
-      try {
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl, filename: file.name }),
-        });
-        if (uploadRes.ok) {
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) {
-            setImage(uploadJson.url);
+      // Concurrently upload to Firebase Storage for permanent URL
+      uploadProductImageToFirebase(prodId, "main", dataUrl)
+        .then((storageUrl) => {
+          if (storageUrl) {
+            setImage(storageUrl);
             if (!hoverImage || hoverImage === dataUrl || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
-              setHoverImage(uploadJson.url);
+              setHoverImage(storageUrl);
             }
           }
-        }
-      } catch (uploadErr) {
-        console.warn("Direct upload fallback to dataUrl", uploadErr);
-      }
+        })
+        .catch((uploadErr) => {
+          console.warn("Storage upload note, will retry on save:", uploadErr);
+        });
     } catch (err: any) {
       setError(err?.message || "Failed to process photo from device.");
     } finally {
@@ -300,27 +297,22 @@ export default function AddProductModal({
   const handleHoverFileChange = async (file: File) => {
     setIsProcessingHover(true);
     setError(null);
+    const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
       // Instant visual preview
       setHoverImage(dataUrl);
       setHoverImageDetails({ name: file.name, size: sizeText });
 
-      try {
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl, filename: file.name }),
-        });
-        if (uploadRes.ok) {
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) {
-            setHoverImage(uploadJson.url);
+      uploadProductImageToFirebase(prodId, "hover", dataUrl)
+        .then((storageUrl) => {
+          if (storageUrl) {
+            setHoverImage(storageUrl);
           }
-        }
-      } catch (uploadErr) {
-        console.warn("Direct hover upload fallback to dataUrl", uploadErr);
-      }
+        })
+        .catch((uploadErr) => {
+          console.warn("Storage hover upload note, will retry on save:", uploadErr);
+        });
     } catch (err: any) {
       setError(err?.message || "Failed to process secondary photo.");
     } finally {
@@ -333,26 +325,11 @@ export default function AddProductModal({
   const handleExtraFileChange = async (file: File) => {
     setIsProcessingExtra(true);
     setError(null);
+    const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl } = await compressImageFile(file);
-      let finalUrl = dataUrl;
-      try {
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl, filename: file.name }),
-        });
-        if (uploadRes.ok) {
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) {
-            finalUrl = uploadJson.url;
-          }
-        }
-      } catch (uploadErr) {
-        console.warn("Gallery upload fallback to dataUrl", uploadErr);
-      }
-
-      setExtraImages((prev) => [...prev, finalUrl]);
+      const storageUrl = await uploadProductImageToFirebase(prodId, `extra-${Date.now()}`, dataUrl);
+      setExtraImages((prev) => [...prev, storageUrl || dataUrl]);
     } catch (err: any) {
       setError(err?.message || "Failed to upload gallery photo.");
     } finally {
@@ -388,35 +365,23 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     const savings = calculateSavings(price, originalPrice);
 
-    // If images are still raw data URLs, attempt saving to /api/upload as well
+    // If images are still raw data URLs, upload to Firebase Storage
     let finalMainImg = image.trim();
     if (finalMainImg.startsWith("data:")) {
       try {
-        const upRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl: finalMainImg, filename: `main-${prodId}` }),
-        });
-        if (upRes.ok) {
-          const upJson = await upRes.json();
-          if (upJson.url) finalMainImg = upJson.url;
-        }
-      } catch {}
+        finalMainImg = await uploadProductImageToFirebase(prodId, "main", finalMainImg);
+      } catch (e: any) {
+        console.warn("Firebase Storage upload error for main image:", e);
+      }
     }
 
     let finalHoverImage = hoverImage.trim() || finalMainImg;
     if (finalHoverImage.startsWith("data:")) {
       try {
-        const upRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUrl: finalHoverImage, filename: `hover-${prodId}` }),
-        });
-        if (upRes.ok) {
-          const upJson = await upRes.json();
-          if (upJson.url) finalHoverImage = upJson.url;
-        }
-      } catch {}
+        finalHoverImage = await uploadProductImageToFirebase(prodId, "hover", finalHoverImage);
+      } catch (e: any) {
+        console.warn("Firebase Storage upload error for hover image:", e);
+      }
     }
 
     const resolvedExtraImages: string[] = [];
@@ -424,16 +389,10 @@ export default function AddProductModal({
       let extraImg = extraImages[i];
       if (extraImg.startsWith("data:")) {
         try {
-          const upRes = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dataUrl: extraImg, filename: `extra-${i}-${prodId}` }),
-          });
-          if (upRes.ok) {
-            const upJson = await upRes.json();
-            if (upJson.url) extraImg = upJson.url;
-          }
-        } catch {}
+          extraImg = await uploadProductImageToFirebase(prodId, `gallery-${i}`, extraImg);
+        } catch (e: any) {
+          console.warn("Firebase Storage upload error for gallery image:", e);
+        }
       }
       resolvedExtraImages.push(extraImg);
     }

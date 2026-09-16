@@ -35,7 +35,10 @@ import {
   saveCategory,
   saveBrandStyles,
   defaultSiteContent,
+  uploadProductImageToFirebase,
+  cleanupOldStorageImage,
 } from "../../services/storeService";
+import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
 import { HeroSlide, Product, CategoryItem, SiteContent } from "../../types";
 import { compressImageFile } from "../../utils/imageUtils";
 
@@ -131,22 +134,10 @@ export default function AdminLivePreviewStudio({
       // 1. Compress image to high-quality responsive dataUrl
       const { dataUrl } = await compressImageFile(file, 1600, 0.88);
 
-      // 2. Upload to server storage
-      let finalUrl = dataUrl;
-      try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            dataUrl,
-            filename: `hero-slide-${selectedSlideIndex + 1}`,
-          }),
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.url) finalUrl = resData.url;
-        }
-      } catch {}
+      // 2. Upload to Firebase Storage for permanent URL
+      const bannerRef = ref(storage, `banners/hero-slide-${selectedSlideIndex + 1}-${Date.now()}.jpg`);
+      await uploadString(bannerRef, dataUrl, "data_url", { contentType: "image/jpeg" });
+      const finalUrl = await getDownloadURL(bannerRef);
 
       // 3. Update state and immediately save to database and broadcast live
       const nextSlides = heroSlides.map((s, idx) =>
@@ -203,21 +194,10 @@ export default function AdminLivePreviewStudio({
     setIsUploadingProductPhoto(true);
     try {
       const { dataUrl } = await compressImageFile(file, 1400, 0.85);
-      let finalUrl = dataUrl;
-      try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            dataUrl,
-            filename: `prod-${activeProduct.id}`,
-          }),
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.url) finalUrl = resData.url;
-        }
-      } catch {}
+      
+      // Upload directly to Firebase Storage
+      const finalUrl = await uploadProductImageToFirebase(activeProduct.id, "main", dataUrl);
+      const oldImage = activeProduct.image;
 
       const updated: Product = {
         ...activeProduct,
@@ -250,6 +230,11 @@ export default function AdminLivePreviewStudio({
       const res = await saveProduct(updated);
       const savedProd = res?.product || updated;
       setProducts((prev) => prev.map((p) => (p.id === savedProd.id ? savedProd : p)));
+
+      // Cleanup old storage file if replaced
+      if (oldImage && oldImage !== finalUrl) {
+        cleanupOldStorageImage(oldImage, finalUrl).catch(() => {});
+      }
 
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Photo for "${updated.name}" updated & published live!`, "success");
