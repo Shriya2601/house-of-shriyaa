@@ -16,6 +16,7 @@ import {
 import { Product } from "../../types";
 import {
   saveProduct,
+  uploadProductFileToFirebase,
   uploadProductDataUrlToFirebase,
   uploadProductImageToFirebase,
   cleanupOldStorageImage,
@@ -63,6 +64,7 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+const formatBytes = formatFileSize;
 
 // Client-side image compression: optimizes raw camera/phone photos to ~60-120KB JPEG data URL
 async function compressImageFile(
@@ -176,10 +178,13 @@ export default function AddProductModal({
   // Explicit upload status: "idle" | "uploading" | "uploaded" | "error"
   const [mainUploadState, setMainUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [mainUploadError, setMainUploadError] = useState<string | null>(null);
+  const [mainUploadProgress, setMainUploadProgress] = useState(0);
   const [hoverUploadState, setHoverUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [hoverUploadError, setHoverUploadError] = useState<string | null>(null);
+  const [hoverUploadProgress, setHoverUploadProgress] = useState(0);
   const [extraUploadState, setExtraUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [extraUploadError, setExtraUploadError] = useState<string | null>(null);
+  const [extraUploadProgress, setExtraUploadProgress] = useState(0);
 
   const isProcessingMain = mainUploadState === "uploading";
   const isProcessingHover = hoverUploadState === "uploading";
@@ -287,20 +292,25 @@ export default function AddProductModal({
     console.log("[Upload 1] File selected:", file.name, file.size, file.type);
     lastMainFileRef.current = file;
     setMainUploadState("uploading");
+    setMainUploadProgress(0);
     setMainUploadError(null);
     setError(null);
 
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
-      const { dataUrl, sizeText } = await compressImageFile(file);
-      console.log("[Upload 2] Data URL ready");
+      // Local immediate preview for responsive UI feedback
+      const previewUrl = URL.createObjectURL(file);
+      setImage(previewUrl);
+      setMainImageDetails({ name: file.name, size: formatBytes(file.size) });
 
-      // Immediate visual preview
-      setImage(dataUrl);
-      setMainImageDetails({ name: file.name, size: sizeText });
+      // Direct Firebase Storage Resumable upload
+      const downloadUrl = await uploadProductFileToFirebase(
+        file,
+        prodId,
+        "main",
+        (pct) => setMainUploadProgress(pct)
+      );
 
-      // Direct Firebase Storage upload
-      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "main");
       setImage(downloadUrl);
       setMainUploadState("uploaded");
       setMainUploadError(null);
@@ -308,12 +318,12 @@ export default function AddProductModal({
 
       if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
         setHoverImage(downloadUrl);
-        setHoverImageDetails({ name: file.name, size: sizeText });
+        setHoverImageDetails({ name: file.name, size: formatBytes(file.size) });
         setHoverUploadState("uploaded");
         setHoverUploadError(null);
       }
     } catch (error: any) {
-      console.error("Firebase image upload failed:", error);
+      console.error(error);
       const message = error instanceof Error ? error.message : String(error);
       setMainUploadError(message);
       setMainUploadState("error");
@@ -329,24 +339,29 @@ export default function AddProductModal({
     console.log("[Upload 1] File selected (hover):", file.name, file.size, file.type);
     lastHoverFileRef.current = file;
     setHoverUploadState("uploading");
+    setHoverUploadProgress(0);
     setHoverUploadError(null);
     setError(null);
 
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
-      const { dataUrl, sizeText } = await compressImageFile(file);
-      console.log("[Upload 2] Data URL ready (hover)");
+      const previewUrl = URL.createObjectURL(file);
+      setHoverImage(previewUrl);
+      setHoverImageDetails({ name: file.name, size: formatBytes(file.size) });
 
-      setHoverImage(dataUrl);
-      setHoverImageDetails({ name: file.name, size: sizeText });
+      const downloadUrl = await uploadProductFileToFirebase(
+        file,
+        prodId,
+        "hover",
+        (pct) => setHoverUploadProgress(pct)
+      );
 
-      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "hover");
       setHoverImage(downloadUrl);
       setHoverUploadState("uploaded");
       setHoverUploadError(null);
       console.log("[Upload SUCCESS] (hover)", downloadUrl);
     } catch (error: any) {
-      console.error("Firebase image upload failed:", error);
+      console.error(error);
       const message = error instanceof Error ? error.message : String(error);
       setHoverUploadError(message);
       setHoverUploadState("error");
@@ -360,21 +375,25 @@ export default function AddProductModal({
   const handleExtraFileChange = async (file: File) => {
     console.log("[Upload 1] File selected (gallery):", file.name, file.size, file.type);
     setExtraUploadState("uploading");
+    setExtraUploadProgress(0);
     setExtraUploadError(null);
     setError(null);
 
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
-      const { dataUrl } = await compressImageFile(file);
-      console.log("[Upload 2] Data URL ready (gallery)");
+      const downloadUrl = await uploadProductFileToFirebase(
+        file,
+        prodId,
+        `gallery-${Date.now()}`,
+        (pct) => setExtraUploadProgress(pct)
+      );
 
-      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, `gallery-${Date.now()}`);
       setExtraImages((prev) => [...prev, downloadUrl]);
       setExtraUploadState("uploaded");
       setExtraUploadError(null);
       console.log("[Upload SUCCESS] (gallery)", downloadUrl);
     } catch (error: any) {
-      console.error("Firebase image upload failed:", error);
+      console.error(error);
       const message = error instanceof Error ? error.message : String(error);
       setExtraUploadError(message);
       setExtraUploadState("error");
@@ -660,7 +679,7 @@ export default function AddProductModal({
                     {mainUploadState === "uploading" && (
                       <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                         <RefreshCw size={11} className="animate-spin" />
-                        <span>Uploading...</span>
+                        <span>Uploading {mainUploadProgress}%</span>
                       </span>
                     )}
                   </div>
@@ -683,7 +702,7 @@ export default function AddProductModal({
                     <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
                       <AlertCircle size={15} className="shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-semibold">Upload failed — {mainUploadError}</p>
+                        <p className="font-semibold">{mainUploadError}</p>
                       </div>
                       <button
                         type="button"
@@ -699,8 +718,15 @@ export default function AddProductModal({
                     <div className="p-5 border-2 border-dashed border-amber-300 bg-amber-50/50 rounded-xl text-center">
                       <div className="py-2 flex flex-col items-center gap-2 text-stone-700">
                         <RefreshCw size={22} className="animate-spin text-[#0d4f3c]" />
-                        <p className="text-xs font-bold text-stone-900">Uploading...</p>
-                        <p className="text-[11px] text-stone-500">Compressing & storing image in Firebase Storage...</p>
+                        <p className="text-xs font-bold text-stone-900">
+                          Uploading to Firebase Storage ({mainUploadProgress}%)
+                        </p>
+                        <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden mt-1">
+                          <div
+                            className="h-full bg-[#0d4f3c] transition-all duration-150"
+                            style={{ width: `${mainUploadProgress}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   ) : image ? (
@@ -831,7 +857,7 @@ export default function AddProductModal({
                     {hoverUploadState === "uploading" && (
                       <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                         <RefreshCw size={11} className="animate-spin" />
-                        <span>Uploading...</span>
+                        <span>Uploading {hoverUploadProgress}%</span>
                       </span>
                     )}
                   </div>
@@ -854,7 +880,7 @@ export default function AddProductModal({
                     <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
                       <AlertCircle size={15} className="shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-semibold">Upload failed — {hoverUploadError}</p>
+                        <p className="font-semibold">{hoverUploadError}</p>
                       </div>
                       <button
                         type="button"
@@ -870,7 +896,7 @@ export default function AddProductModal({
                     <div className="p-3.5 border border-dashed border-amber-300 bg-amber-50/50 rounded-xl text-center">
                       <div className="py-1 flex items-center justify-center gap-2 text-stone-700 text-xs font-semibold">
                         <RefreshCw size={14} className="animate-spin text-[#0d4f3c]" />
-                        <span>Uploading...</span>
+                        <span>Uploading to Firebase Storage ({hoverUploadProgress}%)</span>
                       </div>
                     </div>
                   ) : hoverImage ? (
@@ -1002,7 +1028,7 @@ export default function AddProductModal({
                     <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
                       <AlertCircle size={15} className="shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-semibold">Upload failed — {extraUploadError}</p>
+                        <p className="font-semibold">{extraUploadError}</p>
                       </div>
                       <button
                         type="button"

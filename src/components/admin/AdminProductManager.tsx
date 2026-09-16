@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { Product } from "../../types";
-import { deleteProduct, saveProduct, uploadProductDataUrlToFirebase, uploadProductImageToFirebase, cleanupOldStorageImage } from "../../services/storeService";
+import { deleteProduct, saveProduct, uploadProductFileToFirebase, uploadProductDataUrlToFirebase, uploadProductImageToFirebase, cleanupOldStorageImage } from "../../services/storeService";
 import { getProductDisplayImage, handleImageError, normalizeImageUrl, compressImageFile } from "../../utils/imageUtils";
 import AddProductModal from "./AddProductModal";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -83,12 +83,9 @@ export default function AdminProductManager({
 
     try {
       console.log("[FirebaseStorage] 1. Quick photo selected for product:", p.id, file.name);
-      // 1. Compress image to clean lightweight JPEG/WebP dataUrl
-      const { dataUrl, sizeText } = await compressImageFile(file, 1400, 0.85);
-      console.log("[FirebaseStorage] 2. Quick photo compressed:", { sizeText, length: dataUrl.length });
 
-      // 2. Upload directly to Firebase Storage for permanent URL
-      const finalUrl = await uploadProductDataUrlToFirebase(dataUrl, p.id, "main");
+      // Upload directly to Firebase Storage using resumable upload
+      const finalUrl = await uploadProductFileToFirebase(file, p.id, "main");
       const oldImage = p.image;
 
       // 3. Save and persist permanently across store and database
@@ -124,10 +121,10 @@ export default function AdminProductManager({
       onProductUpdated(savedProd);
       showToast(`Photo for "${p.name}" updated successfully!`, "success");
     } catch (err: any) {
-      console.error("Firebase product image upload failed:", err);
+      console.error(err);
       const message = err instanceof Error ? err.message : String(err);
-      alert(`Image upload failed: ${message}`);
-      showToast(`Image upload failed: ${message}`, "error");
+      alert(message);
+      showToast(message, "error");
     } finally {
       setUploadingProductId(null);
       setTargetProductForPhoto(null);

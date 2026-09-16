@@ -39,7 +39,7 @@ storage.maxOperationRetryTime = 8000;
 console.log("[Firebase] projectId:", app.options.projectId);
 console.log("[Firebase] storageBucket:", app.options.storageBucket);
 
-export { ref, ref as storageRef, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
+export { ref, ref as storageRef, uploadBytesResumable, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Safely initialize Analytics if supported in browser environment
 export let analytics: ReturnType<typeof getAnalytics> | null = null;
