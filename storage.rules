@@ -1,0 +1,50 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'houseofshriya.in@gmail.com' ||
+        request.auth.token.email == 'houseofshriyaa@gmail.com' ||
+        request.auth.token.email == 'admin@houseofshriya.in' ||
+        request.auth.token.email == 'kshriya2626@gmail.com' ||
+        request.auth.token.email == 'shriyapusha2001@gmail.com' ||
+        request.auth.token.email == 'shriyapusha01@gmail.com' ||
+        request.auth.token.email == 'shriya14301@gmail.com' ||
+        request.auth.token.email == 'ethnicbyshriya@gmail.com' ||
+        request.auth.token.email == 'crochetbyshriya01@gmail.com' ||
+        request.auth.token.email == 'hello.kohoo@gmail.com' ||
+        request.auth.token.email == 'tiarathakur93@gmail.com' ||
+        request.auth.token.email == 'hello.munchmini@gmail.com'
+      );
+    }
+
+    // Product images: publicly readable, writable by verified admins
+    match /products/{productId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Site banners: publicly readable, admin writable
+    match /banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Payment scanners: publicly readable, admin writable
+    match /scanner/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // General fallback
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

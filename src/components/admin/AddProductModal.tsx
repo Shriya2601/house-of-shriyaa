@@ -16,6 +16,7 @@ import {
 import { Product } from "../../types";
 import {
   saveProduct,
+  uploadProductDataUrlToFirebase,
   uploadProductImageToFirebase,
   cleanupOldStorageImage,
 } from "../../services/storeService";
@@ -171,9 +172,19 @@ export default function AddProductModal({
   const [extraImages, setExtraImages] = useState<string[]>([]);
   const [mainImageDetails, setMainImageDetails] = useState<{ name: string; size: string } | null>(null);
   const [hoverImageDetails, setHoverImageDetails] = useState<{ name: string; size: string } | null>(null);
-  const [isProcessingMain, setIsProcessingMain] = useState(false);
-  const [isProcessingHover, setIsProcessingHover] = useState(false);
-  const [isProcessingExtra, setIsProcessingExtra] = useState(false);
+
+  // Explicit upload status: "idle" | "uploading" | "uploaded" | "error"
+  const [mainUploadState, setMainUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
+  const [mainUploadError, setMainUploadError] = useState<string | null>(null);
+  const [hoverUploadState, setHoverUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
+  const [hoverUploadError, setHoverUploadError] = useState<string | null>(null);
+  const [extraUploadState, setExtraUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
+  const [extraUploadError, setExtraUploadError] = useState<string | null>(null);
+
+  const isProcessingMain = mainUploadState === "uploading";
+  const isProcessingHover = hoverUploadState === "uploading";
+  const isProcessingExtra = extraUploadState === "uploading";
+
   const [isDragOverMain, setIsDragOverMain] = useState(false);
   const [isDragOverHover, setIsDragOverHover] = useState(false);
 
@@ -221,6 +232,12 @@ export default function AddProductModal({
       setSelectedBadge(productToEdit.badges?.[0] || "New Drop");
       setMainImageDetails(initialMain ? { name: "Current Product Photo", size: "Ready" } : null);
       setHoverImageDetails(initialHover ? { name: "Current Hover Photo", size: "Ready" } : null);
+      setMainUploadState(initialMain ? "uploaded" : "idle");
+      setMainUploadError(null);
+      setHoverUploadState(initialHover ? "uploaded" : "idle");
+      setHoverUploadError(null);
+      setExtraUploadState(extras.length > 0 ? "uploaded" : "idle");
+      setExtraUploadError(null);
     } else {
       // Reset form
       setName("");
@@ -238,6 +255,12 @@ export default function AddProductModal({
       setExtraImages([]);
       setMainImageDetails(null);
       setHoverImageDetails(null);
+      setMainUploadState("idle");
+      setMainUploadError(null);
+      setHoverUploadState("idle");
+      setHoverUploadError(null);
+      setExtraUploadState("idle");
+      setExtraUploadError(null);
       setInStock(true);
       setSelectedBadge("New Drop");
     }
@@ -259,81 +282,96 @@ export default function AddProductModal({
 
   // Handle Main Image File Select
   const handleMainFileChange = async (file: File) => {
-    setIsProcessingMain(true);
+    console.log("[FirebaseStorage] 1. File selected for main photo:", file.name, file.size, file.type);
+    setMainUploadState("uploading");
+    setMainUploadError(null);
     setError(null);
+
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      // Instant visual preview so admin sees the photo in 0ms
+      console.log("[FirebaseStorage] 2. Data URL created for main photo:", { sizeText, length: dataUrl.length });
+
+      // Immediate visual preview so admin sees the photo in 0ms
       setImage(dataUrl);
       setMainImageDetails({ name: file.name, size: sizeText });
-      if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
-        setHoverImage(dataUrl);
-        setHoverImageDetails({ name: file.name, size: sizeText });
-      }
 
-      // Concurrently upload to Firebase Storage for permanent URL
-      uploadProductImageToFirebase(prodId, "main", dataUrl)
-        .then((storageUrl) => {
-          if (storageUrl) {
-            setImage(storageUrl);
-            if (!hoverImage || hoverImage === dataUrl || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
-              setHoverImage(storageUrl);
-            }
-          }
-        })
-        .catch((uploadErr) => {
-          console.warn("Storage upload note, will retry on save:", uploadErr);
-        });
-    } catch (err: any) {
-      setError(err?.message || "Failed to process photo from device.");
+      // Direct Firebase Storage upload
+      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "main");
+      setImage(downloadUrl);
+      setMainUploadState("uploaded");
+
+      if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
+        setHoverImage(downloadUrl);
+        setHoverImageDetails({ name: file.name, size: sizeText });
+        setHoverUploadState("uploaded");
+      }
+    } catch (error: any) {
+      console.error("Firebase product image upload failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setMainUploadError(message);
+      setMainUploadState("error");
+      alert(`Image upload failed: ${message}`);
     } finally {
-      setIsProcessingMain(false);
+      // Guaranteed not to stay stuck on "uploading"
+      setMainUploadState((prev) => (prev === "uploading" ? "idle" : prev));
       if (mainFileInputRef.current) mainFileInputRef.current.value = "";
     }
   };
 
   // Handle Hover Image File Select
   const handleHoverFileChange = async (file: File) => {
-    setIsProcessingHover(true);
+    console.log("[FirebaseStorage] 1. File selected for hover photo:", file.name, file.size, file.type);
+    setHoverUploadState("uploading");
+    setHoverUploadError(null);
     setError(null);
+
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl, sizeText } = await compressImageFile(file);
-      // Instant visual preview
+      console.log("[FirebaseStorage] 2. Data URL created for hover photo:", { sizeText, length: dataUrl.length });
+
       setHoverImage(dataUrl);
       setHoverImageDetails({ name: file.name, size: sizeText });
 
-      uploadProductImageToFirebase(prodId, "hover", dataUrl)
-        .then((storageUrl) => {
-          if (storageUrl) {
-            setHoverImage(storageUrl);
-          }
-        })
-        .catch((uploadErr) => {
-          console.warn("Storage hover upload note, will retry on save:", uploadErr);
-        });
-    } catch (err: any) {
-      setError(err?.message || "Failed to process secondary photo.");
+      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "hover");
+      setHoverImage(downloadUrl);
+      setHoverUploadState("uploaded");
+    } catch (error: any) {
+      console.error("Firebase product image upload failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setHoverUploadError(message);
+      setHoverUploadState("error");
+      alert(`Image upload failed: ${message}`);
     } finally {
-      setIsProcessingHover(false);
+      setHoverUploadState((prev) => (prev === "uploading" ? "idle" : prev));
       if (hoverFileInputRef.current) hoverFileInputRef.current.value = "";
     }
   };
 
   // Handle Additional Gallery Image File Select
   const handleExtraFileChange = async (file: File) => {
-    setIsProcessingExtra(true);
+    console.log("[FirebaseStorage] 1. File selected for gallery photo:", file.name, file.size, file.type);
+    setExtraUploadState("uploading");
+    setExtraUploadError(null);
     setError(null);
+
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     try {
       const { dataUrl } = await compressImageFile(file);
-      const storageUrl = await uploadProductImageToFirebase(prodId, `extra-${Date.now()}`, dataUrl);
-      setExtraImages((prev) => [...prev, storageUrl || dataUrl]);
-    } catch (err: any) {
-      setError(err?.message || "Failed to upload gallery photo.");
+      console.log("[FirebaseStorage] 2. Data URL created for gallery photo:", { length: dataUrl.length });
+
+      const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, `gallery-${Date.now()}`);
+      setExtraImages((prev) => [...prev, downloadUrl]);
+      setExtraUploadState("uploaded");
+    } catch (error: any) {
+      console.error("Firebase product image upload failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setExtraUploadError(message);
+      setExtraUploadState("error");
+      alert(`Image upload failed: ${message}`);
     } finally {
-      setIsProcessingExtra(false);
+      setExtraUploadState((prev) => (prev === "uploading" ? "idle" : prev));
       if (extraFileInputRef.current) extraFileInputRef.current.value = "";
     }
   };
@@ -354,8 +392,8 @@ export default function AddProductModal({
       return;
     }
 
-    if (isProcessingMain || isProcessingHover || isProcessingExtra) {
-      setError("Please wait a moment while photos finish processing...");
+    if (mainUploadState === "uploading" || hoverUploadState === "uploading" || extraUploadState === "uploading") {
+      alert("Please wait for photos to finish uploading before saving.");
       return;
     }
 
@@ -365,22 +403,36 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     const savings = calculateSavings(price, originalPrice);
 
-    // If images are still raw data URLs, upload to Firebase Storage
+    // If any images are still pending data URLs, upload to Firebase Storage
     let finalMainImg = image.trim();
     if (finalMainImg.startsWith("data:")) {
       try {
-        finalMainImg = await uploadProductImageToFirebase(prodId, "main", finalMainImg);
+        console.log("[FirebaseStorage] Uploading main dataUrl before submit");
+        finalMainImg = await uploadProductDataUrlToFirebase(finalMainImg, prodId, "main");
+        setImage(finalMainImg);
       } catch (e: any) {
-        console.warn("Firebase Storage upload error for main image:", e);
+        console.error("Firebase product image upload failed:", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        alert(`Image upload failed: ${msg}`);
+        setError(`Main photo upload failed: ${msg}`);
+        setSubmitting(false);
+        return;
       }
     }
 
     let finalHoverImage = hoverImage.trim() || finalMainImg;
     if (finalHoverImage.startsWith("data:")) {
       try {
-        finalHoverImage = await uploadProductImageToFirebase(prodId, "hover", finalHoverImage);
+        console.log("[FirebaseStorage] Uploading hover dataUrl before submit");
+        finalHoverImage = await uploadProductDataUrlToFirebase(finalHoverImage, prodId, "hover");
+        setHoverImage(finalHoverImage);
       } catch (e: any) {
-        console.warn("Firebase Storage upload error for hover image:", e);
+        console.error("Firebase product image upload failed:", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        alert(`Image upload failed: ${msg}`);
+        setError(`Hover photo upload failed: ${msg}`);
+        setSubmitting(false);
+        return;
       }
     }
 
@@ -389,9 +441,14 @@ export default function AddProductModal({
       let extraImg = extraImages[i];
       if (extraImg.startsWith("data:")) {
         try {
-          extraImg = await uploadProductImageToFirebase(prodId, `gallery-${i}`, extraImg);
+          extraImg = await uploadProductDataUrlToFirebase(extraImg, prodId, `gallery-${i + 1}`);
         } catch (e: any) {
-          console.warn("Firebase Storage upload error for gallery image:", e);
+          console.error("Firebase product image upload failed:", e);
+          const msg = e instanceof Error ? e.message : String(e);
+          alert(`Image upload failed: ${msg}`);
+          setError(`Gallery photo upload failed: ${msg}`);
+          setSubmitting(false);
+          return;
         }
       }
       resolvedExtraImages.push(extraImg);
@@ -465,6 +522,12 @@ export default function AddProductModal({
     try {
       const res = await saveProduct(productPayload);
       const savedProd = res?.product || productPayload;
+
+      // Clean up old storage image if main image was changed
+      if (productToEdit?.image && productToEdit.image !== finalMainImg) {
+        cleanupOldStorageImage(productToEdit.image, finalMainImg).catch(() => {});
+      }
+
       if (typeof onSave === "function") {
         onSave(savedProd);
       }
@@ -473,8 +536,10 @@ export default function AddProductModal({
       }
       onClose();
     } catch (err: any) {
-      console.error("Save product error:", err);
-      setError(err?.message || "Failed to save product. Please try again.");
+      console.error("[AddProductModal] Failed to save product to Firebase:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to save product to Firebase: ${msg}`);
+      alert(`Failed to save product to Firebase: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -567,15 +632,23 @@ export default function AddProductModal({
               <div className="space-y-4 pt-1">
                 {/* 1. Primary Photo Dropzone */}
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
-                    <span>1. Main Suit Photo *</span>
-                    {image && (
-                      <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
-                        <Check size={12} />
-                        <span>Ready & Optimized</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-stone-700">
+                      1. Main Suit Photo *
+                    </label>
+                    {mainUploadState === "uploaded" && image && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <Check size={11} />
+                        <span>Uploaded</span>
                       </span>
                     )}
-                  </label>
+                    {mainUploadState === "uploading" && (
+                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <RefreshCw size={11} className="animate-spin" />
+                        <span>Uploading...</span>
+                      </span>
+                    )}
+                  </div>
 
                   {/* Hidden Main File Input */}
                   <input
@@ -590,7 +663,32 @@ export default function AddProductModal({
                     }}
                   />
 
-                  {image ? (
+                  {/* Upload Error Banner */}
+                  {mainUploadState === "error" && mainUploadError && (
+                    <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold">Upload failed — {mainUploadError}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => mainFileInputRef.current?.click()}
+                        className="text-[11px] font-bold text-red-800 underline hover:no-underline shrink-0"
+                      >
+                        Choose Image
+                      </button>
+                    </div>
+                  )}
+
+                  {mainUploadState === "uploading" ? (
+                    <div className="p-5 border-2 border-dashed border-amber-300 bg-amber-50/50 rounded-xl text-center">
+                      <div className="py-2 flex flex-col items-center gap-2 text-stone-700">
+                        <RefreshCw size={22} className="animate-spin text-[#0d4f3c]" />
+                        <p className="text-xs font-bold text-stone-900">Uploading...</p>
+                        <p className="text-[11px] text-stone-500">Compressing & storing image in Firebase Storage...</p>
+                      </div>
+                    </div>
+                  ) : image ? (
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
                         <img
@@ -601,11 +699,16 @@ export default function AddProductModal({
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-stone-900 truncate">
-                          {mainImageDetails?.name || "Suit Primary Photo"}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-semibold text-stone-900 truncate">
+                            {mainImageDetails?.name || "Suit Primary Photo"}
+                          </p>
+                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-sm">
+                            Uploaded
+                          </span>
+                        </div>
                         <p className="text-[11px] text-stone-500">
-                          {mainImageDetails?.size ? `Size: ${mainImageDetails.size}` : "Loaded from device"}
+                          {mainImageDetails?.size ? `Size: ${mainImageDetails.size}` : "Firebase Storage active"}
                         </p>
                         <p className="text-[10px] text-emerald-600 font-medium mt-0.5">
                           ✓ Shown on boutique storefront and home grid
@@ -625,6 +728,8 @@ export default function AddProductModal({
                           onClick={() => {
                             setImage("");
                             setMainImageDetails(null);
+                            setMainUploadState("idle");
+                            setMainUploadError(null);
                           }}
                           className="px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                         >
@@ -653,36 +758,40 @@ export default function AddProductModal({
                           : "border-stone-300 bg-white hover:border-[#0d4f3c] hover:bg-[#faf8f5]"
                       }`}
                     >
-                      {isProcessingMain ? (
-                        <div className="py-2 flex flex-col items-center gap-2 text-stone-600">
-                          <RefreshCw size={20} className="animate-spin text-[#0d4f3c]" />
-                          <p className="text-xs font-medium">Optimizing photo for fast browsing...</p>
+                      <div className="py-1 flex flex-col items-center gap-1.5">
+                        <div className="w-10 h-10 rounded-full bg-[#0d4f3c]/10 text-[#0d4f3c] flex items-center justify-center mb-1">
+                          <Upload size={18} />
                         </div>
-                      ) : (
-                        <div className="py-1 flex flex-col items-center gap-1.5">
-                          <div className="w-10 h-10 rounded-full bg-[#0d4f3c]/10 text-[#0d4f3c] flex items-center justify-center mb-1">
-                            <Upload size={18} />
-                          </div>
-                          <p className="text-xs font-bold text-stone-800">
-                            Click to upload or drag & drop Main Suit photo
-                          </p>
-                          <p className="text-[11px] text-stone-500">
-                            Phone photos, camera shots, JPG, PNG, WebP (auto-optimized)
-                          </p>
-                        </div>
-                      )}
+                        <p className="text-xs font-bold text-stone-800">
+                          Choose Image or Drag & Drop Main Suit Photo
+                        </p>
+                        <p className="text-[11px] text-stone-500">
+                          Phone photos, camera shots, JPG, PNG, WebP (auto-compressed for Firebase Storage)
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* 2. Secondary / Hover / Close-Up Photo (Optional) */}
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
-                    <span>2. Hover / Close-Up Photo (Optional)</span>
-                    <span className="text-[11px] text-stone-400 font-normal">
-                      Shows on hover or in customer gallery
-                    </span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-stone-700">
+                      2. Hover / Close-Up Photo (Optional)
+                    </label>
+                    {hoverUploadState === "uploaded" && hoverImage && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <Check size={11} />
+                        <span>Uploaded</span>
+                      </span>
+                    )}
+                    {hoverUploadState === "uploading" && (
+                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <RefreshCw size={11} className="animate-spin" />
+                        <span>Uploading...</span>
+                      </span>
+                    )}
+                  </div>
 
                   {/* Hidden Hover File Input */}
                   <input
@@ -697,7 +806,31 @@ export default function AddProductModal({
                     }}
                   />
 
-                  {hoverImage ? (
+                  {/* Hover Upload Error Banner */}
+                  {hoverUploadState === "error" && hoverUploadError && (
+                    <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold">Upload failed — {hoverUploadError}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => hoverFileInputRef.current?.click()}
+                        className="text-[11px] font-bold text-red-800 underline hover:no-underline shrink-0"
+                      >
+                        Choose Image
+                      </button>
+                    </div>
+                  )}
+
+                  {hoverUploadState === "uploading" ? (
+                    <div className="p-3.5 border border-dashed border-amber-300 bg-amber-50/50 rounded-xl text-center">
+                      <div className="py-1 flex items-center justify-center gap-2 text-stone-700 text-xs font-semibold">
+                        <RefreshCw size={14} className="animate-spin text-[#0d4f3c]" />
+                        <span>Uploading...</span>
+                      </div>
+                    </div>
+                  ) : hoverImage ? (
                     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-stone-200 shadow-2xs">
                       <div className="w-16 h-20 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
                         <img
@@ -708,15 +841,20 @@ export default function AddProductModal({
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-stone-900 truncate">
-                          {hoverImageDetails?.name || "Hover Secondary Photo"}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-semibold text-stone-900 truncate">
+                            {hoverImageDetails?.name || "Hover Secondary Photo"}
+                          </p>
+                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-sm">
+                            Uploaded
+                          </span>
+                        </div>
                         <p className="text-[11px] text-stone-500">
                           {hoverImage === image
                             ? "Matches primary (click Change to set distinct hover photo)"
                             : hoverImageDetails?.size
                             ? `Size: ${hoverImageDetails.size}`
-                            : "Ready"}
+                            : "Firebase Storage active"}
                         </p>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
@@ -733,6 +871,8 @@ export default function AddProductModal({
                           onClick={() => {
                             setHoverImage("");
                             setHoverImageDetails(null);
+                            setHoverUploadState("idle");
+                            setHoverUploadError(null);
                           }}
                           className="px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                         >
@@ -761,29 +901,24 @@ export default function AddProductModal({
                           : "border-stone-300 bg-white hover:border-[#0d4f3c] hover:bg-[#faf8f5]"
                       }`}
                     >
-                      {isProcessingHover ? (
-                        <div className="py-1 flex items-center justify-center gap-2 text-stone-600 text-xs">
-                          <RefreshCw size={14} className="animate-spin text-[#0d4f3c]" />
-                          <span>Optimizing secondary photo...</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center gap-2 text-stone-600 text-xs">
-                          <Plus size={14} className="text-[#0d4f3c]" />
-                          <span>Click to upload optional hover/embroidery detail photo</span>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-center gap-2 text-stone-600 text-xs">
+                        <Plus size={14} className="text-[#0d4f3c]" />
+                        <span>Choose Image for optional hover/embroidery detail photo</span>
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* 3. Additional Gallery Photos */}
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
-                    <span>3. Additional Gallery Photos (Optional)</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-stone-700">
+                      3. Additional Gallery Photos (Optional)
+                    </label>
                     <span className="text-[11px] text-stone-400 font-normal">
                       {extraImages.length} additional {extraImages.length === 1 ? "photo" : "photos"}
                     </span>
-                  </label>
+                  </div>
 
                   <input
                     ref={extraFileInputRef}
@@ -796,6 +931,23 @@ export default function AddProductModal({
                       e.target.value = "";
                     }}
                   />
+
+                  {/* Extra Upload Error Banner */}
+                  {extraUploadState === "error" && extraUploadError && (
+                    <div className="mb-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold">Upload failed — {extraUploadError}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => extraFileInputRef.current?.click()}
+                        className="text-[11px] font-bold text-red-800 underline hover:no-underline shrink-0"
+                      >
+                        Choose Image
+                      </button>
+                    </div>
+                  )}
 
                   {extraImages.length > 0 && (
                     <div className="flex flex-wrap gap-2.5 mb-2.5">
@@ -826,18 +978,18 @@ export default function AddProductModal({
                   <button
                     type="button"
                     onClick={() => extraFileInputRef.current?.click()}
-                    disabled={isProcessingExtra}
-                    className="w-full py-2.5 px-3 border border-dashed border-stone-300 hover:border-[#0d4f3c] hover:bg-[#faf8f5] rounded-xl text-xs text-stone-600 font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    disabled={extraUploadState === "uploading"}
+                    className="w-full py-2.5 px-3 border border-dashed border-stone-300 hover:border-[#0d4f3c] hover:bg-[#faf8f5] rounded-xl text-xs text-stone-600 font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    {isProcessingExtra ? (
+                    {extraUploadState === "uploading" ? (
                       <>
                         <RefreshCw size={13} className="animate-spin text-[#0d4f3c]" />
-                        <span>Optimizing & uploading photo...</span>
+                        <span className="font-semibold text-stone-800">Uploading...</span>
                       </>
                     ) : (
                       <>
                         <Plus size={13} className="text-[#0d4f3c]" />
-                        <span>Add Another Gallery Photo</span>
+                        <span>Choose Image / Add Another Gallery Photo</span>
                       </>
                     )}
                   </button>
@@ -1143,7 +1295,7 @@ export default function AddProductModal({
                 {submitting
                   ? "Saving to Boutique..."
                   : isProcessingMain || isProcessingHover || isProcessingExtra
-                  ? "Processing Photo..."
+                  ? "Uploading..."
                   : productToEdit
                   ? "Update Product"
                   : "Save & Add Product"}

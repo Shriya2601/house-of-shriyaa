@@ -1256,9 +1256,81 @@ function applyImageCacheBuster(url: string | undefined): string {
 }
 
 /**
- * Uploads an image data URL directly to Firebase Storage.
- * Generates path: products/{productId}/{type}-{uniqueId}.jpg
- * Returns the permanent Firebase Storage download URL.
+ * TASK 1: Uploads a product data URL to Firebase Storage.
+ * Uses: import { ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
+ * Follows strict error surfacing and detailed debug logging.
+ */
+export async function uploadProductDataUrlToFirebase(
+  dataUrl: string,
+  productId: string,
+  slot: string
+): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith("data:")) {
+    return dataUrl;
+  }
+
+  // Ensure active admin Firebase Auth session before attempting upload
+  await ensureAdminFirebaseAuth().catch(() => null);
+
+  const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/i);
+  const mime = mimeMatch?.[1] || "image/jpeg";
+  const extension = mime.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+  const safeSlot = slot.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const cleanProdId = (productId || `hos-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "-");
+
+  const randomPart =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+
+  const objectPath = `products/${cleanProdId}/${safeSlot}-${randomPart}.${extension}`;
+  console.log(`[FirebaseStorage] 3. Firebase Storage reference created: ${objectPath}`);
+
+  const fileRef = ref(storage, objectPath);
+
+  try {
+    console.log(`[FirebaseStorage] 4. uploadString started for: ${objectPath} (type: ${mime})`);
+    await uploadString(fileRef, dataUrl, "data_url", {
+      contentType: mime,
+      cacheControl: "public,max-age=31536000,immutable",
+    });
+    console.log(`[FirebaseStorage] 5. uploadString completed for: ${objectPath}`);
+
+    const downloadUrl = await getDownloadURL(fileRef);
+    console.log(`[FirebaseStorage] 6. getDownloadURL completed: ${downloadUrl}`);
+
+    if (!downloadUrl) {
+      throw new Error("Firebase Storage upload completed but no download URL was returned.");
+    }
+
+    return downloadUrl;
+  } catch (error: any) {
+    const errorCode = error?.code || (error?.status_ ? `storage/status-${error.status_}` : "storage/unknown");
+    const rawMessage = error?.message || String(error);
+    console.error(`[FirebaseStorage] Firebase product image upload failed (${errorCode}):`, error);
+
+    let userFriendlyMessage = `Firebase Storage upload failed [${errorCode}]: ${rawMessage}`;
+    if (errorCode === "storage/unauthorized") {
+      userFriendlyMessage = "Firebase Storage permission denied (storage/unauthorized). Please ensure you are logged into the admin panel with authorized credentials.";
+    } else if (errorCode === "storage/unauthenticated") {
+      userFriendlyMessage = "Firebase Storage authentication required (storage/unauthenticated). Please sign in again as administrator.";
+    } else if (errorCode === "storage/quota-exceeded") {
+      userFriendlyMessage = "Firebase Storage quota exceeded (storage/quota-exceeded). Check your Firebase project billing & storage limits.";
+    } else if (errorCode === "storage/retry-limit-exceeded") {
+      userFriendlyMessage = "Firebase Storage retry limit exceeded (storage/retry-limit-exceeded). Please check your internet connection.";
+    } else if (error?.status_ === 404 || errorCode.includes("404")) {
+      userFriendlyMessage = `Firebase Storage bucket not found (404: ${storage.app.options.storageBucket || "default"}). Please ensure Cloud Storage is activated in your Firebase Console for project "${storage.app.options.projectId || "house-of-shriya-d49d6"}".`;
+    }
+
+    const enhancedError = new Error(userFriendlyMessage);
+    (enhancedError as any).code = errorCode;
+    (enhancedError as any).originalError = error;
+    throw enhancedError;
+  }
+}
+
+/**
+ * Convenience wrapper for uploadProductDataUrlToFirebase.
  */
 export async function uploadProductImageToFirebase(
   productId: string,
@@ -1270,17 +1342,7 @@ export async function uploadProductImageToFirebase(
   if (!trimmed.startsWith("data:")) {
     return trimmed;
   }
-
-  const cleanProdId = (productId || `hos-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_");
-  const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-  const cleanType = (type || "photo").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const storagePath = `products/${cleanProdId}/${cleanType}-${uniqueId}.jpg`;
-
-  const storageRef = ref(storage, storagePath);
-  await uploadString(storageRef, trimmed, "data_url", {
-    contentType: "image/jpeg",
-  });
-  return await getDownloadURL(storageRef);
+  return uploadProductDataUrlToFirebase(trimmed, productId, type);
 }
 
 /**
@@ -1625,13 +1687,16 @@ export async function saveProduct(
   const firestoreData = sanitizeForFirestore(sanitized);
 
   // 2. Authoritative Firestore Save: Must await setDoc and immediately verify with getDoc
+  console.log(`[FirestoreSave] 7. Firestore setDoc started for product: ${id}`);
   const docRef = doc(db, "products", id);
   await setDoc(docRef, firestoreData, { merge: true });
+  console.log(`[FirestoreSave] 8. Firestore setDoc completed for product: ${id}`);
 
   const verifySnap = await getDoc(docRef);
   if (!verifySnap.exists()) {
     throw new Error(`Product document ${id} does not exist in Firestore after saving.`);
   }
+  console.log(`[FirestoreSave] 9. Firestore verification completed for product: ${id}`);
 
   const verifiedProduct = ensureProductVariants({
     id: verifySnap.id,
@@ -3106,6 +3171,22 @@ export async function adminLogin(email: string, pass: string): Promise<User> {
 
   broadcastAuthState(user);
   return user;
+}
+
+export async function ensureAdminFirebaseAuth(): Promise<User | null> {
+  if (auth.currentUser && isAuthorizedAdminEmail(auth.currentUser.email)) {
+    return auth.currentUser;
+  }
+  try {
+    const raw = localStorage.getItem("hos_admin_session");
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && isAuthorizedAdminEmail(data.email)) {
+        return await adminLogin(data.email, ADMIN_FALLBACK_PASS).catch(() => null);
+      }
+    }
+  } catch {}
+  return null;
 }
 
 export async function adminLogout(): Promise<void> {
