@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss(), apiMiddlewarePlugin()],
+    build: {
+      outDir: 'dist/client',
+      emptyOutDir: true,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -36,4 +40,3 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
