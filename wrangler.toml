@@ -2,8 +2,9 @@ name = "house-of-shriya"
 compatibility_date = "2026-09-17"
 main = "./dist/worker/index.js"
 
+# Workers Static Assets: the Vite site lives in dist/client.
 [assets]
-directory = "./dist"
+directory = "./dist/client"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/uploads/*"]
