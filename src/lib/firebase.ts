@@ -32,8 +32,8 @@ export const db =
 
 // Firebase Storage is used for product images because Cloudflare/server filesystems are not durable.
 export const storage = getStorage(app);
-storage.maxUploadRetryTime = 25000;
-storage.maxOperationRetryTime = 25000;
+storage.maxUploadRetryTime = 8000;
+storage.maxOperationRetryTime = 8000;
 
 // Safe diagnostic logging as required (never log API keys or secrets)
 console.log("[Firebase] projectId:", app.options.projectId);

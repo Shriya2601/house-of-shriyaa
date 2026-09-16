@@ -1314,16 +1314,16 @@ export async function uploadProductDataUrlToFirebase(
         contentType: mime,
         cacheControl: "public,max-age=31536000,immutable",
       }),
-      30000,
-      "Firebase image upload timed out after 30 seconds. Storage service is unresponsive."
+      12000,
+      "Firebase image upload timed out after 12 seconds. Storage service is unresponsive or bucket does not exist."
     );
     console.log(`[Upload 5] Firebase upload completed for: ${objectPath}`);
 
     console.log("[Upload 6] Getting download URL");
     const downloadUrl = await withTimeout(
       getDownloadURL(fileRef),
-      30000,
-      "Could not retrieve the Firebase image URL after 30 seconds."
+      12000,
+      "Could not retrieve the Firebase image URL after 12 seconds."
     );
     console.log(`[Upload 7] Download URL received: ${downloadUrl}`);
 
@@ -1333,7 +1333,7 @@ export async function uploadProductDataUrlToFirebase(
 
     return downloadUrl;
   } catch (error: any) {
-    console.error("[Firebase Upload Error]", error);
+    console.error("Firebase image upload failed:", error);
 
     const errorCode = error?.code || (error?.status_ ? `storage/status-${error.status_}` : "storage/unknown");
     const rawMessage = error?.message || String(error);
@@ -1343,7 +1343,7 @@ export async function uploadProductDataUrlToFirebase(
       error?.status_ === 404 ||
       errorCode.includes("404") ||
       rawMessage.includes("404") ||
-      (errorCode === "storage/unknown" && rawMessage.includes("unknown error"))
+      (errorCode === "storage/unknown" && (rawMessage.includes("unknown error") || rawMessage.includes("server response")))
     ) {
       userFriendlyMessage = `Firebase Storage bucket not found (404: ${storage.app.options.storageBucket || "default"}). Cloud Storage has not been activated in Firebase Console for project "${storage.app.options.projectId || "house-of-shriya-d49d6"}". In Firebase Console, go to Build > Storage and click "Get Started" to initialize the bucket.`;
     } else if (errorCode === "storage/unauthorized") {

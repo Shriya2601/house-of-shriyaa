@@ -192,6 +192,8 @@ export default function AddProductModal({
   const mainFileInputRef = useRef<HTMLInputElement>(null);
   const hoverFileInputRef = useRef<HTMLInputElement>(null);
   const extraFileInputRef = useRef<HTMLInputElement>(null);
+  const lastMainFileRef = useRef<File | null>(null);
+  const lastHoverFileRef = useRef<File | null>(null);
 
   const [inStock, setInStock] = useState(true);
   const [selectedBadge, setSelectedBadge] = useState("New Drop");
@@ -283,6 +285,7 @@ export default function AddProductModal({
   // Handle Main Image File Select
   const handleMainFileChange = async (file: File) => {
     console.log("[Upload 1] File selected:", file.name, file.size, file.type);
+    lastMainFileRef.current = file;
     setMainUploadState("uploading");
     setMainUploadError(null);
     setError(null);
@@ -300,19 +303,20 @@ export default function AddProductModal({
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "main");
       setImage(downloadUrl);
       setMainUploadState("uploaded");
+      setMainUploadError(null);
       console.log("[Upload SUCCESS]", downloadUrl);
 
       if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
         setHoverImage(downloadUrl);
         setHoverImageDetails({ name: file.name, size: sizeText });
         setHoverUploadState("uploaded");
+        setHoverUploadError(null);
       }
     } catch (error: any) {
-      console.error("[Upload FAILED]", error);
+      console.error("Firebase image upload failed:", error);
       const message = error instanceof Error ? error.message : String(error);
       setMainUploadError(message);
       setMainUploadState("error");
-      alert(`Image upload failed: ${message}`);
     } finally {
       // Guaranteed not to stay stuck on "uploading"
       setMainUploadState((prev) => (prev === "uploading" ? "idle" : prev));
@@ -323,6 +327,7 @@ export default function AddProductModal({
   // Handle Hover Image File Select
   const handleHoverFileChange = async (file: File) => {
     console.log("[Upload 1] File selected (hover):", file.name, file.size, file.type);
+    lastHoverFileRef.current = file;
     setHoverUploadState("uploading");
     setHoverUploadError(null);
     setError(null);
@@ -338,13 +343,13 @@ export default function AddProductModal({
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, "hover");
       setHoverImage(downloadUrl);
       setHoverUploadState("uploaded");
+      setHoverUploadError(null);
       console.log("[Upload SUCCESS] (hover)", downloadUrl);
     } catch (error: any) {
-      console.error("[Upload FAILED] (hover)", error);
+      console.error("Firebase image upload failed:", error);
       const message = error instanceof Error ? error.message : String(error);
       setHoverUploadError(message);
       setHoverUploadState("error");
-      alert(`Image upload failed: ${message}`);
     } finally {
       setHoverUploadState((prev) => (prev === "uploading" ? "idle" : prev));
       if (hoverFileInputRef.current) hoverFileInputRef.current.value = "";
@@ -366,13 +371,13 @@ export default function AddProductModal({
       const downloadUrl = await uploadProductDataUrlToFirebase(dataUrl, prodId, `gallery-${Date.now()}`);
       setExtraImages((prev) => [...prev, downloadUrl]);
       setExtraUploadState("uploaded");
+      setExtraUploadError(null);
       console.log("[Upload SUCCESS] (gallery)", downloadUrl);
     } catch (error: any) {
-      console.error("[Upload FAILED] (gallery)", error);
+      console.error("Firebase image upload failed:", error);
       const message = error instanceof Error ? error.message : String(error);
       setExtraUploadError(message);
       setExtraUploadState("error");
-      alert(`Image upload failed: ${message}`);
     } finally {
       setExtraUploadState((prev) => (prev === "uploading" ? "idle" : prev));
       if (extraFileInputRef.current) extraFileInputRef.current.value = "";
@@ -396,7 +401,17 @@ export default function AddProductModal({
     }
 
     if (mainUploadState === "uploading" || hoverUploadState === "uploading" || extraUploadState === "uploading") {
-      alert("Please wait for photos to finish uploading before saving.");
+      setError("Please wait for photos to finish uploading before saving.");
+      return;
+    }
+
+    if (mainUploadState === "error") {
+      setError(`Main photo upload failed: ${mainUploadError || "Please re-select or retry upload."}`);
+      return;
+    }
+
+    if (hoverUploadState === "error") {
+      setError(`Hover photo upload failed: ${hoverUploadError || "Please re-select or retry upload."}`);
       return;
     }
 
@@ -416,7 +431,6 @@ export default function AddProductModal({
       } catch (e: any) {
         console.error("Firebase product image upload failed:", e);
         const msg = e instanceof Error ? e.message : String(e);
-        alert(`Image upload failed: ${msg}`);
         setError(`Main photo upload failed: ${msg}`);
         setSubmitting(false);
         return;
@@ -432,7 +446,6 @@ export default function AddProductModal({
       } catch (e: any) {
         console.error("Firebase product image upload failed:", e);
         const msg = e instanceof Error ? e.message : String(e);
-        alert(`Image upload failed: ${msg}`);
         setError(`Hover photo upload failed: ${msg}`);
         setSubmitting(false);
         return;
@@ -448,7 +461,6 @@ export default function AddProductModal({
         } catch (e: any) {
           console.error("Firebase product image upload failed:", e);
           const msg = e instanceof Error ? e.message : String(e);
-          alert(`Image upload failed: ${msg}`);
           setError(`Gallery photo upload failed: ${msg}`);
           setSubmitting(false);
           return;
@@ -706,18 +718,46 @@ export default function AddProductModal({
                           <p className="text-xs font-semibold text-stone-900 truncate">
                             {mainImageDetails?.name || "Suit Primary Photo"}
                           </p>
-                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-sm">
-                            Uploaded
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-sm ${
+                              mainUploadState === "error"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {mainUploadState === "error" ? "Upload Failed" : "Uploaded"}
                           </span>
                         </div>
                         <p className="text-[11px] text-stone-500">
                           {mainImageDetails?.size ? `Size: ${mainImageDetails.size}` : "Firebase Storage active"}
                         </p>
-                        <p className="text-[10px] text-emerald-600 font-medium mt-0.5">
-                          ✓ Shown on boutique storefront and home grid
+                        <p
+                          className={`text-[10px] font-medium mt-0.5 ${
+                            mainUploadState === "error" ? "text-red-600" : "text-emerald-600"
+                          }`}
+                        >
+                          {mainUploadState === "error"
+                            ? "⚠️ Photo not stored in Firebase Storage yet"
+                            : "✓ Shown on boutique storefront and home grid"}
                         </p>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
+                        {mainUploadState === "error" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (lastMainFileRef.current) {
+                                handleMainFileChange(lastMainFileRef.current);
+                              } else {
+                                mainFileInputRef.current?.click();
+                              }
+                            }}
+                            className="px-2.5 py-1 text-[11px] font-medium bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw size={11} />
+                            <span>Retry</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => mainFileInputRef.current?.click()}
@@ -848,8 +888,14 @@ export default function AddProductModal({
                           <p className="text-xs font-semibold text-stone-900 truncate">
                             {hoverImageDetails?.name || "Hover Secondary Photo"}
                           </p>
-                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-sm">
-                            Uploaded
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-sm ${
+                              hoverUploadState === "error"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {hoverUploadState === "error" ? "Upload Failed" : "Uploaded"}
                           </span>
                         </div>
                         <p className="text-[11px] text-stone-500">
@@ -861,6 +907,22 @@ export default function AddProductModal({
                         </p>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
+                        {hoverUploadState === "error" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (lastHoverFileRef.current) {
+                                handleHoverFileChange(lastHoverFileRef.current);
+                              } else {
+                                hoverFileInputRef.current?.click();
+                              }
+                            }}
+                            className="px-2.5 py-1 text-[11px] font-medium bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw size={11} />
+                            <span>Retry</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => hoverFileInputRef.current?.click()}
