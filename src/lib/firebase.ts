@@ -36,8 +36,8 @@ storage.maxUploadRetryTime = 8000;
 storage.maxOperationRetryTime = 8000;
 
 // Safe diagnostic logging as required (never log API keys or secrets)
-console.log("[Firebase] projectId:", app.options.projectId);
-console.log("[Firebase] storageBucket:", app.options.storageBucket);
+console.log("Firebase project:", app.options.projectId);
+console.log("Firebase storage bucket:", app.options.storageBucket);
 
 export { ref, ref as storageRef, uploadBytesResumable, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 

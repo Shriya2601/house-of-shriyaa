@@ -41,6 +41,7 @@ import {
   Edit3,
   RotateCcw,
   Tag,
+  Terminal,
 } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import {
@@ -89,6 +90,7 @@ import ShiprocketTrackingModal from "../components/admin/ShiprocketTrackingModal
 import ShiprocketConfigModal from "../components/admin/ShiprocketConfigModal";
 import ShiprocketLogsView from "../components/admin/ShiprocketLogsView";
 import FactoryResetModal from "../components/admin/FactoryResetModal";
+import StorageDiagnosticModal from "../components/admin/StorageDiagnosticModal";
 
 function ShipmentStatusBadge({
   order,
@@ -246,6 +248,7 @@ export default function AdminPortal() {
   // Add Booking / Order / Product Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isAdminFactoryResetOpen, setIsAdminFactoryResetOpen] = useState<boolean>(false);
+  const [isStorageDiagOpen, setIsStorageDiagOpen] = useState<boolean>(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState<boolean>(false);
   const [addType, setAddType] = useState<"booking" | "order">("order"); // Default to order since user requested "if customer buy from admin end"
 
@@ -1035,6 +1038,16 @@ export default function AdminPortal() {
             >
               <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
               <span className="hidden sm:inline">Refresh Data</span>
+            </button>
+
+            <button
+              id="admin-btn-storage-diag"
+              onClick={() => setIsStorageDiagOpen(true)}
+              className="p-2 sm:px-3 sm:py-2 text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/30 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Run Firebase Storage Diagnostic Upload Test"
+            >
+              <Terminal size={14} className="text-amber-300" />
+              <span className="hidden sm:inline">Storage Test</span>
             </button>
 
             <Link
@@ -2143,6 +2156,14 @@ export default function AdminPortal() {
             setProducts([]);
           }}
           showToast={showToast}
+        />
+      )}
+
+      {/* Firebase Storage Diagnostic Test Modal */}
+      {isStorageDiagOpen && (
+        <StorageDiagnosticModal
+          isOpen={isStorageDiagOpen}
+          onClose={() => setIsStorageDiagOpen(false)}
         />
       )}
 
