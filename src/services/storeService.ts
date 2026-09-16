@@ -21,7 +21,8 @@ import {
   type User,
   updateProfile,
 } from "firebase/auth";
-import { db, auth, storage, ref, uploadBytesResumable, uploadString, getDownloadURL, deleteObject } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
+import { uploadImageToAdminStorage } from "./adminUploadService";
 import {
   Product,
   ColorVariant,
@@ -977,7 +978,22 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
   };
 
   if (Array.isArray(sanitizedContent.heroSlides) && sanitizedContent.heroSlides.length > 0) {
-    updated.heroSlides = sanitizedContent.heroSlides;
+    const uploadedSlides = await Promise.all(
+      sanitizedContent.heroSlides.map(async (slide, idx) => {
+        if (slide.image && slide.image.startsWith("data:")) {
+          try {
+            const permUrl = await uploadImageToAdminStorage(slide.image, {
+              slot: `hero-slide-${idx + 1}`,
+            });
+            return { ...slide, image: permUrl };
+          } catch (e) {
+            console.error(`[saveSiteContent] Slide ${idx + 1} upload failed:`, e);
+          }
+        }
+        return slide;
+      })
+    );
+    updated.heroSlides = uploadedSlides;
   }
   if (Array.isArray(sanitizedContent.features) && sanitizedContent.features.length > 0) {
     updated.features = sanitizedContent.features;
@@ -1288,8 +1304,8 @@ function dataUrlToBlob(dataUrl: string): { blob: Blob; mime: string } {
 }
 
 /**
- * TASK 1: Uploads a product file/blob to Firebase Storage using uploadBytesResumable.
- * Provides real-time progress callbacks and strict error surfacing.
+ * Uploads a product file/blob to the persistent production image storage endpoint.
+ * Completely replaces Firebase Storage.
  */
 export async function uploadProductFileToFirebase(
   fileOrBlob: File | Blob,
@@ -1300,113 +1316,15 @@ export async function uploadProductFileToFirebase(
   if (!fileOrBlob) {
     throw new Error("No file provided for upload.");
   }
-
-  // Ensure active admin Firebase Auth session before attempting upload
-  await ensureAdminFirebaseAuth().catch(() => null);
-
-  const cleanProdId = (productId || `hos-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "-");
-  const safeSlot = slot.replace(/[^a-zA-Z0-9_-]/g, "-");
-  const mime = fileOrBlob.type || "image/jpeg";
-  const extension = mime.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
-  const randomPart =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-
-  const uniqueFileName = `${safeSlot}-${randomPart}.${extension}`;
-  const objectPath = `products/${cleanProdId}/${uniqueFileName}`;
-
-  console.log(`[Product Upload] Target: ${objectPath} (${fileOrBlob.size} bytes, type: ${mime})`);
-
-  const fileRef = ref(storage, objectPath);
-
-  const uploadTask = uploadBytesResumable(
-    fileRef,
-    fileOrBlob,
-    {
-      contentType: mime,
-      cacheControl: "public,max-age=31536000,immutable",
-    }
-  );
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          const progress =
-            snapshot.totalBytes > 0
-              ? (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-              : 0;
-
-          console.log(`[Product Upload] ${progress.toFixed(0)}%`);
-          onProgress?.(Math.round(progress));
-        },
-        (error) => {
-          console.error("[Product Upload] Firebase error:", error);
-          reject(error);
-        },
-        () => {
-          resolve();
-        }
-      );
-    });
-
-    const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-    console.log(`[Product Upload] SUCCESS! URL: ${downloadUrl}`);
-
-    if (!downloadUrl) {
-      throw new Error("Firebase Storage upload completed but no download URL was returned.");
-    }
-
-    return downloadUrl;
-  } catch (error: any) {
-    console.error(error);
-
-    const errorCode = error?.code || (error?.status_ ? `storage/status-${error.status_}` : "storage/unknown");
-    const rawMessage = error?.message || String(error);
-
-    if (
-      errorCode === "storage/retry-limit-exceeded" ||
-      rawMessage.includes("retry-limit-exceeded") ||
-      rawMessage.includes("Max retry time")
-    ) {
-      const err = new Error("Firebase Storage upload failed: storage/retry-limit-exceeded");
-      (err as any).code = "storage/retry-limit-exceeded";
-      (err as any).originalError = error;
-      throw err;
-    }
-
-    if (
-      error?.status_ === 404 ||
-      errorCode.includes("404") ||
-      rawMessage.includes("404") ||
-      (errorCode === "storage/unknown" && (rawMessage.includes("unknown error") || rawMessage.includes("server response")))
-    ) {
-      const err = new Error(
-        `Firebase Storage upload failed: storage/retry-limit-exceeded (Storage bucket "${storage.app.options.storageBucket || "default"}" not found. Cloud Storage is not enabled in Firebase Console for project "${storage.app.options.projectId || "house-of-shriya-d49d6"}")`
-      );
-      (err as any).code = "storage/retry-limit-exceeded";
-      (err as any).originalError = error;
-      throw err;
-    }
-
-    if (errorCode === "storage/unauthorized") {
-      const err = new Error("Firebase Storage upload failed: storage/unauthorized (Admin authentication required).");
-      (err as any).code = "storage/unauthorized";
-      (err as any).originalError = error;
-      throw err;
-    }
-
-    const err = new Error(`Firebase Storage upload failed: ${errorCode} - ${rawMessage}`);
-    (err as any).code = errorCode;
-    (err as any).originalError = error;
-    throw err;
-  }
+  return uploadImageToAdminStorage(fileOrBlob, {
+    productId,
+    slot,
+    onProgress,
+  });
 }
 
 /**
- * Uploads a product data URL to Firebase Storage. Converts to Blob and uses uploadBytesResumable.
+ * Uploads a product data URL to the persistent production image storage endpoint.
  */
 export async function uploadProductDataUrlToFirebase(
   dataUrl: string,
@@ -1417,12 +1335,15 @@ export async function uploadProductDataUrlToFirebase(
   if (!dataUrl || !dataUrl.startsWith("data:")) {
     return dataUrl;
   }
-  const { blob } = dataUrlToBlob(dataUrl);
-  return uploadProductFileToFirebase(blob, productId, slot, onProgress);
+  return uploadImageToAdminStorage(dataUrl, {
+    productId,
+    slot,
+    onProgress,
+  });
 }
 
 /**
- * Convenience wrapper for uploading either a File, Blob, or data URL to Firebase Storage.
+ * Convenience wrapper for uploading either a File, Blob, or data URL to persistent production storage.
  */
 export async function uploadProductImageToFirebase(
   productId: string,
@@ -1440,19 +1361,11 @@ export async function uploadProductImageToFirebase(
 }
 
 /**
- * Safely cleans up an old Firebase Storage image after a replacement succeeds.
- * Never throws or blocks on failure.
+ * Safely cleans up an old image if needed.
  */
 export async function cleanupOldStorageImage(oldUrl?: string | null, newUrl?: string | null): Promise<void> {
   if (!oldUrl || !newUrl || oldUrl === newUrl || typeof oldUrl !== "string") return;
-  if (oldUrl.includes("firebasestorage.googleapis.com") || oldUrl.includes("storage.googleapis.com")) {
-    try {
-      const storageRef = ref(storage, oldUrl);
-      await deleteObject(storageRef);
-    } catch {
-      // Best-effort cleanup
-    }
-  }
+  // Cleanup is handled automatically on server
 }
 
 /**

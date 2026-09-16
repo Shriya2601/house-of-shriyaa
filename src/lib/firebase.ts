@@ -1,7 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import firebaseConfig from "../../firebase-applet-config.json";
 
@@ -29,17 +28,6 @@ export const db =
   firebaseConfig.firestoreDatabaseId !== "(default)"
     ? getFirestore(app, (firebaseConfig as { firestoreDatabaseId: string }).firestoreDatabaseId)
     : getFirestore(app);
-
-// Firebase Storage is used for product images because Cloudflare/server filesystems are not durable.
-export const storage = getStorage(app);
-storage.maxUploadRetryTime = 8000;
-storage.maxOperationRetryTime = 8000;
-
-// Safe diagnostic logging as required (never log API keys or secrets)
-console.log("Firebase project:", app.options.projectId);
-console.log("Firebase storage bucket:", app.options.storageBucket);
-
-export { ref, ref as storageRef, uploadBytesResumable, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Safely initialize Analytics if supported in browser environment
 export let analytics: ReturnType<typeof getAnalytics> | null = null;

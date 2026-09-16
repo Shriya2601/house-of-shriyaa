@@ -1044,7 +1044,7 @@ export default function AdminPortal() {
               id="admin-btn-storage-diag"
               onClick={() => setIsStorageDiagOpen(true)}
               className="p-2 sm:px-3 sm:py-2 text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/30 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Run Firebase Storage Diagnostic Upload Test"
+              title="Run Production Storage Diagnostic Upload Test"
             >
               <Terminal size={14} className="text-amber-300" />
               <span className="hidden sm:inline">Storage Test</span>

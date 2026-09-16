@@ -1,6 +1,8 @@
 import type { Connect, Plugin } from "vite";
 import fs from "fs";
 import path from "path";
+import { persistImagePermanently, retrieveImage, isAuthorizedAdminRequest } from "./storageService";
+import { parseUploadPayload } from "./uploadParser";
 
 // In-memory cache for ultra-fast instant rendering of uploaded photos with timestamp tracking
 const memoryUploadsCache = new Map<string, { mime: string; buffer: Buffer; mtimeMs: number }>();
@@ -340,9 +342,13 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         }
       }
 
-      // Direct Static Image Serving for /uploads/* and /public/uploads/*
+      // Direct Static Image Serving for /uploads/*, /public/uploads/*, and /api/images/*
       // Bypasses Vite SPA fallback so images NEVER return HTML and load instantly with zero glitch
-      if (urlWithoutQuery.startsWith("/uploads/") || urlWithoutQuery.startsWith("/public/uploads/")) {
+      if (
+        urlWithoutQuery.startsWith("/uploads/") ||
+        urlWithoutQuery.startsWith("/public/uploads/") ||
+        urlWithoutQuery.startsWith("/api/images/")
+      ) {
         let rawFilename = path.basename(urlWithoutQuery);
         let filename = rawFilename;
         try {
@@ -428,7 +434,19 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         return;
       }
 
-      // Fallback: If not found, evict from memory cache and return 404 with strict NO-CACHE
+      // Fallback: Check persistent cloud object storage (Cloudflare R2 & Firestore stored_images)
+      const lookupKey = urlWithoutQuery.replace(/^\/(?:api\/images|uploads|public\/uploads)\//, "");
+      const persistentImg = await retrieveImage(lookupKey);
+      if (persistentImg) {
+        res.setHeader("Content-Type", persistentImg.mimeType);
+        res.setHeader("Content-Length", persistentImg.buffer.length);
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        res.statusCode = 200;
+        res.end(persistentImg.buffer);
+        return;
+      }
+
+      // Fallback: If not found anywhere, evict from memory cache and return 404 with strict NO-CACHE
       memoryUploadsCache.delete(filename);
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
@@ -1097,8 +1115,13 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           }
         }
 
-        // 5. DIRECT PHOTO UPLOAD & PURGE: /api/upload
-        if (urlWithoutQuery === "/api/upload" || urlWithoutQuery === "/api/upload/") {
+        // 5. PRODUCTION DIRECT & MULTIPART PHOTO UPLOAD: /api/admin/upload & /api/upload
+        if (
+          urlWithoutQuery === "/api/admin/upload" ||
+          urlWithoutQuery === "/api/admin/upload/" ||
+          urlWithoutQuery === "/api/upload" ||
+          urlWithoutQuery === "/api/upload/"
+        ) {
           setAntiCacheHeaders(res);
           setCorsHeaders(res);
 
@@ -1108,8 +1131,28 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             return;
           }
 
-          // Support removing an image to completely purge it from disk and memory cache
+          if (method === "GET") {
+            res.setHeader("Content-Type", "application/json");
+            res.statusCode = 200;
+            res.end(
+              JSON.stringify({
+                success: true,
+                status: "ready",
+                message: "Production Admin Image Storage Engine is active.",
+              })
+            );
+            return;
+          }
+
+          // Delete/purge an image
           if (method === "DELETE" || ((method === "POST" || method === "PUT") && rawUrl.includes("delete"))) {
+            if (!isAuthorizedAdminRequest(req.headers)) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 401;
+              res.end(JSON.stringify({ success: false, error: "Unauthorized: Admin session required." }));
+              return;
+            }
+
             try {
               let filenameToDelete = "";
               const urlObj = new URL(rawUrl, "http://localhost:3000");
@@ -1147,85 +1190,84 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             }
           }
 
-          if (method === "GET") {
-            res.setHeader("Content-Type", "application/json");
-            res.statusCode = 200;
-            res.end(JSON.stringify({ success: true, status: "ready", message: "Upload service active" }));
-            return;
-          }
-
+          // Image Upload Handler (Supports Multipart Form Data & JSON dataUrl)
           if (method === "POST" || method === "PUT" || method === "PATCH") {
+            if (!isAuthorizedAdminRequest(req.headers)) {
+              res.setHeader("Content-Type", "application/json");
+              res.statusCode = 401;
+              res.end(JSON.stringify({ success: false, error: "Unauthorized: Admin authentication required to upload store images." }));
+              return;
+            }
+
             try {
-              const body = await parseJsonBody(req);
-              const rawData = body.dataUrl || body.image || body.base64;
-              if (!rawData || typeof rawData !== "string") {
+              const parsed = await parseUploadPayload(req, res);
+              const { buffer, filename, mimeType, slot, productId } = parsed;
+
+              if (!buffer || buffer.length === 0) {
                 res.setHeader("Content-Type", "application/json");
                 res.statusCode = 400;
-                res.end(JSON.stringify({ error: "Missing image dataUrl in request payload" }));
+                res.end(JSON.stringify({ success: false, error: "Uploaded file is empty or corrupted." }));
                 return;
               }
 
-              // Extract mime type and base64 buffer robustly
-              let ext = "jpg";
-              let mime = "image/jpeg";
-              let base64Data = rawData;
-
-              if (rawData.includes(",")) {
-                const parts = rawData.split(",");
-                const header = parts[0].toLowerCase();
-                if (header.includes("png")) { ext = "png"; mime = "image/png"; }
-                else if (header.includes("webp")) { ext = "webp"; mime = "image/webp"; }
-                else if (header.includes("gif")) { ext = "gif"; mime = "image/gif"; }
-                else if (header.includes("svg")) { ext = "svg"; mime = "image/svg+xml"; }
-                else if (header.includes("jpeg") || header.includes("jpg")) { ext = "jpg"; mime = "image/jpeg"; }
-                base64Data = parts.slice(1).join(",");
-              } else if (body.filename) {
-                const fExt = path.extname(body.filename).toLowerCase();
-                if (fExt === ".png") { ext = "png"; mime = "image/png"; }
-                else if (fExt === ".webp") { ext = "webp"; mime = "image/webp"; }
-                else if (fExt === ".gif") { ext = "gif"; mime = "image/gif"; }
-                else if (fExt === ".svg") { ext = "svg"; mime = "image/svg+xml"; }
-              }
-
-              // Strip whitespace and newlines from base64 string
-              base64Data = base64Data.replace(/[\r\n\s]+/g, "");
-              const buffer = Buffer.from(base64Data, "base64");
-              const safePrefix = (body.filename || "upload")
-                .toLowerCase()
-                .replace(/\.[a-z0-9]+$/i, "") // strip existing extension so we don't end up with name.jpg.jpg
-                .replace(/[^a-z0-9_-]/g, "-")
-                .slice(0, 24) || "upload";
+              const ext = (filename.split(".").pop() || "jpg").toLowerCase().replace("jpeg", "jpg");
+              const safeSlot = (slot || "image").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
               const timestamp = Date.now();
-              const generatedFilename = `${safePrefix}-${timestamp}-${Math.floor(Math.random() * 10000)}.${ext}`;
+              const rand = Math.floor(Math.random() * 100000);
 
-              const uploadsDir = path.resolve(process.cwd(), "public/uploads");
-              if (!fs.existsSync(uploadsDir)) {
-                fs.mkdirSync(uploadsDir, { recursive: true });
+              let key: string;
+              let targetFilename: string;
+
+              if (safeSlot === "banner" || filename.includes("hero-slide") || filename.includes("banner")) {
+                targetFilename = `hero-slide-${timestamp}-${rand}.${ext}`;
+                key = `banners/${targetFilename}`;
+              } else if (productId) {
+                const safePid = productId.replace(/[^a-zA-Z0-9_-]/g, "-");
+                targetFilename = `${safeSlot}-${timestamp}-${rand}.${ext}`;
+                key = `products/${safePid}/${targetFilename}`;
+              } else {
+                const cleanBase = filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 24) || "img";
+                targetFilename = `${cleanBase}-${timestamp}-${rand}.${ext}`;
+                key = `uploads/${targetFilename}`;
               }
-              const filePath = path.join(uploadsDir, generatedFilename);
-              fs.writeFileSync(filePath, buffer);
 
-              // Also copy to dist/uploads if dist exists
-              const distUploadsDir = path.resolve(process.cwd(), "dist/uploads");
-              if (fs.existsSync(distUploadsDir)) {
-                try {
-                  fs.writeFileSync(path.join(distUploadsDir, generatedFilename), buffer);
-                } catch {}
-              }
+              const result = await persistImagePermanently({
+                key,
+                filename: targetFilename,
+                buffer,
+                mimeType,
+                slot: safeSlot,
+                productId,
+              });
 
-              // Immediately prime the in-memory cache with timestamp
-              memoryUploadsCache.set(generatedFilename, { mime, buffer, mtimeMs: timestamp });
+              // Also keep memory cache populated for immediate serving
+              memoryUploadsCache.set(targetFilename, { mime: mimeType, buffer, mtimeMs: timestamp });
+              memoryUploadsCache.set(key, { mime: mimeType, buffer, mtimeMs: timestamp });
 
-              const publicUrl = `/uploads/${generatedFilename}?v=${timestamp}`;
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
-              res.end(JSON.stringify({ success: true, url: publicUrl, filename: generatedFilename }));
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  url: result.url,
+                  key: result.key,
+                  filename: targetFilename,
+                  size: result.size,
+                  contentType: result.mimeType,
+                  storageType: result.storageType,
+                })
+              );
               return;
-            } catch (err: any) {
-              console.error("[API Middleware] Photo upload error:", err);
+            } catch (uploadErr: any) {
+              console.error("[Admin Upload Handler Error]:", uploadErr);
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 500;
-              res.end(JSON.stringify({ error: err.message || "Failed to process photo upload" }));
+              res.end(
+                JSON.stringify({
+                  success: false,
+                  error: uploadErr?.message || "Failed to persist image to production storage.",
+                })
+              );
               return;
             }
           }

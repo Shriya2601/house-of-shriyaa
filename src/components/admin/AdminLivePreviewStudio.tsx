@@ -40,7 +40,7 @@ import {
   cleanupOldStorageImage,
   withTimeout,
 } from "../../services/storeService";
-import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
+import { uploadImageToAdminStorage } from "../../services/adminUploadService";
 import { HeroSlide, Product, CategoryItem, SiteContent } from "../../types";
 import { compressImageFile } from "../../utils/imageUtils";
 
@@ -136,18 +136,10 @@ export default function AdminLivePreviewStudio({
       // 1. Compress image to high-quality responsive dataUrl
       const { dataUrl } = await compressImageFile(file, 1600, 0.88);
 
-      // 2. Upload to Firebase Storage for permanent URL with timeout
-      const bannerRef = ref(storage, `banners/hero-slide-${selectedSlideIndex + 1}-${Date.now()}.jpg`);
-      await withTimeout(
-        uploadString(bannerRef, dataUrl, "data_url", { contentType: "image/jpeg" }),
-        30000,
-        "Firebase Storage banner upload timed out after 30 seconds."
-      );
-      const finalUrl = await withTimeout(
-        getDownloadURL(bannerRef),
-        30000,
-        "Could not retrieve Firebase banner URL."
-      );
+      // 2. Upload to persistent production storage engine
+      const finalUrl = await uploadImageToAdminStorage(dataUrl, {
+        slot: `hero-slide-${selectedSlideIndex + 1}`,
+      });
 
       // 3. Update state and immediately save to database and broadcast live
       const nextSlides = heroSlides.map((s, idx) =>

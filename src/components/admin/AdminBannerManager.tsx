@@ -21,7 +21,7 @@ import {
 
 import { useStore } from "../../context/StoreContext";
 import { saveSiteContent, withTimeout } from "../../services/storeService";
-import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
+import { uploadImageToAdminStorage } from "../../services/adminUploadService";
 import { HeroSlide } from "../../types";
 import { normalizeImageUrl } from "../../utils/imageUtils";
 
@@ -730,26 +730,18 @@ export default function AdminBannerManager({
 
       /*
        * Step 2:
-       * Upload directly to Firebase Storage for permanent URL.
+       * Upload directly to production persistent storage engine.
        */
       let finalImageUrl = compressedDataUrl;
 
       try {
-        const bannerRef = ref(storage, `banners/hero-slide-${targetIndex + 1}-${Date.now()}.jpg`);
-        await withTimeout(
-          uploadString(bannerRef, compressedDataUrl, "data_url", { contentType: "image/jpeg" }),
-          30000,
-          "Firebase Storage banner upload timed out after 30 seconds."
-        );
-        finalImageUrl = await withTimeout(
-          getDownloadURL(bannerRef),
-          30000,
-          "Could not retrieve Firebase banner URL."
-        );
+        finalImageUrl = await uploadImageToAdminStorage(compressedDataUrl, {
+          slot: `hero-slide-${targetIndex + 1}`,
+        });
       } catch (uploadError) {
-        console.error("[Firebase Upload Error]", uploadError);
+        console.error("[Production Upload Error]", uploadError);
         const msg = uploadError instanceof Error ? uploadError.message : String(uploadError);
-        alert(`Banner upload failed: ${msg}`);
+        alert(`Banner upload notice: ${msg}`);
       }
 
       /*

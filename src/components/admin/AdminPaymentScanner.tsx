@@ -13,8 +13,8 @@ import {
   Lock,
 } from "lucide-react";
 import { useStore } from "../../context/StoreContext";
-import { saveSiteContent, withTimeout } from "../../services/storeService";
-import { storage, ref, uploadString, getDownloadURL } from "../../lib/firebase";
+import { saveSiteContent } from "../../services/storeService";
+import { uploadImageToAdminStorage } from "../../services/adminUploadService";
 import { normalizeImageUrl } from "../../utils/imageUtils";
 
 interface AdminPaymentScannerProps {
@@ -73,18 +73,10 @@ export default function AdminPaymentScanner({ showToast }: AdminPaymentScannerPr
       // Instant preview
       setScannerUrl(dataUrl);
 
-      // Upload directly to Firebase Storage with hard timeout
-      const scannerRef = ref(storage, `payment/scanner-qr-${Date.now()}.jpg`);
-      await withTimeout(
-        uploadString(scannerRef, dataUrl, "data_url", { contentType: "image/jpeg" }),
-        30000,
-        "Firebase Storage scanner upload timed out after 30 seconds."
-      );
-      const uploadedUrl = await withTimeout(
-        getDownloadURL(scannerRef),
-        30000,
-        "Could not retrieve Firebase scanner URL."
-      );
+      // Upload directly to persistent production storage engine
+      const uploadedUrl = await uploadImageToAdminStorage(dataUrl, {
+        slot: "scanner-qr",
+      });
 
       setScannerUrl(uploadedUrl);
 
