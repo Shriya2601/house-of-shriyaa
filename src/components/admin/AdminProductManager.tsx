@@ -375,6 +375,7 @@ export default function AdminProductManager({
                         <div className="flex items-center gap-3">
                           <div className="relative group/thumb w-11 h-11 shrink-0">
                             <img
+                              key={`img_${p.id}_${displayImg}`}
                               src={displayImg}
                               alt={p.name}
                               className="w-11 h-11 object-cover rounded-lg border border-stone-200 bg-stone-100"

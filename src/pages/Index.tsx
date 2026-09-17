@@ -3163,6 +3163,7 @@ export function ProductCard({
           onLoad={() => setImgLoaded(true)}
         />
         <img
+          key={`hover_${product.id}_${productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage}`}
           data-editable="true"
           className="product-image-hover"
           src={productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage}
