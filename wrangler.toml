@@ -1,8 +1,0 @@
-name = "house-of-shriyaaa"
-compatibility_date = "2026-09-17"
-pages_build_output_dir = "dist/client"
-
-# Cloudflare Pages Functions R2 binding
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "house-of-shriyaa-images"
