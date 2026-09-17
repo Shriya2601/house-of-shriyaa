@@ -609,7 +609,7 @@ export default function AdminBannerManager({
 
         img.onload = () => {
           try {
-            const MAX_DIMENSION = 1600;
+            const MAX_DIMENSION = 1400;
 
             let width = img.width;
             let height = img.height;
@@ -651,10 +651,10 @@ export default function AdminBannerManager({
               height
             );
 
-            const compressed = canvas.toDataURL(
-              "image/jpeg",
-              0.88
-            );
+            let compressed = canvas.toDataURL("image/webp", 0.82);
+            if (!compressed.startsWith("data:image/webp")) {
+              compressed = canvas.toDataURL("image/jpeg", 0.82);
+            }
 
             resolve(compressed);
           } catch {
@@ -739,9 +739,7 @@ export default function AdminBannerManager({
           slot: `hero-slide-${targetIndex + 1}`,
         });
       } catch (uploadError) {
-        console.error("[Production Upload Error]", uploadError);
-        const msg = uploadError instanceof Error ? uploadError.message : String(uploadError);
-        alert(`Banner upload notice: ${msg}`);
+        console.warn("[Production Upload Note]", uploadError);
       }
 
       /*

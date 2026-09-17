@@ -92,6 +92,12 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // Stored & Uploaded Images: Publicly readable; writable by Admin or store
+    match /stored_images/{documentId} {
+      allow get, list: if true;
+      allow create, update, delete: if true;
+    }
+
     // Products Catalog: Publicly readable; managed by Admin
     match /products/{productId} {
       allow get, list: if true;

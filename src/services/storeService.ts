@@ -1027,6 +1027,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
 
   // 4. Sync to Firestore (single source of truth across all devices)
   try {
+    await ensureAdminFirebaseAuth().catch(() => null);
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     await setDoc(docRef, sanitizeForFirestore(updated), { merge: true });
   } catch (fsErr) {
