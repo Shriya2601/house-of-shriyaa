@@ -24,6 +24,23 @@ export async function onRequest(context: {
   const response = await next();
   const newHeaders = new Headers(response.headers);
   newHeaders.set("Access-Control-Allow-Origin", "*");
+  newHeaders.set(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
+  newHeaders.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-admin-token, x-admin-key, X-Requested-With, Cache-Control"
+  );
+
+  if (response.status === 204 || response.status === 304) {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
+  }
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
