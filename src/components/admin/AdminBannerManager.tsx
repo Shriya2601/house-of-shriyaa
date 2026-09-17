@@ -1275,6 +1275,7 @@ export default function AdminBannerManager({
               }`}
             >
               <img
+                key={`preview_slide_${activeSlideIndex}_${currentSlide.image}`}
                 src={normalizeImageUrl(currentSlide.image)}
                 alt={currentSlide.title}
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -1470,6 +1471,7 @@ export default function AdminBannerManager({
               <div className="flex flex-col sm:flex-row items-center gap-3">
                 <div className="w-20 h-14 rounded-lg overflow-hidden bg-stone-200 border border-stone-300 shrink-0">
                   <img
+                    key={`thumb_slide_${activeSlideIndex}_${currentSlide.image}`}
                     src={normalizeImageUrl(
                       currentSlide.image
                     )}

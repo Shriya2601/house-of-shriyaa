@@ -57,7 +57,9 @@ export async function onRequestGet(context: {
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set("etag", object.httpEtag);
-        headers.set("Cache-Control", "public, max-age=31536000, immutable");
+        // Anti-cache headers: ensure instant updates when photos are replaced
+        headers.set("Cache-Control", "no-cache, must-revalidate");
+        headers.set("Pragma", "no-cache");
         headers.set("Access-Control-Allow-Origin", "*");
         return new Response(object.body, { headers });
       }
@@ -68,32 +70,41 @@ export async function onRequestGet(context: {
 
   // 2. Try Firestore fallback
   try {
-    const safeDocId = key.replace(/\//g, "___");
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
-      safeDocId
-    )}`;
+    const safeDocIds = [
+      key.replace(/\//g, "___"),
+      key.replace(/[^a-zA-Z0-9_-]/g, "_"),
+      `banners___${key.replace(/^banners\//, "").replace(/\//g, "___")}`,
+      `uploads___${key.replace(/^uploads\//, "").replace(/\//g, "___")}`,
+    ];
 
-    const res = await fetch(firestoreUrl);
-    if (res.ok) {
-      const doc = (await res.json()) as any;
-      const dataUrl = doc?.fields?.dataUrl?.stringValue;
-      if (dataUrl) {
-        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          const mime = match[1];
-          const binaryStr = atob(match[2]);
-          const len = binaryStr.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryStr.charCodeAt(i);
+    for (const safeDocId of safeDocIds) {
+      const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
+        safeDocId
+      )}`;
+
+      const res = await fetch(firestoreUrl);
+      if (res.ok) {
+        const doc = (await res.json()) as any;
+        const dataUrl = doc?.fields?.dataUrl?.stringValue;
+        if (dataUrl) {
+          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const mime = match[1];
+            const binaryStr = atob(match[2]);
+            const len = binaryStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binaryStr.charCodeAt(i);
+            }
+            return new Response(bytes.buffer, {
+              headers: {
+                "Content-Type": mime,
+                "Cache-Control": "no-cache, must-revalidate",
+                "Pragma": "no-cache",
+                "Access-Control-Allow-Origin": "*",
+              },
+            });
           }
-          return new Response(bytes.buffer, {
-            headers: {
-              "Content-Type": mime,
-              "Cache-Control": "public, max-age=31536000, immutable",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
         }
       }
     }

@@ -805,6 +805,11 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       incoming.heroSlides = currentContent.heroSlides;
     }
 
+    // Never overwrite newer content with older stale data
+    if (incomingTime > 0 && currentTime > 0 && incomingTime < currentTime && currentContent?.updatedAt) {
+      return;
+    }
+
     if (force || incomingTime >= currentTime || !currentContent?.updatedAt) {
       currentContent = incoming;
       cacheSiteContentLocally(incoming);
@@ -835,8 +840,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges) && serverData.trustBadges.length > 0) {
             merged.trustBadges = serverData.trustBadges;
           }
-          // Server response is authoritative - force apply
-          applyContentIfNewer(merged, true);
+          // Server response is authoritative - apply if newer
+          applyContentIfNewer(merged, false);
           return;
         }
       }
@@ -857,7 +862,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
             merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          applyContentIfNewer(merged, true);
+          applyContentIfNewer(merged, false);
         }
       }
     } catch {}

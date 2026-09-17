@@ -207,7 +207,9 @@ export async function uploadImageToAdminStorage(
       const result: AdminUploadResponse = await response.json();
       if (result.success && result.url) {
         onProgress?.(100);
-        return result.url;
+        const base = result.url.split("?")[0];
+        const cacheBusted = `${base}?v=${Date.now()}`;
+        return cacheBusted;
       }
     } else {
       console.warn(

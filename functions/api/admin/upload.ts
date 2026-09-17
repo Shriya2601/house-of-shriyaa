@@ -312,7 +312,7 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
       await r2Bucket.put(key, fileBuffer, {
         httpMetadata: {
           contentType: mimeType,
-          cacheControl: "public, max-age=31536000, immutable",
+          cacheControl: "no-cache, must-revalidate",
         },
         customMetadata: {
           slot,
@@ -352,19 +352,23 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
       console.warn("[Cloudflare Upload] Firestore mirror note:", fsErr);
     }
 
-    // 5. Construct permanent public URL
+    // 5. Construct permanent public URL with cache-busting timestamp
     const r2PublicDomain = env.R2_PUBLIC_DOMAIN || env.CLOUDFLARE_R2_PUBLIC_URL || "";
-    let finalUrl = "";
+    let rawFinalUrl = "";
 
     if (r2PublicDomain) {
       const domainBase = r2PublicDomain.startsWith("http")
         ? r2PublicDomain
         : `https://${r2PublicDomain}`;
-      finalUrl = `${domainBase.replace(/\/+$/, "")}/${key}`;
+      rawFinalUrl = `${domainBase.replace(/\/+$/, "")}/${key}`;
     } else {
       const origin = new URL(request.url).origin;
-      finalUrl = `${origin}/api/images/${key}`;
+      rawFinalUrl = `${origin}/api/images/${key}`;
     }
+
+    const finalUrl = rawFinalUrl.includes("?")
+      ? `${rawFinalUrl}&v=${timestamp}`
+      : `${rawFinalUrl}?v=${timestamp}`;
 
     return jsonResponse(
       {

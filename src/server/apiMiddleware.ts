@@ -364,11 +364,20 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         }
 
         // Check filesystem first to ensure file exists and is fresh
+        const subPath = urlWithoutQuery.replace(/^\/(?:api\/images|public\/uploads|uploads)\//, "");
         const possiblePaths = [
+          path.resolve(process.cwd(), "public/uploads", subPath),
           path.resolve(process.cwd(), "public/uploads", filename),
           path.resolve(process.cwd(), "public/uploads", rawFilename),
+          path.resolve(process.cwd(), "public/uploads/banners", filename),
+          path.resolve(process.cwd(), "public/uploads/products", filename),
+          path.resolve(process.cwd(), "dist/uploads", subPath),
           path.resolve(process.cwd(), "dist/uploads", filename),
           path.resolve(process.cwd(), "dist/uploads", rawFilename),
+          path.resolve(process.cwd(), "dist/uploads/banners", filename),
+          path.resolve(process.cwd(), "dist/uploads/products", filename),
+          path.resolve(process.cwd(), "public", subPath),
+          path.resolve(process.cwd(), "public", filename),
         ];
 
       let foundPath: string | null = null;
@@ -389,6 +398,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           if (ifNoneMatch && ifNoneMatch === etag) {
             res.setHeader("ETag", etag);
             res.setHeader("Cache-Control", "no-cache, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
             res.statusCode = 304;
             res.end();
             return;
@@ -417,6 +427,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           res.setHeader("ETag", etag);
           // Set no-cache, must-revalidate so updated photos reflect live immediately
           res.setHeader("Cache-Control", "no-cache, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
           res.statusCode = 200;
           res.end(buffer);
           return;
@@ -429,6 +440,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         res.setHeader("Content-Type", cached.mime);
         res.setHeader("Content-Length", cached.buffer.length);
         res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
         res.statusCode = 200;
         res.end(cached.buffer);
         return;
@@ -440,7 +452,8 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
       if (persistentImg) {
         res.setHeader("Content-Type", persistentImg.mimeType);
         res.setHeader("Content-Length", persistentImg.buffer.length);
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
         res.statusCode = 200;
         res.end(persistentImg.buffer);
         return;
@@ -1218,7 +1231,12 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               let key: string;
               let targetFilename: string;
 
-              if (safeSlot === "banner" || filename.includes("hero-slide") || filename.includes("banner")) {
+              if (
+                safeSlot.includes("banner") ||
+                safeSlot.includes("hero-slide") ||
+                filename.includes("hero-slide") ||
+                filename.includes("banner")
+              ) {
                 targetFilename = `hero-slide-${timestamp}-${rand}.${ext}`;
                 key = `banners/${targetFilename}`;
               } else if (productId) {
@@ -1244,12 +1262,16 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
               memoryUploadsCache.set(targetFilename, { mime: mimeType, buffer, mtimeMs: timestamp });
               memoryUploadsCache.set(key, { mime: mimeType, buffer, mtimeMs: timestamp });
 
+              const finalUrl = result.url.includes("?")
+                ? `${result.url}&v=${timestamp}`
+                : `${result.url}?v=${timestamp}`;
+
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 200;
               res.end(
                 JSON.stringify({
                   success: true,
-                  url: result.url,
+                  url: finalUrl,
                   key: result.key,
                   filename: targetFilename,
                   size: result.size,
@@ -1312,10 +1334,14 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         if (urlWithoutQuery === "/api/site-content" || urlWithoutQuery === "/api/content") {
           setAntiCacheHeaders(res);
 
-          if (method === "GET") {
+          if (method === "GET" || method === "HEAD") {
             const data = readSiteContent();
             res.setHeader("Content-Type", "application/json");
             res.statusCode = 200;
+            if (method === "HEAD") {
+              res.end();
+              return;
+            }
             res.end(JSON.stringify(data));
             return;
           }

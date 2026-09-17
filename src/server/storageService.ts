@@ -188,7 +188,7 @@ export async function persistImagePermanently(params: {
           Key: key,
           Body: buffer,
           ContentType: mimeType,
-          CacheControl: "public, max-age=31536000, immutable",
+          CacheControl: "no-cache, must-revalidate",
         })
       );
       if (publicDomain) {
@@ -269,8 +269,14 @@ export async function retrieveImage(
   const diskCandidates = [
     path.resolve(process.cwd(), "public/uploads", clean),
     path.resolve(process.cwd(), "public/uploads", filename),
+    path.resolve(process.cwd(), "public/uploads/banners", filename),
+    path.resolve(process.cwd(), "public/uploads/products", filename),
     path.resolve(process.cwd(), "dist/uploads", clean),
     path.resolve(process.cwd(), "dist/uploads", filename),
+    path.resolve(process.cwd(), "dist/uploads/banners", filename),
+    path.resolve(process.cwd(), "dist/uploads/products", filename),
+    path.resolve(process.cwd(), "public", clean),
+    path.resolve(process.cwd(), "dist", clean),
   ];
 
   for (const diskPath of diskCandidates) {
@@ -299,19 +305,24 @@ export async function retrieveImage(
   const { client: r2, bucket } = getR2Client();
   if (r2) {
     try {
-      const res = await r2.send(
-        new GetObjectCommand({
-          Bucket: bucket,
-          Key: clean,
-        })
-      );
-      if (res.Body) {
-        const bytes = await res.Body.transformToByteArray();
-        const buf = Buffer.from(bytes);
-        const mime = res.ContentType || "image/jpeg";
-        memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
-        writeImageToDisk(filename, buf);
-        return { buffer: buf, mimeType: mime };
+      const keysToTry = [clean, `banners/${filename}`, `uploads/${filename}`];
+      for (const k of keysToTry) {
+        try {
+          const res = await r2.send(
+            new GetObjectCommand({
+              Bucket: bucket,
+              Key: k,
+            })
+          );
+          if (res.Body) {
+            const bytes = await res.Body.transformToByteArray();
+            const buf = Buffer.from(bytes);
+            const mime = res.ContentType || "image/jpeg";
+            memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
+            writeImageToDisk(filename, buf);
+            return { buffer: buf, mimeType: mime };
+          }
+        } catch {}
       }
     } catch {
       // Fall through to Firestore
@@ -322,17 +333,35 @@ export async function retrieveImage(
   const db = getServerDb();
   if (db) {
     try {
-      const docId = clean.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const docRef = doc(db, "stored_images", docId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data?.dataBase64) {
-          const buf = Buffer.from(data.dataBase64, "base64");
-          const mime = data.mimeType || "image/jpeg";
-          memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
-          writeImageToDisk(filename, buf);
-          return { buffer: buf, mimeType: mime };
+      const docIdsToTry = [
+        clean.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        clean.replace(/\//g, "___"),
+        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        `banners_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+      ];
+
+      for (const docId of docIdsToTry) {
+        const docRef = doc(db, "stored_images", docId);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.dataBase64) {
+            const buf = Buffer.from(data.dataBase64, "base64");
+            const mime = data.mimeType || "image/jpeg";
+            memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
+            writeImageToDisk(filename, buf);
+            return { buffer: buf, mimeType: mime };
+          } else if (data?.dataUrl) {
+            const match = data.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              const buf = Buffer.from(match[2], "base64");
+              const mime = match[1] || "image/jpeg";
+              memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
+              writeImageToDisk(filename, buf);
+              return { buffer: buf, mimeType: mime };
+            }
+          }
         }
       }
     } catch (fsErr) {
