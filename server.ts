@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { apiHandler } from "./src/server/apiMiddleware";
 import { createServer as createViteServer } from "vite";
@@ -40,7 +41,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distClientPath = path.join(process.cwd(), "dist/client");
+    const distPath = fs.existsSync(distClientPath) ? distClientPath : path.join(process.cwd(), "dist");
     app.use(
       express.static(distPath, {
         setHeaders: (res, filePath) => {
