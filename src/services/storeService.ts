@@ -122,11 +122,11 @@ export const defaultSiteContent: SiteContent = {
       eyebrow: "Timeless Indian elegance",
       number: "02",
       collection: "The Festive Edit",
-      title: "Grace, weave in Every Detail",
+      title: "Grace, Weave in Every Detail",
       description:
-        "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear",
+        "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear.",
       image:
-        "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
+        "https://plain-eeur-prod-public.komododecks.com/202609/15/OSeP8KXZKOwa1kTFdvK2/image.jpg",
       season: "ROYAL HERITAGE 2026",
       caption: "Pastels • Delicate Embroidery • Effortless Grace",
       mood: "Antique Zari & Handlooms",
@@ -1556,24 +1556,22 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     console.warn("[Firestore] Failed to attach products listener:", err);
   }
 
-  // Fallback fetch ONLY IF Firestore has not loaded after 2 seconds
-  const fetchFallbackProducts = async () => {
-    await new Promise((r) => setTimeout(r, 2000));
-    if (!active || hasLoadedFromFirestore) return;
-
+  // Active sync function: fetches live products from backend API immediately and periodically
+  const fetchLiveProducts = async () => {
+    if (!active) return;
     try {
       const res = await fetch(`/api/products?t=${Date.now()}`, {
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (res.ok && !hasLoadedFromFirestore) {
+      if (res.ok) {
         const apiData = await res.json();
-        if (Array.isArray(apiData) && !hasLoadedFromFirestore) {
+        if (Array.isArray(apiData) && apiData.length > 0) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
             .map(ensureProductVariants)
             .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          if (!hasLoadedFromFirestore) {
+          if (normalized.length > 0) {
             cacheProductsLocally(normalized);
             callback(normalized);
           }
@@ -1582,7 +1580,18 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     } catch {}
   };
 
-  fetchFallbackProducts();
+  // Immediate live fetch without delay
+  fetchLiveProducts();
+
+  // Active polling interval (every 3.5s) to guarantee updates from /admin appear in live storefront immediately
+  const pollTimer = setInterval(fetchLiveProducts, 3500);
+
+  // Focus & mobile visibility change (crucial when switching between /admin and storefront)
+  const handleWakeup = () => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      fetchLiveProducts();
+    }
+  };
 
   // Listen to local/custom events dispatched during admin operations
   const handleCatalogUpdate = (e: any) => {
@@ -1634,11 +1643,17 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
     window.addEventListener("hos-catalog-updated", handleCatalogUpdate);
     window.addEventListener("hos-product-saved", handleSingleProductSaved);
     window.addEventListener("hos-product-deleted", handleProductDeleted);
+    window.addEventListener("focus", handleWakeup);
+    window.addEventListener("pageshow", handleWakeup);
+    window.addEventListener("online", handleWakeup);
     window.addEventListener("storage", (e) => {
       if (e.key === PRODUCTS_CACHE_KEY) {
         callback(getCachedProducts());
       }
     });
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleWakeup);
   }
 
   if (syncChannel) {
@@ -1647,11 +1662,18 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
   return () => {
     active = false;
+    clearInterval(pollTimer);
     unsubFs();
     if (typeof window !== "undefined") {
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdate);
       window.removeEventListener("hos-product-saved", handleSingleProductSaved);
       window.removeEventListener("hos-product-deleted", handleProductDeleted);
+      window.removeEventListener("focus", handleWakeup);
+      window.removeEventListener("pageshow", handleWakeup);
+      window.removeEventListener("online", handleWakeup);
+    }
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleWakeup);
     }
     if (syncChannel) {
       syncChannel.removeEventListener("message", handleBroadcastMessage);

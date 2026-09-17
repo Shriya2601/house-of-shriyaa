@@ -6,6 +6,7 @@ import type React from "react";
 
 const KNOWN_KOMMODO_MAP: Record<string, string> = {
   "eA9kgNNZCuEDbWDBS8JI": "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
+  "OSeP8KXZKOwa1kTFdvK2": "https://plain-eeur-prod-public.komododecks.com/202609/15/OSeP8KXZKOwa1kTFdvK2/image.jpg",
   "4UmFSGtcoZdZF37bKc3R": "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg",
 };
 

@@ -1311,7 +1311,9 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
             return;
           }
           let resolved = rawUrl;
-          if (rawUrl.includes("eA9kgNNZCuEDbWDBS8JI")) {
+          if (rawUrl.includes("OSeP8KXZKOwa1kTFdvK2")) {
+            resolved = "https://plain-eeur-prod-public.komododecks.com/202609/15/OSeP8KXZKOwa1kTFdvK2/image.jpg";
+          } else if (rawUrl.includes("eA9kgNNZCuEDbWDBS8JI")) {
             resolved = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
           } else if (rawUrl.includes("4UmFSGtcoZdZF37bKc3R")) {
             resolved = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
@@ -1356,7 +1358,9 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 for (let i = 0; i < body.heroSlides.length; i++) {
                   const s = body.heroSlides[i];
                   if (s && s.image && typeof s.image === "string") {
-                    if (s.image.includes("eA9kgNNZCuEDbWDBS8JI")) {
+                    if (s.image.includes("OSeP8KXZKOwa1kTFdvK2")) {
+                      s.image = "https://plain-eeur-prod-public.komododecks.com/202609/15/OSeP8KXZKOwa1kTFdvK2/image.jpg";
+                    } else if (s.image.includes("eA9kgNNZCuEDbWDBS8JI")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg";
                     } else if (s.image.includes("4UmFSGtcoZdZF37bKc3R")) {
                       s.image = "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg";
