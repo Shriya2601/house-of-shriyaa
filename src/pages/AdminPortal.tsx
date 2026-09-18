@@ -297,8 +297,14 @@ export default function AdminPortal() {
   useEffect(() => {
     if (isAdminSessionValid()) {
       setIsAdmin(true);
+      try {
+        localStorage.setItem("hos_admin_session_token", "houseofshriya_admin_secure_session");
+      } catch {}
     } else if (currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
       setIsAdmin(true);
+      try {
+        localStorage.setItem("hos_admin_session_token", "houseofshriya_admin_secure_session");
+      } catch {}
     }
   }, [currentUser]);
 

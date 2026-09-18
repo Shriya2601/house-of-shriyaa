@@ -439,6 +439,9 @@ export default function AddProductModal({
       }
       try {
         const uploaded = await uploadProductImageToFirebase(prodId, slot, trimmed);
+        if (uploaded && !uploaded.startsWith("blob:")) {
+          return uploaded;
+        }
         return uploaded || trimmed;
       } catch (err: any) {
         console.warn(`[AddProductModal] Pre-upload notice for ${slot}:`, err);

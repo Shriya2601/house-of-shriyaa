@@ -1248,7 +1248,11 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
 
           // Image Upload Handler (Supports Multipart Form Data & JSON dataUrl)
           if (method === "POST" || method === "PUT" || method === "PATCH") {
-            if (!isAuthorizedAdminRequest(req.headers)) {
+            const queryToken =
+              parsedUrl.searchParams.get("token") ||
+              parsedUrl.searchParams.get("adminToken") ||
+              parsedUrl.searchParams.get("key");
+            if (!isAuthorizedAdminRequest(req.headers, queryToken)) {
               res.setHeader("Content-Type", "application/json");
               res.statusCode = 401;
               res.end(JSON.stringify({ success: false, error: "Unauthorized: Admin authentication required to upload store images." }));
