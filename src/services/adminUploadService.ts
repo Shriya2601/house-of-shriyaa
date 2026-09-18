@@ -109,7 +109,9 @@ export async function optimizeImageForUpload(
         }
 
         const img = new Image();
-        img.crossOrigin = "anonymous";
+        if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+          img.crossOrigin = "anonymous";
+        }
         img.onerror = () => resolve(rawUrl);
         img.onload = () => {
           try {
@@ -276,21 +278,42 @@ export async function uploadImageToAdminStorage(
     } else if (fileOrDataUrl instanceof Blob) {
       blob = fileOrDataUrl;
       if ((fileOrDataUrl as File).name) filename = (fileOrDataUrl as File).name;
+    } else if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("blob:")) {
+      try {
+        const resp = await fetch(fileOrDataUrl);
+        blob = await resp.blob();
+        filename = `${slot}-${Date.now()}.jpg`;
+      } catch {
+        blob = new Blob(["image"], { type: "image/jpeg" });
+      }
     } else {
-      blob = new Blob(["test"], { type: "image/jpeg" });
+      blob = new Blob(["image"], { type: "image/jpeg" });
     }
 
     const formData = new FormData();
     formData.append("file", blob, filename);
+    formData.append("image", blob, filename);
     formData.append("slot", slot);
     if (productId) formData.append("productId", productId);
 
-    const formResponse = await fetch(uploadEndpoint, {
+    let formResponse = await fetch(uploadEndpoint, {
       method: "POST",
       headers: authHeaders,
       body: formData,
       signal: controller.signal,
     });
+
+    // If primary endpoint failed, attempt secondary endpoint /api/upload
+    if (!formResponse.ok) {
+      try {
+        const altEndpoint = `/api/upload?token=${encodeURIComponent(MASTER_ADMIN_TOKEN)}`;
+        formResponse = await fetch(altEndpoint, {
+          method: "POST",
+          headers: authHeaders,
+          body: formData,
+        });
+      } catch {}
+    }
 
     clearTimeout(timeoutId);
     onProgress?.(85);

@@ -249,7 +249,6 @@ export default function AdminLivePreviewStudio({
     } catch (err: any) {
       console.error("Firebase product image upload failed:", err);
       const message = err instanceof Error ? err.message : String(err);
-      alert(`Image upload failed: ${message}`);
       showToast("Photo upload failed: " + message, "error");
     } finally {
       setIsUploadingProductPhoto(false);

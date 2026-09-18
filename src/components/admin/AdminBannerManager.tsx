@@ -805,12 +805,9 @@ export default function AdminBannerManager({
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
-
     if (file) {
       void processAndUploadFile(file);
     }
-
-    event.target.value = "";
   };
 
   /* ------------------------------------------------------------------------ */

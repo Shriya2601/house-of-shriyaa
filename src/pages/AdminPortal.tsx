@@ -300,7 +300,7 @@ export default function AdminPortal() {
       try {
         localStorage.setItem("hos_admin_session_token", "houseofshriya_admin_secure_session");
       } catch {}
-    } else if (currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    } else if (isAuthorizedAdminEmail(currentUser?.email)) {
       setIsAdmin(true);
       try {
         localStorage.setItem("hos_admin_session_token", "houseofshriya_admin_secure_session");

@@ -123,7 +123,6 @@ export default function AdminProductManager({
     } catch (err: any) {
       console.error(err);
       const message = err instanceof Error ? err.message : String(err);
-      alert(message);
       showToast(message, "error");
     } finally {
       setUploadingProductId(null);

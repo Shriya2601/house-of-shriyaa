@@ -281,8 +281,9 @@ function setCorsHeaders(res: any) {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Requested-With, x-admin-token"
+    "Content-Type, Authorization, X-Requested-With, x-admin-token, x-admin-key, Accept, Origin, Cache-Control, Pragma, Range"
   );
+  res.setHeader("Access-Control-Max-Age", "86400");
 }
 
 function parseJsonBody(req: any): Promise<any> {

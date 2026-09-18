@@ -53,13 +53,14 @@ export async function parseUploadPayload(req: any, res: any): Promise<ParsedUplo
   // 1. Multipart Form Data
   if (contentType.includes("multipart/form-data")) {
     return new Promise((resolve, reject) => {
-      multerUpload.single("file")(req, res, (err: any) => {
+      multerUpload.any()(req, res, (err: any) => {
         if (err) {
           return reject(err);
         }
-        const file = req.file;
+        const files = (req.files as Express.Multer.File[]) || [];
+        const file = req.file || files[0];
         if (!file || !file.buffer) {
-          return reject(new Error("No file uploaded in form field 'file'"));
+          return reject(new Error("No file uploaded in form payload"));
         }
 
         const body = req.body || {};
