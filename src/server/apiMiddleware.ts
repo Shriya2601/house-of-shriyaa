@@ -47,12 +47,16 @@ function syncDataFile(filename: string, data: any): void {
     path.resolve(process.cwd(), "public/data", filename),
     path.resolve(process.cwd(), "src/data", filename),
     path.resolve(process.cwd(), "dist/data", filename),
+    path.resolve(process.cwd(), "dist/client/data", filename),
   ];
   let latestMtime = Date.now();
   for (const target of targets) {
     try {
       // Don't create dist directory if it does not already exist
-      if (target.includes("dist") && !fs.existsSync(path.resolve(process.cwd(), "dist"))) {
+      if (target.includes("dist/client") && !fs.existsSync(path.resolve(process.cwd(), "dist/client"))) {
+        continue;
+      }
+      if (target.includes("dist/data") && !fs.existsSync(path.resolve(process.cwd(), "dist"))) {
         continue;
       }
       const dir = path.dirname(target);
@@ -76,6 +80,7 @@ function readDataFile(filename: string, fallback: any = []): any {
     path.resolve(process.cwd(), "public/data", filename),
     path.resolve(process.cwd(), "src/data", filename),
     path.resolve(process.cwd(), "dist/data", filename),
+    path.resolve(process.cwd(), "dist/client/data", filename),
   ];
   let newestTarget: string | null = null;
   let newestMtime = -1;
@@ -376,6 +381,11 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           path.resolve(process.cwd(), "dist/uploads", rawFilename),
           path.resolve(process.cwd(), "dist/uploads/banners", filename),
           path.resolve(process.cwd(), "dist/uploads/products", filename),
+          path.resolve(process.cwd(), "dist/client/uploads", subPath),
+          path.resolve(process.cwd(), "dist/client/uploads", filename),
+          path.resolve(process.cwd(), "dist/client/uploads", rawFilename),
+          path.resolve(process.cwd(), "dist/client/uploads/banners", filename),
+          path.resolve(process.cwd(), "dist/client/uploads/products", filename),
           path.resolve(process.cwd(), "public", subPath),
           path.resolve(process.cwd(), "public", filename),
         ];

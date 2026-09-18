@@ -11,7 +11,7 @@
     "originalPrice": "₹1000",
     "price": "₹3,499",
     "inStock": true,
-    "updatedAt": "2026-09-18T08:08:02.288Z",
+    "updatedAt": "2026-09-18T11:26:05.507Z",
     "activeWishlist": true,
     "createdAt": "2026-09-03T06:47:37.021Z",
     "rating": "4.9",
@@ -50,10 +50,7 @@
         "image": "/uploads/hos-001-main-1788707076761-551.webp",
         "hoverImage": "/uploads/hos-001-hover-1788707076762-10.webp",
         "images": [
-          "/uploads/hos-001-main-1788707076761-551.webp",
-          "/uploads/hos-001-img-0-1788707076763-589.webp",
-          "/uploads/hos-001-img-1-1788707076763-948.webp",
-          "/uploads/hos-001-img-2-1788707076764-576.webp"
+          "/uploads/hos-001-main-1788707076761-551.webp"
         ],
         "inStock": true
       }

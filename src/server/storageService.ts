@@ -118,14 +118,17 @@ export function writeImageToDisk(filename: string, buffer: Buffer): string[] {
   const targets = [
     path.resolve(process.cwd(), "public/uploads", filename),
     path.resolve(process.cwd(), "dist/uploads", filename),
+    path.resolve(process.cwd(), "dist/client/uploads", filename),
   ];
 
   const written: string[] = [];
 
   for (const target of targets) {
     try {
-      // Avoid writing to dist/uploads if dist does not exist yet (e.g. before build)
-      if (target.includes("dist") && !fs.existsSync(path.resolve(process.cwd(), "dist"))) {
+      if (target.includes("dist/client") && !fs.existsSync(path.resolve(process.cwd(), "dist/client"))) {
+        continue;
+      }
+      if (target.includes("dist/uploads") && !fs.existsSync(path.resolve(process.cwd(), "dist"))) {
         continue;
       }
       const dir = path.dirname(target);

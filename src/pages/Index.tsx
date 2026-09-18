@@ -3158,7 +3158,7 @@ export function ProductCard({
 
       <div className="product-image relative">
         {!imgLoaded && (
-          <div className="absolute inset-0 shimmer-skeleton z-0" aria-hidden="true" />
+          <div className="absolute inset-0 shimmer-skeleton z-0 pointer-events-none transition-opacity duration-300" aria-hidden="true" />
         )}
         <CanvaEditable
           id={`product_${product.id}_image`}
@@ -3168,16 +3168,19 @@ export function ProductCard({
           src={activeImage}
           alt={product.name}
           productId={product.id}
-          className={`product-image-primary transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+          className="product-image-primary transition-opacity duration-300"
+          loading="lazy"
           onLoad={() => setImgLoaded(true)}
+          onError={() => setImgLoaded(true)}
         />
         <img
           key={`hover_${product.id}_${productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage}`}
           data-editable="true"
           className="product-image-hover"
-          src={productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage}
+          src={normalizeImageUrl(productImages[1] || currentVariant?.hoverImage || product.hoverImage || activeImage)}
           alt=""
           loading="lazy"
+          referrerPolicy="no-referrer"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
           }}

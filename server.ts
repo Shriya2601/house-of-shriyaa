@@ -18,6 +18,7 @@ async function startServer() {
   // Statically serve uploads directory with no-cache revalidation so updated images appear immediately
   const publicUploadsPath = path.join(process.cwd(), "public/uploads");
   const distUploadsPath = path.join(process.cwd(), "dist/uploads");
+  const distClientUploadsPath = path.join(process.cwd(), "dist/client/uploads");
   const uploadStaticOptions = {
     etag: true,
     lastModified: true,
@@ -28,6 +29,7 @@ async function startServer() {
   };
   app.use("/uploads", express.static(publicUploadsPath, uploadStaticOptions));
   app.use("/uploads", express.static(distUploadsPath, uploadStaticOptions));
+  app.use("/uploads", express.static(distClientUploadsPath, uploadStaticOptions));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

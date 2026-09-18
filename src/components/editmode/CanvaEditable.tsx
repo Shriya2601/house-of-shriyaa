@@ -98,6 +98,16 @@ export default function CanvaEditable({
         if (!target.src.includes("unsplash.com")) {
           target.src = "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80";
         }
+        if (typeof (rest as any).onError === "function") {
+          try {
+            (rest as any).onError(e);
+          } catch {}
+        }
+        if (typeof (rest as any).onLoad === "function") {
+          try {
+            (rest as any).onLoad(e);
+          } catch {}
+        }
       },
     });
   }
