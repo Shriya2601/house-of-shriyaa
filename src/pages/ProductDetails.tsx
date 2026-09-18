@@ -68,12 +68,14 @@ export default function ProductDetails() {
     if (found && !deleted.has(found.id) && !deleted.has((found as any).sku)) {
       return found;
     }
-    const fallback = fallbackCatalog.find((p) => p.id === id);
-    if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku)) {
-      return fallback;
+    if (loadingCatalog || products.length === 0) {
+      const fallback = fallbackCatalog.find((p) => p.id === id);
+      if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku)) {
+        return fallback;
+      }
     }
     return null;
-  }, [products, id]);
+  }, [products, id, loadingCatalog]);
 
   // Normalized available color variants for this product
   const availableVariants = useMemo<ColorVariant[]>(() => {

@@ -490,6 +490,21 @@ export function broadcastCrossDeviceSync(
   }
 }
 
+if (typeof window !== "undefined" && syncChannel) {
+  syncChannel.addEventListener("message", (event: MessageEvent) => {
+    const { type, data } = event.data || {};
+    if (type === "brand_styles" && data) {
+      cacheBrandStylesLocally(data);
+      window.dispatchEvent(new CustomEvent("hos-brand-styles-updated", { detail: data }));
+    } else if (type === "custom_overrides" && data) {
+      cacheCustomOverridesLocally(data);
+      window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: data }));
+    } else if (type === "factory_reset") {
+      window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: [] }));
+    }
+  });
+}
+
 // Server-Sent Events (SSE) live sync client: keeps any device and tab in real-time sync with server files
 let sseSource: EventSource | null = null;
 let sseReconnectTimer: any = null;
@@ -550,6 +565,19 @@ export function initServerLiveSync() {
           filtered.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           localStorage.setItem("hos_atelier_bookings", JSON.stringify(filtered));
           window.dispatchEvent(new CustomEvent("hos-bookings-updated", { detail: filtered }));
+        } else if ((payload.type === "brand_styles" || payload.type === "brandStyles") && payload.data) {
+          cacheBrandStylesLocally(payload.data);
+          window.dispatchEvent(new CustomEvent("hos-brand-styles-updated", { detail: payload.data }));
+        } else if ((payload.type === "custom_overrides" || payload.type === "customOverrides") && payload.data) {
+          cacheCustomOverridesLocally(payload.data);
+          window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: payload.data }));
+        } else if (payload.type === "factory_reset") {
+          localStorage.removeItem("hos_cached_products");
+          localStorage.removeItem("hos_custom_overrides");
+          syncServerDeletedIds().catch(() => {});
+          window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: [] }));
+        } else if (payload.type === "deleted_ids" || payload.type === "deleted_id") {
+          syncServerDeletedIds().catch(() => {});
         }
       } catch (err) {
         console.warn("SSE sync payload parse notice:", err);
