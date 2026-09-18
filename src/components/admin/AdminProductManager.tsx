@@ -27,7 +27,7 @@ interface AdminProductManagerProps {
   products: Product[];
   onProductAdded?: (product: Product) => void;
   onProductUpdated: (product: Product) => void;
-  onProductDeleted: (id: string) => void;
+  onProductDeleted: (id: string, product?: Product) => void;
   onCatalogReset?: () => void;
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
 }
@@ -209,7 +209,7 @@ export default function AdminProductManager({
     setDeletingId(p.id);
     try {
       // 1. Immediate UI update for instant feedback
-      onProductDeleted(p.id);
+      onProductDeleted(p.id, p);
       // 2. Storage & backend API deletion
       await deleteProduct(p.id);
       showToast(`Product "${p.name}" deleted successfully.`);

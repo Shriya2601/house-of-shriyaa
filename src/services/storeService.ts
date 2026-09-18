@@ -239,21 +239,10 @@ export function getLocallyDeletedIds(type: string): Set<string> {
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
-        let cleaned = false;
-        const validItems: string[] = [];
         for (const item of arr) {
-          if (item && typeof item === "string") {
-            // For products, only genuine unique IDs/SKUs are valid deleted targets; never product names
-            if (type === "products" && !item.startsWith("hos-") && !item.startsWith("var-") && !item.startsWith("prod-")) {
-              cleaned = true;
-              continue;
-            }
-            validItems.push(item);
-            set.add(item);
+          if (item && typeof item === "string" && item.trim()) {
+            set.add(item.trim());
           }
-        }
-        if (cleaned) {
-          localStorage.setItem(`hos_deleted_${type}`, JSON.stringify(validItems));
         }
       }
     }
@@ -702,19 +691,17 @@ export function getCachedProducts(): Product[] {
     const saved = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const filtered = parsed
+      if (Array.isArray(parsed)) {
+        return parsed
           .map(ensureProductVariants)
           .filter(
             (p) =>
               p &&
               p.id &&
               !deleted.has(p.id) &&
-              !deleted.has((p as any).sku)
+              !deleted.has((p as any).sku) &&
+              (!p.name || !deleted.has(p.name))
           );
-        if (filtered.length > 0) {
-          return filtered;
-        }
       }
     }
   } catch {}
@@ -725,7 +712,8 @@ export function getCachedProducts(): Product[] {
         p &&
         p.id &&
         !deleted.has(p.id) &&
-        !deleted.has((p as any).sku)
+        !deleted.has((p as any).sku) &&
+        (!p.name || !deleted.has(p.name))
     );
 }
 
@@ -757,14 +745,26 @@ export function getCachedCategories(): CategoryItem[] {
   const deleted = getLocallyDeletedIds("categories");
   try {
     const saved = localStorage.getItem(CATEGORIES_CACHE_KEY);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.filter((c) => c && c.id && !deleted.has(c.id) && !deleted.has(c.slug));
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (c) =>
+            c &&
+            (!c.id || !deleted.has(c.id)) &&
+            (!c.slug || !deleted.has(c.slug)) &&
+            (!c.name || !deleted.has(c.name))
+        );
       }
     }
   } catch {}
-  return defaultCategories.filter((c) => c && c.id && !deleted.has(c.id) && !deleted.has(c.slug));
+  return defaultCategories.filter(
+    (c) =>
+      c &&
+      (!c.id || !deleted.has(c.id)) &&
+      (!c.slug || !deleted.has(c.slug)) &&
+      (!c.name || !deleted.has(c.name))
+  );
 }
 
 export function cacheCategoriesLocally(cats: CategoryItem[]): void {
@@ -854,15 +854,13 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
-          if (Array.isArray(serverData.heroSlides) && serverData.heroSlides.length > 0) {
+          if (Array.isArray(serverData.heroSlides)) {
             merged.heroSlides = serverData.heroSlides;
-          } else {
-            merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          if (Array.isArray(serverData.features) && serverData.features.length > 0) {
+          if (Array.isArray(serverData.features)) {
             merged.features = serverData.features;
           }
-          if (Array.isArray(serverData.trustBadges) && serverData.trustBadges.length > 0) {
+          if (Array.isArray(serverData.trustBadges)) {
             merged.trustBadges = serverData.trustBadges;
           }
           // Server response is authoritative - force apply
@@ -1007,7 +1005,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     updatedAt: timestamp,
   };
 
-  if (Array.isArray(sanitizedContent.heroSlides) && sanitizedContent.heroSlides.length > 0) {
+  if (Array.isArray(sanitizedContent.heroSlides)) {
     const uploadedSlides = await Promise.all(
       sanitizedContent.heroSlides.map(async (slide, idx) => {
         if (slide.image && (slide.image.startsWith("data:") || slide.image.startsWith("blob:"))) {
@@ -1025,10 +1023,10 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     );
     updated.heroSlides = uploadedSlides;
   }
-  if (Array.isArray(sanitizedContent.features) && sanitizedContent.features.length > 0) {
+  if (Array.isArray(sanitizedContent.features)) {
     updated.features = sanitizedContent.features;
   }
-  if (Array.isArray(sanitizedContent.trustBadges) && sanitizedContent.trustBadges.length > 0) {
+  if (Array.isArray(sanitizedContent.trustBadges)) {
     updated.trustBadges = sanitizedContent.trustBadges;
   }
 
@@ -1261,12 +1259,17 @@ export async function saveCategory(category: CategoryItem): Promise<void> {
 export async function deleteCategory(id: string): Promise<void> {
   recordLocallyDeletedId("categories", id);
   const current = getCachedCategories();
-  const target = current.find((c) => c.id === id);
+  const target = current.find((c) => c.id === id || c.slug === id || c.name === id);
   if (target) {
     if (target.slug) recordLocallyDeletedId("categories", target.slug);
     if (target.name) recordLocallyDeletedId("categories", target.name);
+    if (target.id) recordLocallyDeletedId("categories", target.id);
   }
-  const filtered = current.filter((c) => c.id !== id);
+  const filtered = current.filter(
+    (c) =>
+      c.id !== id &&
+      (!target || (c.slug !== target.slug && c.name !== target.name))
+  );
   cacheCategoriesLocally(filtered);
 
   // 1. Sync with central backend API
@@ -1290,6 +1293,13 @@ export async function deleteCategory(id: string): Promise<void> {
         body: JSON.stringify({ type: "categories", id: target.slug }),
       });
     }
+    if (target?.name) {
+      await fetch("/api/deleted-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "categories", id: target.name }),
+      });
+    }
   } catch {}
 
   // 3. Firestore deletion
@@ -1299,6 +1309,11 @@ export async function deleteCategory(id: string): Promise<void> {
   } catch {}
 
   if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("hos-category-deleted", {
+        detail: { id, slug: target?.slug, name: target?.name },
+      })
+    );
     window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: filtered }));
   }
   broadcastCrossDeviceSync("categories", filtered);
@@ -1621,16 +1636,21 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       });
       if (res.ok) {
         const apiData = await res.json();
-        if (Array.isArray(apiData) && apiData.length > 0) {
+        if (Array.isArray(apiData)) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
             .map(ensureProductVariants)
-            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          if (normalized.length > 0) {
-            cacheProductsLocally(normalized);
-            callback(normalized);
-            return;
-          }
+            .filter(
+              (p) =>
+                p &&
+                p.id &&
+                !deleted.has(p.id) &&
+                !deleted.has((p as any).sku) &&
+                (!p.name || !deleted.has(p.name))
+            );
+          cacheProductsLocally(normalized);
+          callback(normalized);
+          return;
         }
       }
     } catch {}
@@ -1643,15 +1663,20 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       });
       if (resStatic.ok) {
         const apiData = await resStatic.json();
-        if (Array.isArray(apiData) && apiData.length > 0) {
+        if (Array.isArray(apiData)) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
             .map(ensureProductVariants)
-            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
-          if (normalized.length > 0) {
-            cacheProductsLocally(normalized);
-            callback(normalized);
-          }
+            .filter(
+              (p) =>
+                p &&
+                p.id &&
+                !deleted.has(p.id) &&
+                !deleted.has((p as any).sku) &&
+                (!p.name || !deleted.has(p.name))
+            );
+          cacheProductsLocally(normalized);
+          callback(normalized);
         }
       }
     } catch {}
@@ -1697,8 +1722,15 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
 
   const handleProductDeleted = (e: any) => {
     const deletedId = e.detail?.id;
-    if (deletedId) {
-      const current = getCachedProducts().filter((p) => p.id !== deletedId);
+    const deletedSku = e.detail?.sku;
+    const deletedName = e.detail?.name;
+    if (deletedId || deletedSku || deletedName) {
+      const current = getCachedProducts().filter(
+        (p) =>
+          (!deletedId || p.id !== deletedId) &&
+          (!deletedSku || (p as any).sku !== deletedSku) &&
+          (!deletedName || p.name !== deletedName)
+      );
       cacheProductsLocally(current);
       callback(current);
     }
@@ -1888,6 +1920,7 @@ export async function deleteProduct(id: string): Promise<void> {
   recordLocallyDeletedId("products", id);
   if (target) {
     if ((target as any).sku) recordLocallyDeletedId("products", (target as any).sku);
+    if (target.name) recordLocallyDeletedId("products", target.name);
     if (Array.isArray(target.colorVariants)) {
       target.colorVariants.forEach((v) => {
         if (v && v.id) recordLocallyDeletedId("products", v.id);
@@ -1895,7 +1928,10 @@ export async function deleteProduct(id: string): Promise<void> {
     }
   }
   const current = currentBefore.filter(
-    (p) => p.id !== id && (p as any).sku !== id
+    (p) =>
+      p.id !== id &&
+      (p as any).sku !== id &&
+      (!target || p.name !== target.name)
   );
   cacheProductsLocally(current);
 
@@ -1906,7 +1942,7 @@ export async function deleteProduct(id: string): Promise<void> {
       const parsed = JSON.parse(rawOverrides);
       let changed = false;
       for (const k of Object.keys(parsed)) {
-        if (k.startsWith(`product_${id}_`) || k === id) {
+        if (k.startsWith(`product_${id}_`) || k === id || (target?.name && k.includes(target.name))) {
           delete parsed[k];
           changed = true;
         }
@@ -1922,7 +1958,11 @@ export async function deleteProduct(id: string): Promise<void> {
 
   // 1. Immediately dispatch real-time events for instant local & cross-device updates (0ms responsiveness)
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-deleted", { detail: { id } }));
+    window.dispatchEvent(
+      new CustomEvent("hos-product-deleted", {
+        detail: { id, sku: (target as any)?.sku, name: target?.name },
+      })
+    );
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: current }));
   }
   broadcastCrossDeviceSync("products", current);
@@ -1941,6 +1981,13 @@ export async function deleteProduct(id: string): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "products", id }),
     });
+    if (target?.name) {
+      await fetch("/api/deleted-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "products", id: target.name }),
+      });
+    }
   } catch {}
 
   // 4. Authoritative Firestore deletion: await deleteDoc directly

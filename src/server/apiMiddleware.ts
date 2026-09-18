@@ -171,7 +171,7 @@ function readProducts(): any[] {
   const list = readDataFile("products.json", []);
   const deleted = getDeletedIds("products");
   return (Array.isArray(list) ? list : []).filter(
-    (p) => p && p.id && !deleted.has(p.id) && !deleted.has(p.sku)
+    (p) => p && p.id && !deleted.has(p.id) && (!p.sku || !deleted.has(p.sku)) && (!p.name || !deleted.has(p.name))
   );
 }
 
@@ -184,7 +184,7 @@ function readCategories(): any[] {
   const list = readDataFile("categories.json", []);
   const deleted = getDeletedIds("categories");
   return (Array.isArray(list) ? list : []).filter(
-    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug))
+    (c) => c && (!c.id || !deleted.has(c.id)) && (!c.slug || !deleted.has(c.slug)) && (!c.name || !deleted.has(c.name))
   );
 }
 
@@ -486,7 +486,25 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
       urlWithoutQuery.endsWith(".json")
     ) {
       const filename = path.basename(urlWithoutQuery);
-      const data = readDataFile(filename, null);
+      let data: any = null;
+      if (filename === "products.json") {
+        data = readProducts();
+      } else if (filename === "categories.json") {
+        data = readCategories();
+      } else if (filename === "orders.json") {
+        data = readOrdersList();
+      } else if (filename === "bookings.json") {
+        data = readBookingsList();
+      } else if (filename === "siteContent.json") {
+        data = readSiteContent();
+      } else if (filename === "brandStyles.json") {
+        data = readBrandStyles();
+      } else if (filename === "customOverrides.json") {
+        data = readCustomOverrides();
+      } else {
+        data = readDataFile(filename, null);
+      }
+
       if (data !== null) {
         setCorsHeaders(res);
         setAntiCacheHeaders(res);

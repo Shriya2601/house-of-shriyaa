@@ -20,6 +20,9 @@ import {
   getCachedSiteContent,
   getCachedProducts,
   getCachedCategories,
+  cacheSiteContentLocally,
+  cacheProductsLocally,
+  cacheCategoriesLocally,
   subscribeSiteContent,
   subscribeProducts,
   subscribeCategories,
@@ -29,6 +32,7 @@ import {
   subscribeAuthState,
   seedInitialProductsIfEmpty,
   syncServerDeletedIds,
+  getLocallyDeletedIds,
   fetchCustomerProfile,
   updateCustomerProfile as saveProfileToDb,
   customerSignIn,
@@ -432,17 +436,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         if (prodsRes && prodsRes.ok) {
           const prods = await prodsRes.json();
-          if (Array.isArray(prods) && prods.length > 0) {
-            setProducts(prods);
-            cacheProductsLocally(prods);
+          if (Array.isArray(prods)) {
+            const deleted = getLocallyDeletedIds("products");
+            const clean = prods.filter(
+              (p: any) =>
+                p &&
+                p.id &&
+                !deleted.has(p.id) &&
+                (!p.sku || !deleted.has(p.sku)) &&
+                (!p.name || !deleted.has(p.name))
+            );
+            setProducts(clean);
+            cacheProductsLocally(clean);
             setLoadingCatalog(false);
           }
         }
         if (catsRes && catsRes.ok) {
           const cats = await catsRes.json();
-          if (Array.isArray(cats) && cats.length > 0) {
-            setCategories(cats);
-            cacheCategoriesLocally(cats);
+          if (Array.isArray(cats)) {
+            const deleted = getLocallyDeletedIds("categories");
+            const clean = cats.filter(
+              (c: any) =>
+                c &&
+                (!c.id || !deleted.has(c.id)) &&
+                (!c.slug || !deleted.has(c.slug)) &&
+                (!c.name || !deleted.has(c.name))
+            );
+            setCategories(clean);
+            cacheCategoriesLocally(clean);
           }
         }
       } catch {}
@@ -468,12 +489,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Real-time deletion listeners
     const handleProdDel = (e: any) => {
       const id = e.detail?.id;
-      if (id) {
-        setProducts((prev) => prev.filter((p) => p.id !== id));
-        setCart((prev) => prev.filter((item) => item.product.id !== id));
+      const sku = e.detail?.sku;
+      const name = e.detail?.name;
+      if (id || sku || name) {
+        setProducts((prev) =>
+          prev.filter(
+            (p) =>
+              (!id || p.id !== id) &&
+              (!sku || (p as any).sku !== sku) &&
+              (!name || p.name !== name)
+          )
+        );
+        setCart((prev) =>
+          prev.filter(
+            (item) =>
+              (!id || item.product.id !== id) &&
+              (!sku || (item.product as any).sku !== sku) &&
+              (!name || item.product.name !== name)
+          )
+        );
         setWishlist((prev) => {
           const next = new Set(prev);
-          next.delete(id);
+          if (id) next.delete(id);
+          if (sku) next.delete(sku);
           return next;
         });
       }
@@ -494,7 +532,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
     const handleCatDel = (e: any) => {
       const id = e.detail?.id;
-      if (id) setCategories((prev) => prev.filter((c) => c.id !== id));
+      const slug = e.detail?.slug;
+      const name = e.detail?.name;
+      if (id || slug || name) {
+        setCategories((prev) =>
+          prev.filter(
+            (c) =>
+              (!id || c.id !== id) &&
+              (!slug || c.slug !== slug) &&
+              (!name || c.name !== name)
+          )
+        );
+      }
     };
     const handleCatSaved = (e: any) => {
       const cat = e.detail;

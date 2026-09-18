@@ -125,7 +125,9 @@ export default function AdminCategoryManager({ showToast }: AdminCategoryManager
     setDeletingId(cat.id);
     try {
       // Optimistic update
-      setCategories((prev) => prev.filter((c) => c.id !== cat.id));
+      setCategories((prev) =>
+        prev.filter((c) => c.id !== cat.id && c.slug !== cat.slug && c.name !== cat.name)
+      );
       await deleteCategory(cat.id);
       showToast(`Category "${cat.name}" deleted and removed from live site.`, "info");
     } catch (err: any) {

@@ -334,17 +334,17 @@ export default function AdminPortal() {
       if (prodRes.ok) {
         const prodData = await prodRes.json();
         if (Array.isArray(prodData)) {
-          // Unrecord active products from locally deleted set so stale browser cache never hides active products
-          prodData.forEach((p: any) => {
-            if (p && p.id) {
-              unrecordLocallyDeletedId("products", p.id);
-              if (p.name) unrecordLocallyDeletedId("products", p.name);
-            }
-          });
           const deleted = getLocallyDeletedIds("products");
           const normalized = prodData
             .map(ensureProductVariants)
-            .filter((p: Product) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+            .filter(
+              (p: Product) =>
+                p &&
+                p.id &&
+                !deleted.has(p.id) &&
+                (!(p as any).sku || !deleted.has((p as any).sku)) &&
+                (!p.name || !deleted.has(p.name))
+            );
           setProducts(normalized);
           cacheProductsLocally(normalized);
         }
@@ -1503,8 +1503,14 @@ export default function AdminPortal() {
                 return [updatedProd, ...prev];
               });
             }}
-            onProductDeleted={(deletedId) => {
-              setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+            onProductDeleted={(deletedId, deletedProd) => {
+              setProducts((prev) =>
+                prev.filter(
+                  (p) =>
+                    p.id !== deletedId &&
+                    (!deletedProd || (p.name !== deletedProd.name && (p as any).sku !== (deletedProd as any).sku))
+                )
+              );
             }}
             onCatalogReset={() => {
               setProducts([]);
