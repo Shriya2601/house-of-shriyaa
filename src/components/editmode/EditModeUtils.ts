@@ -27,31 +27,9 @@ export function isInsideAIStudioEditor(): boolean {
     return false;
   }
 
-  // Always enable in dev container environments (both inside iframe and in new tab)
-  if (
-    hostname.includes("ais-dev-") ||
-    hostname.includes("localhost") ||
-    hostname.includes("127.0.0.1")
-  ) {
-    return true;
-  }
+  // Only activate Canva visual edit mode when explicitly requested via query parameter or admin toggle
+  const saved = typeof localStorage !== "undefined" ? localStorage.getItem("hos_edit_mode") : null;
+  if (saved === "true") return true;
 
-  // Check if embedded in Google AI Studio editor iframe
-  try {
-    const isEmbeddedInIframe = window.self !== window.top;
-    const ancestor =
-      (window.location as any).ancestorOrigins?.[0] || document.referrer || "";
-
-    if (ancestor) {
-      const isStudio =
-        ancestor.includes("ai.studio") ||
-        ancestor.includes("aistudio.google.com") ||
-        ancestor.includes("google.com");
-      if (isStudio) return true;
-    }
-
-    return isEmbeddedInIframe;
-  } catch {
-    return false;
-  }
+  return false;
 }

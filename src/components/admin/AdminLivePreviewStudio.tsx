@@ -116,10 +116,11 @@ export default function AdminLivePreviewStudio({
         siteContent?.heroSlides && siteContent.heroSlides.length > 0
           ? siteContent.heroSlides
           : heroSlides;
-      await saveSiteContent({ heroSlides: slidesToSave });
+      const saved = await saveSiteContent({ heroSlides: slidesToSave });
+      setSiteContent((prev) => ({ ...prev, ...saved, heroSlides: slidesToSave }));
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Slide 0${selectedSlideIndex + 1} published live to boutique!`, "success");
-      notifyIframeRefresh();
+      notifyIframeRefresh(saved);
     } catch (err: any) {
       showToast(err.message || "Failed to publish slide changes", "error");
     } finally {
@@ -146,12 +147,12 @@ export default function AdminLivePreviewStudio({
         idx === selectedSlideIndex ? { ...s, image: finalUrl } : s
       );
 
-      setSiteContent((prev) => ({ ...prev, heroSlides: nextSlides }));
-      await saveSiteContent({ heroSlides: nextSlides });
+      const saved = await saveSiteContent({ heroSlides: nextSlides });
+      setSiteContent((prev) => ({ ...prev, ...saved, heroSlides: nextSlides }));
 
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Hero Slide 0${selectedSlideIndex + 1} photo updated & live!`, "success");
-      notifyIframeRefresh();
+      notifyIframeRefresh(saved);
     } catch (err: any) {
       showToast("Error uploading photo: " + (err.message || "Failed"), "error");
     } finally {
@@ -240,9 +241,11 @@ export default function AdminLivePreviewStudio({
         cleanupOldStorageImage(oldImage, finalUrl).catch(() => {});
       }
 
+      const nextProds = products.map((p) => (p.id === updated.id ? updated : p));
+      setProducts(nextProds);
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Photo for "${updated.name}" updated & published live!`, "success");
-      notifyIframeRefresh();
+      notifyIframeRefresh(undefined, nextProds);
     } catch (err: any) {
       console.error("Firebase product image upload failed:", err);
       const message = err instanceof Error ? err.message : String(err);
@@ -262,11 +265,12 @@ export default function AdminLivePreviewStudio({
         ...activeProduct,
         ...updates,
       };
-      setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      const nextProds = products.map((p) => (p.id === updated.id ? updated : p));
+      setProducts(nextProds);
       await saveProduct(updated);
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast(`Updated "${updated.name}" live in boutique!`, "success");
-      notifyIframeRefresh();
+      notifyIframeRefresh(undefined, nextProds);
     } catch (err: any) {
       showToast("Update failed: " + (err.message || "Error"), "error");
     } finally {
@@ -291,10 +295,11 @@ export default function AdminLivePreviewStudio({
     try {
       // Exclude heroSlides from CMS update to prevent overwriting banner images
       const { heroSlides: _unused, ...safeCms } = cmsData;
-      await saveSiteContent(safeCms);
+      const saved = await saveSiteContent(safeCms);
+      setSiteContent((prev) => ({ ...prev, ...saved }));
       setLastSavedTime(new Date().toLocaleTimeString());
       showToast("Site text & announcement banner published live!", "success");
-      notifyIframeRefresh();
+      notifyIframeRefresh(saved);
     } catch (err: any) {
       showToast("Failed to save CMS text: " + (err.message || "Error"), "error");
     } finally {
@@ -329,15 +334,22 @@ export default function AdminLivePreviewStudio({
   // ---------------------------------------------------------------------------
   // REFRESH & SYNC UTILS
   // ---------------------------------------------------------------------------
-  const notifyIframeRefresh = () => {
+  const notifyIframeRefresh = (
+    freshContent?: SiteContent,
+    freshProducts?: Product[],
+    freshCategories?: CategoryItem[]
+  ) => {
+    const payloadContent = freshContent || siteContent;
+    const payloadProducts = freshProducts || products;
+    const payloadCategories = freshCategories || categories;
     try {
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
           {
             type: "hos-sync-refresh",
-            products,
-            siteContent,
-            categories,
+            products: payloadProducts,
+            siteContent: payloadContent,
+            categories: payloadCategories,
             timestamp: Date.now(),
           },
           "*"

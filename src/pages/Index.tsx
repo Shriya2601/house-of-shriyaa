@@ -2294,7 +2294,7 @@ export function StoreHeader({
     <header className="store-header">
       {siteContent?.announcementVisible === true &&
        siteContent?.announcementText &&
-       siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").replace(/Bespoke Shipping Across India\s*•?\s*/gi, "").trim() !== "" && (
+       siteContent.announcementText.trim() !== "" && (
         <div className="announcement-bar">
           <button
             data-editable="true"
@@ -2306,7 +2306,7 @@ export function StoreHeader({
               id="announcement_bar_text"
               fieldPath="announcementText"
               label="Announcement Bar"
-              text={`${siteContent.announcementText.replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "").replace(/Bespoke Shipping Across India\s*•?\s*/gi, "").trim() || "Handcrafted Unstitched Heirlooms"} · ${siteContent.announcementCta || "Shop Now"}`}
+              text={`${siteContent.announcementText}${siteContent.announcementCta ? ` · ${siteContent.announcementCta}` : ""}`}
             />
             <ArrowRight size={13} className="shrink-0 inline ml-1" />
           </button>
@@ -2525,16 +2525,16 @@ function Hero({ onPookie }: { onPookie: () => void }) {
       return slidesToUse.map((s, idx) => {
         const fallback = slides[idx % slides.length] || slides[0];
         return {
-          eyebrow: s.eyebrow || (s as any).subtitle || fallback.eyebrow,
+          eyebrow: s.eyebrow !== undefined ? s.eyebrow : fallback.eyebrow,
           number: s.number || `0${idx + 1}`,
-          collection: s.collection || (s as any).badge || fallback.collection,
-          title: s.title !== undefined && s.title !== "" ? s.title : fallback.title,
-          description: s.description !== undefined && s.description !== "" ? s.description : fallback.description,
+          collection: s.collection !== undefined ? s.collection : fallback.collection,
+          title: s.title !== undefined ? s.title : fallback.title,
+          description: s.description !== undefined ? s.description : fallback.description,
           image: normalizeImageUrl(s.image) || s.image || fallback.image,
-          season: s.season || fallback.season,
-          caption: s.caption || fallback.caption,
-          mood: s.mood || fallback.mood,
-          ctaText: s.ctaText || fallback.ctaText,
+          season: s.season !== undefined ? s.season : fallback.season,
+          caption: s.caption !== undefined ? s.caption : fallback.caption,
+          mood: s.mood !== undefined ? s.mood : fallback.mood,
+          ctaText: s.ctaText !== undefined ? s.ctaText : fallback.ctaText,
           ctaTarget: s.ctaTarget || fallback.ctaTarget || "catalog-section",
         };
       });
@@ -3551,6 +3551,14 @@ export default function Index() {
             .then((prods) => {
               if (Array.isArray(prods) && prods.length > 0) {
                 window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: prods }));
+              }
+            })
+            .catch(() => {});
+          fetch(`/api/site-content?t=${Date.now()}`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((content) => {
+              if (content && typeof content === "object") {
+                window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: content }));
               }
             })
             .catch(() => {});

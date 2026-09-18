@@ -702,7 +702,7 @@ export function getCachedProducts(): Product[] {
     const saved = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length >= defaultProducts.length) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         const filtered = parsed
           .map(ensureProductVariants)
           .filter(
@@ -712,7 +712,7 @@ export function getCachedProducts(): Product[] {
               !deleted.has(p.id) &&
               !deleted.has((p as any).sku)
           );
-        if (filtered.length >= defaultProducts.length) {
+        if (filtered.length > 0) {
           return filtered;
         }
       }
@@ -774,12 +774,6 @@ export function cacheCategoriesLocally(cats: CategoryItem[]): void {
 }
 
 export function sanitizeSiteContent(content: Partial<SiteContent>): Partial<SiteContent> {
-  if (content.announcementText) {
-    content.announcementText = content.announcementText
-      .replace(/Complimentary Bespoke Shipping Across India\s*•?\s*/gi, "")
-      .replace(/Bespoke Shipping Across India\s*•?\s*/gi, "")
-      .trim();
-  }
   return content;
 }
 
@@ -1038,8 +1032,27 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     updated.trustBadges = sanitizedContent.trustBadges;
   }
 
-  // 1. Immediately cache locally
+  // 1. Immediately cache locally and clear any stale overrides for updated fields
   cacheSiteContentLocally(updated);
+  try {
+    const rawOverrides = localStorage.getItem("hos_custom_overrides");
+    if (rawOverrides) {
+      const overrides = JSON.parse(rawOverrides);
+      let changed = false;
+      for (const k of Object.keys(overrides)) {
+        if (k.startsWith("hero_slide_") || k.startsWith("announcement_bar_") || k.includes("hero")) {
+          delete overrides[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem("hos_custom_overrides", JSON.stringify(overrides));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: overrides }));
+        }
+      }
+    }
+  } catch {}
 
   // 2. Dispatch events synchronously for 0ms reactive UI refresh
   if (typeof window !== "undefined") {
@@ -1835,7 +1848,28 @@ export async function saveProduct(
     console.warn("[StoreService] Server /api/products save notice:", apiErr);
   }
 
-  // 6. Firestore Cloud Persistence with Admin Auth assurance
+  // 6. Clear any stale custom overrides for this product so updated name/price/description always show
+  try {
+    const rawOverrides = localStorage.getItem("hos_custom_overrides");
+    if (rawOverrides) {
+      const overrides = JSON.parse(rawOverrides);
+      let changed = false;
+      for (const k of Object.keys(overrides)) {
+        if (k.startsWith(`product_${id}_`)) {
+          delete overrides[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem("hos_custom_overrides", JSON.stringify(overrides));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: overrides }));
+        }
+      }
+    }
+  } catch {}
+
+  // 7. Firestore Cloud Persistence with Admin Auth assurance
   const finalProduct: Product = sanitized;
   try {
     await ensureAdminFirebaseAuth().catch(() => null);

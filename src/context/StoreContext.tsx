@@ -415,6 +415,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Immediately synchronize any deleted items from the server so stale items are purged
     syncServerDeletedIds().catch(() => {});
 
+    // Fast-track authoritative API fetch on mount to ensure disk persistence is instantly visible
+    const fetchFreshServerData = async () => {
+      try {
+        const [contentRes, prodsRes, catsRes] = await Promise.all([
+          fetch(`/api/site-content?t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
+          fetch(`/api/products?t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
+          fetch(`/api/categories?t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
+        ]);
+        if (contentRes && contentRes.ok) {
+          const content = await contentRes.json();
+          if (content && typeof content === "object") {
+            setSiteContent((prev) => ({ ...prev, ...content }));
+            cacheSiteContentLocally(content);
+          }
+        }
+        if (prodsRes && prodsRes.ok) {
+          const prods = await prodsRes.json();
+          if (Array.isArray(prods) && prods.length > 0) {
+            setProducts(prods);
+            cacheProductsLocally(prods);
+            setLoadingCatalog(false);
+          }
+        }
+        if (catsRes && catsRes.ok) {
+          const cats = await catsRes.json();
+          if (Array.isArray(cats) && cats.length > 0) {
+            setCategories(cats);
+            cacheCategoriesLocally(cats);
+          }
+        }
+      } catch {}
+    };
+    fetchFreshServerData();
+
     // Attempt initial database bootstrap if products empty
     seedInitialProductsIfEmpty().catch(() => {});
 
@@ -553,6 +587,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .then((r) => r.json())
           .then((prods) => {
             if (Array.isArray(prods) && prods.length > 0) setProducts(prods);
+          })
+          .catch(() => {});
+        fetch(`/api/site-content?t=${Date.now()}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .then((content) => {
+            if (content && typeof content === "object") setSiteContent((prev) => ({ ...prev, ...content }));
           })
           .catch(() => {});
         fetch(`/api/categories?t=${Date.now()}`, { cache: "no-store" })
