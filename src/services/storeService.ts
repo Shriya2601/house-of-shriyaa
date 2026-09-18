@@ -125,8 +125,7 @@ export const defaultSiteContent: SiteContent = {
       title: "Grace, Weave in Every Detail",
       description:
         "Elegant mint-green embroidered salwar suit paired with a soft peach striped dupatta featuring delicate scalloped detailing. A graceful choice for festive occasions, family gatherings, and elegant everyday wear.",
-      image:
-        "https://plain-eeur-prod-public.komododecks.com/202609/15/OSeP8KXZKOwa1kTFdvK2/image.jpg",
+      image: "/uploads/hero-slide-2-mint.jpg",
       season: "ROYAL HERITAGE 2026",
       caption: "Pastels • Delicate Embroidery • Effortless Grace",
       mood: "Antique Zari & Handlooms",
@@ -140,8 +139,7 @@ export const defaultSiteContent: SiteContent = {
       title: "Grace in Every Print",
       description:
         "PURE MUL CHANDERI JACOARD WITH HANDWORK WITH ORGANZA EMBROIDERY FOR SLEEVES AND CONTRAST PIPING WITH LACE ON DAMAN.",
-      image:
-        "https://plain-apac-prod-public.komododecks.com/202609/05/4UmFSGtcoZdZF37bKc3R/image.jpg",
+      image: "/uploads/hero-slide-3-chanderi.jpg",
       season: "DAILY CHIC 2026",
       caption: "Printed Organza Dupatta Set in Sage & Pastel Rose",
       mood: "Pastel Silks & Easy Linens",
@@ -200,7 +198,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v2026_09_18_permanent_sync_v2";
+const APP_CACHE_VERSION = "hos_v2026_09_18_live_sync_v5";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -669,12 +667,15 @@ export function ensureProductVariants(product: any): Product {
 
 export function getCachedProducts(): Product[] {
   const deleted = getLocallyDeletedIds("products");
+  if (typeof window !== "undefined" && localStorage.getItem("hos_factory_reset_completed")) {
+    return [];
+  }
   try {
     const saved = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed
+      if (Array.isArray(parsed) && parsed.length >= defaultProducts.length) {
+        const filtered = parsed
           .map(ensureProductVariants)
           .filter(
             (p) =>
@@ -683,12 +684,12 @@ export function getCachedProducts(): Product[] {
               !deleted.has(p.id) &&
               !deleted.has((p as any).sku)
           );
+        if (filtered.length >= defaultProducts.length) {
+          return filtered;
+        }
       }
     }
   } catch {}
-  if (typeof window !== "undefined" && localStorage.getItem("hos_factory_reset_completed")) {
-    return [];
-  }
   return defaultProducts
     .map(ensureProductVariants)
     .filter(
