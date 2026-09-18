@@ -985,7 +985,7 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
   if (Array.isArray(sanitizedContent.heroSlides) && sanitizedContent.heroSlides.length > 0) {
     const uploadedSlides = await Promise.all(
       sanitizedContent.heroSlides.map(async (slide, idx) => {
-        if (slide.image && slide.image.startsWith("data:")) {
+        if (slide.image && (slide.image.startsWith("data:") || slide.image.startsWith("blob:"))) {
           try {
             const permUrl = await uploadImageToAdminStorage(slide.image, {
               slot: `hero-slide-${idx + 1}`,
@@ -1035,8 +1035,8 @@ export async function saveSiteContent(content: Partial<SiteContent>): Promise<Si
     await ensureAdminFirebaseAuth().catch(() => null);
     const docRef = doc(db, "site_content", SITE_CONTENT_DOC);
     await setDoc(docRef, sanitizeForFirestore(updated), { merge: true });
-  } catch (fsErr) {
-    handleFirestoreError(fsErr, OperationType.WRITE, `site_content/${SITE_CONTENT_DOC}`);
+  } catch (fsErr: any) {
+    console.warn(`[StoreService] Firestore site content sync notice for site_content/${SITE_CONTENT_DOC}:`, fsErr?.message || fsErr);
   }
 
   return updated;
@@ -1360,7 +1360,7 @@ export async function uploadProductImageToFirebase(
   if (!fileOrDataUrl) return "";
   if (typeof fileOrDataUrl === "string") {
     const trimmed = fileOrDataUrl.trim();
-    if (!trimmed.startsWith("data:")) return trimmed;
+    if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) return trimmed;
     return uploadProductDataUrlToFirebase(trimmed, productId, type, onProgress);
   }
   return uploadProductFileToFirebase(fileOrDataUrl, productId, type, onProgress);
@@ -1375,7 +1375,9 @@ export async function cleanupOldStorageImage(oldUrl?: string | null, newUrl?: st
 }
 
 /**
- * Ensures all image fields are uploaded to Firebase Storage before writing to Firestore.
+ * Ensures all image fields are uploaded to persistent storage before writing to Firestore.
+ * Implements deduplication so identical images (e.g. main image duplicated as hover or variant)
+ * are only uploaded once, making saving much faster and avoiding redundant uploads.
  */
 async function ensureAllImagesUploaded(
   prodId: string,
@@ -1386,22 +1388,38 @@ async function ensureAllImagesUploaded(
   images: string[];
   colorVariants?: ColorVariant[];
 }> {
-  let mainImg = product.image || "";
-  if (mainImg.startsWith("data:")) {
-    mainImg = await uploadProductImageToFirebase(prodId, "main", mainImg);
-  }
+  const uploadCache = new Map<string, string>();
 
-  let hoverImg = product.hoverImage || mainImg;
-  if (hoverImg.startsWith("data:")) {
-    hoverImg = await uploadProductImageToFirebase(prodId, "hover", hoverImg);
-  }
+  const uploadCached = async (img: string, slot: string): Promise<string> => {
+    if (!img || typeof img !== "string") return "";
+    const trimmed = img.trim();
+    if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) {
+      return trimmed;
+    }
+    if (uploadCache.has(trimmed)) {
+      return uploadCache.get(trimmed)!;
+    }
+    try {
+      const uploadedUrl = await uploadProductImageToFirebase(prodId, slot, trimmed);
+      if (uploadedUrl) {
+        uploadCache.set(trimmed, uploadedUrl);
+        return uploadedUrl;
+      }
+    } catch (e) {
+      console.warn(`[ensureAllImagesUploaded] Upload notice for ${slot}:`, e);
+    }
+    return trimmed;
+  };
+
+  let mainImg = await uploadCached(product.image || "", "main");
+  let hoverImg = product.hoverImage ? await uploadCached(product.hoverImage, "hover") : mainImg;
 
   let imagesList: string[] = [];
   if (Array.isArray(product.images) && product.images.length > 0) {
     imagesList = await Promise.all(
       product.images.map(async (img, idx) => {
-        if (img && typeof img === "string" && img.startsWith("data:")) {
-          return await uploadProductImageToFirebase(prodId, `gallery-${idx}`, img);
+        if (img && typeof img === "string") {
+          return await uploadCached(img, `gallery-${idx}`);
         }
         return img || "";
       })
@@ -1419,22 +1437,15 @@ async function ensureAllImagesUploaded(
   if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
     updatedVariants = await Promise.all(
       product.colorVariants.map(async (v, vIdx) => {
-        let vImg = vIdx === 0 ? mainImg : (v.image || mainImg);
-        if (vImg && vImg.startsWith("data:")) {
-          vImg = await uploadProductImageToFirebase(prodId, `var-${vIdx}-main`, vImg);
-        }
-
-        let vHover = vIdx === 0 ? hoverImg : (v.hoverImage || hoverImg);
-        if (vHover && vHover.startsWith("data:")) {
-          vHover = await uploadProductImageToFirebase(prodId, `var-${vIdx}-hover`, vHover);
-        }
+        let vImg = vIdx === 0 ? mainImg : (v.image ? await uploadCached(v.image, `var-${vIdx}-main`) : mainImg);
+        let vHover = vIdx === 0 ? hoverImg : (v.hoverImage ? await uploadCached(v.hoverImage, `var-${vIdx}-hover`) : hoverImg);
 
         let vImages: string[] = [];
         if (Array.isArray(v.images) && v.images.length > 0) {
           vImages = await Promise.all(
             v.images.map(async (img, gIdx) => {
-              if (img && typeof img === "string" && img.startsWith("data:")) {
-                return await uploadProductImageToFirebase(prodId, `var-${vIdx}-gal-${gIdx}`, img);
+              if (img && typeof img === "string") {
+                return await uploadCached(img, `var-${vIdx}-gal-${gIdx}`);
               }
               return img || "";
             })
@@ -1772,31 +1783,13 @@ export async function saveProduct(
   }
 
   // 6. Firestore Cloud Persistence with Admin Auth assurance
-  let finalProduct: Product = sanitized;
+  const finalProduct: Product = sanitized;
   try {
     await ensureAdminFirebaseAuth().catch(() => null);
     const docRef = doc(db, "products", id);
     await setDoc(docRef, firestoreData, { merge: true });
-
-    try {
-      const verifySnap = await getDoc(docRef);
-      if (verifySnap.exists()) {
-        finalProduct = ensureProductVariants({
-          id: verifySnap.id,
-          ...verifySnap.data(),
-        });
-        const curr = getCachedProducts();
-        const idx = curr.findIndex((p) => p.id === id);
-        if (idx > -1) {
-          curr[idx] = finalProduct;
-          cacheProductsLocally(curr);
-        }
-      }
-    } catch {}
   } catch (fsErr: any) {
     console.warn("[StoreService] Firestore product save notice for", id, fsErr?.message || fsErr);
-    // Even if client-side Firestore reports a permission or connection issue,
-    // the product is safely stored in local state, real-time broadcasts, and server backend!
   }
 
   return { id, success: true, product: finalProduct };

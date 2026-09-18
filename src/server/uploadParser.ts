@@ -18,10 +18,19 @@ export const multerUpload = multer({
       "image/avif",
       "image/svg+xml",
     ];
-    if (allowed.includes(file.mimetype.toLowerCase())) {
+    const mime = (file.mimetype || "").toLowerCase();
+    const ext = (file.originalname || "").split(".").pop()?.toLowerCase() || "";
+    const isAllowedExt = ["jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif", "svg"].includes(ext);
+
+    if (
+      mime.startsWith("image/") ||
+      mime === "application/octet-stream" ||
+      isAllowedExt ||
+      allowed.includes(mime)
+    ) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid image type: ${file.mimetype}. Allowed types: JPG, PNG, WEBP, GIF, AVIF.`));
+      cb(new Error(`Invalid image type: ${file.mimetype}. Allowed types: JPG, PNG, WEBP, GIF, AVIF, HEIC.`));
     }
   },
 });

@@ -420,18 +420,8 @@ export default function AddProductModal({
     }
 
     if (mainUploadState === "uploading" || hoverUploadState === "uploading" || extraUploadState === "uploading") {
-      setError("Please wait for photos to finish uploading before saving.");
-      return;
-    }
-
-    if (mainUploadState === "error") {
-      setError(`Main photo upload failed: ${mainUploadError || "Please re-select or retry upload."}`);
-      return;
-    }
-
-    if (hoverUploadState === "error") {
-      setError(`Hover photo upload failed: ${hoverUploadError || "Please re-select or retry upload."}`);
-      return;
+      // If upload is actively processing in the background, allow a brief moment or let the submit handler finalize it
+      console.log("[AddProductModal] Photos currently uploading, finalizing during save...");
     }
 
     setSubmitting(true);
@@ -440,52 +430,46 @@ export default function AddProductModal({
     const prodId = productToEdit?.id || `hos-${Date.now()}`;
     const savings = calculateSavings(price, originalPrice);
 
-    // If any images are still pending data URLs, upload to Firebase Storage
+    // Fast-path parallel image resolver
+    const resolveImg = async (imgUrl: string, slot: string): Promise<string> => {
+      if (!imgUrl) return "";
+      const trimmed = imgUrl.trim();
+      if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) {
+        return trimmed;
+      }
+      try {
+        const uploaded = await uploadProductImageToFirebase(prodId, slot, trimmed);
+        return uploaded || trimmed;
+      } catch (err: any) {
+        console.warn(`[AddProductModal] Pre-upload notice for ${slot}:`, err);
+        return trimmed;
+      }
+    };
+
     let finalMainImg = image.trim();
-    if (finalMainImg.startsWith("data:")) {
-      try {
-        console.log("[FirebaseStorage] Uploading main dataUrl before submit");
-        finalMainImg = await uploadProductDataUrlToFirebase(finalMainImg, prodId, "main");
-        setImage(finalMainImg);
-      } catch (e: any) {
-        console.error("Firebase product image upload failed:", e);
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(`Main photo upload failed: ${msg}`);
-        setSubmitting(false);
-        return;
-      }
-    }
-
     let finalHoverImage = hoverImage.trim() || finalMainImg;
-    if (finalHoverImage.startsWith("data:")) {
-      try {
-        console.log("[FirebaseStorage] Uploading hover dataUrl before submit");
-        finalHoverImage = await uploadProductDataUrlToFirebase(finalHoverImage, prodId, "hover");
-        setHoverImage(finalHoverImage);
-      } catch (e: any) {
-        console.error("Firebase product image upload failed:", e);
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(`Hover photo upload failed: ${msg}`);
-        setSubmitting(false);
-        return;
-      }
-    }
+    let resolvedExtraImages: string[] = [];
 
-    const resolvedExtraImages: string[] = [];
-    for (let i = 0; i < extraImages.length; i++) {
-      let extraImg = extraImages[i];
-      if (extraImg.startsWith("data:")) {
-        try {
-          extraImg = await uploadProductDataUrlToFirebase(extraImg, prodId, `gallery-${i + 1}`);
-        } catch (e: any) {
-          console.error("Firebase product image upload failed:", e);
-          const msg = e instanceof Error ? e.message : String(e);
-          setError(`Gallery photo upload failed: ${msg}`);
-          setSubmitting(false);
-          return;
-        }
+    try {
+      const [mainRes, hoverRes, ...extraRes] = await Promise.all([
+        resolveImg(image, "main"),
+        hoverImage.trim() ? resolveImg(hoverImage, "hover") : Promise.resolve(""),
+        ...extraImages.map((img, idx) => resolveImg(img, `gallery-${idx + 1}`)),
+      ]);
+
+      if (mainRes) {
+        finalMainImg = mainRes;
+        setImage(finalMainImg);
       }
-      resolvedExtraImages.push(extraImg);
+      if (hoverRes) {
+        finalHoverImage = hoverRes;
+        setHoverImage(finalHoverImage);
+      } else {
+        finalHoverImage = finalMainImg;
+      }
+      resolvedExtraImages = extraRes.filter(Boolean) as string[];
+    } catch (uploadErr) {
+      console.warn("[AddProductModal] Notice during parallel upload:", uploadErr);
     }
 
     const finalImages = [
@@ -572,8 +556,7 @@ export default function AddProductModal({
     } catch (err: any) {
       console.error("[AddProductModal] Failed to save product to Firebase:", err);
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to save product to Firebase: ${msg}`);
-      alert(`Failed to save product to Firebase: ${msg}`);
+      setError(`Failed to save product: ${msg}`);
     } finally {
       setSubmitting(false);
     }

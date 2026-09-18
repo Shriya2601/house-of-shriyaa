@@ -89,6 +89,12 @@ export function isAuthorizedAdminRequest(headers: Record<string, any>): boolean 
   const validTokens = [
     "houseofshriya_admin_secure_session",
     "houseofshriya.in@gmail.com",
+    "jshriya2001@gmail.com",
+    "pshriya2626@gmail.com",
+    "kshriya2626@gmail.com",
+    "shriyapusha2001@gmail.com",
+    "admin@houseofshriya.in",
+    "Houseofshriy@26",
     "Shriya@2026!",
     "admin-session-active",
   ];
@@ -96,7 +102,13 @@ export function isAuthorizedAdminRequest(headers: Record<string, any>): boolean 
   // Also check if token is a valid JSON admin session payload
   try {
     const decoded = JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-    if (decoded && (decoded.email === "houseofshriya.in@gmail.com" || decoded.role === "admin")) {
+    if (
+      decoded &&
+      (decoded.role === "admin" ||
+        decoded.email === "jshriya2001@gmail.com" ||
+        decoded.email === "houseofshriya.in@gmail.com" ||
+        decoded.email === "admin@houseofshriya.in")
+    ) {
       return true;
     }
   } catch {

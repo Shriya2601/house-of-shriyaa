@@ -34,6 +34,15 @@ export function getAdminAuthToken(): string {
       sessionStorage.getItem("hos_admin_session_token");
     if (directToken) return directToken;
 
+    const adminSession =
+      localStorage.getItem("hos_admin_session") ||
+      sessionStorage.getItem("hos_admin_session");
+    if (adminSession) {
+      const parsed = JSON.parse(adminSession);
+      if (parsed?.token) return parsed.token;
+      if (parsed?.email) return btoa(JSON.stringify({ email: parsed.email, role: "admin" }));
+    }
+
     const adminUser = localStorage.getItem("hos_admin_user");
     if (adminUser) {
       const parsed = JSON.parse(adminUser);
@@ -142,10 +151,10 @@ export async function uploadImageToAdminStorage(
     throw new Error("No image data provided for upload.");
   }
 
-  // If already a permanent public HTTP URL, return immediately without re-uploading
+  // If already a permanent public HTTP URL or /uploads URL, return immediately without re-uploading
   if (typeof fileOrDataUrl === "string") {
     const trimmed = fileOrDataUrl.trim();
-    if (!trimmed.startsWith("data:")) {
+    if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) {
       return trimmed;
     }
   }
@@ -155,55 +164,60 @@ export async function uploadImageToAdminStorage(
 
   // Tier 1: Try server-side upload route /api/admin/upload
   try {
-    let blob: Blob;
-    let filename = `${slot}-${Date.now()}.jpg`;
+    let response: Response | null = null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-    if (fileOrDataUrl instanceof Blob) {
-      blob = fileOrDataUrl;
-      if ((fileOrDataUrl as File).name) {
-        filename = (fileOrDataUrl as File).name;
-      }
+    // Path A: If it's a data: URL string, post as JSON directly (ultra-fast, zero multi-part overhead)
+    if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
+      response = await fetch("/api/admin/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": token,
+        },
+        body: JSON.stringify({
+          dataUrl: fileOrDataUrl,
+          slot,
+          productId,
+        }),
+        signal: controller.signal,
+      });
     } else {
-      const match = fileOrDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (match) {
-        const mime = match[1];
-        const binary = atob(match[2]);
-        const array = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          array[i] = binary.charCodeAt(i);
+      // Path B: File, Blob, or blob: URL -> FormData
+      let blob: Blob;
+      let filename = `${slot}-${Date.now()}.jpg`;
+
+      if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("blob:")) {
+        blob = await fetch(fileOrDataUrl).then((r) => r.blob());
+      } else if (fileOrDataUrl instanceof Blob) {
+        blob = fileOrDataUrl;
+        if ((fileOrDataUrl as File).name) {
+          filename = (fileOrDataUrl as File).name;
         }
-        blob = new Blob([array], { type: mime });
-        const ext = mime.split("/")[1]?.replace("+xml", "") || "jpg";
-        filename = `${slot}-${Date.now()}.${ext}`;
       } else {
         blob = new Blob([fileOrDataUrl], { type: "text/plain" });
       }
+
+      const formData = new FormData();
+      formData.append("file", blob, filename);
+      formData.append("slot", slot);
+      if (productId) formData.append("productId", productId);
+
+      response = await fetch("/api/admin/upload", {
+        method: "POST",
+        headers: {
+          "x-admin-token": token,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
     }
-
-    const formData = new FormData();
-    formData.append("file", blob, filename);
-    formData.append("slot", slot);
-    if (productId) formData.append("productId", productId);
-
-    onProgress?.(45);
-
-    // Call server with a timeout so it never hangs if server is slow or static
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 9000);
-
-    const response = await fetch("/api/admin/upload", {
-      method: "POST",
-      headers: {
-        "x-admin-token": token,
-      },
-      body: formData,
-      signal: controller.signal,
-    });
 
     clearTimeout(timeoutId);
     onProgress?.(80);
 
-    if (response.ok) {
+    if (response && response.ok) {
       const result: AdminUploadResponse = await response.json();
       if (result.success && result.url) {
         onProgress?.(100);
@@ -213,7 +227,7 @@ export async function uploadImageToAdminStorage(
       }
     } else {
       console.warn(
-        `[AdminUploadService] Server upload returned HTTP ${response.status}. Initiating direct persistent cloud fallback.`
+        `[AdminUploadService] Server upload returned HTTP ${response?.status}. Initiating direct fallback.`
       );
     }
   } catch (serverErr: any) {
@@ -223,8 +237,36 @@ export async function uploadImageToAdminStorage(
     );
   }
 
+  // Tier 1 Fallback: If FormData failed, try converting file/blob to dataUrl and posting as JSON to /api/admin/upload
+  if (fileOrDataUrl instanceof Blob || (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("blob:"))) {
+    try {
+      const optimizedDataUrl = await optimizeImageForUpload(fileOrDataUrl, 1600, 0.85);
+      const jsonRes = await fetch("/api/admin/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": token,
+        },
+        body: JSON.stringify({
+          dataUrl: optimizedDataUrl,
+          slot,
+          productId,
+        }),
+      });
+      if (jsonRes.ok) {
+        const result: AdminUploadResponse = await jsonRes.json();
+        if (result.success && result.url) {
+          onProgress?.(100);
+          const base = result.url.split("?")[0];
+          return `${base}?v=${Date.now()}`;
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn("[AdminUploadService] JSON fallback notice:", fallbackErr);
+    }
+  }
+
   // Tier 2: Resilient Cloud & Firestore Persistent Storage Fallback
-  // This guarantees that uploads never fail with status 405 and the live site updates immediately!
   try {
     onProgress?.(85);
     const optimizedDataUrl = await optimizeImageForUpload(fileOrDataUrl, 1400, 0.82);
