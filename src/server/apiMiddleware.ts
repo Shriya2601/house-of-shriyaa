@@ -479,9 +479,12 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
       return;
     }
 
-    // Direct Live Data Serving for /data/*.json
+    // Direct Live Data Serving for /data/*.json & /public/data/*.json
     // Ensures mobile, tablet, and cross-device browsers never cache stale static json files
-    if (urlWithoutQuery.startsWith("/data/") && urlWithoutQuery.endsWith(".json")) {
+    if (
+      (urlWithoutQuery.startsWith("/data/") || urlWithoutQuery.startsWith("/public/data/")) &&
+      urlWithoutQuery.endsWith(".json")
+    ) {
       const filename = path.basename(urlWithoutQuery);
       const data = readDataFile(filename, null);
       if (data !== null) {

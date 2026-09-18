@@ -200,7 +200,7 @@ const CATEGORIES_CACHE_KEY = "hos_categories_cache";
 const ORDERS_CACHE_KEY = "hos_orders";
 
 // Cache version check: forces mobile & desktop browsers to purge stale local storage caches
-const APP_CACHE_VERSION = "hos_v10_2026_09_12_sync_fix";
+const APP_CACHE_VERSION = "hos_v2026_09_18_permanent_sync_v2";
 if (typeof window !== "undefined") {
   try {
     const savedVer = localStorage.getItem("hos_app_cache_version");
@@ -210,6 +210,8 @@ if (typeof window !== "undefined") {
       localStorage.removeItem(CATEGORIES_CACHE_KEY);
       localStorage.removeItem(ORDERS_CACHE_KEY);
       localStorage.removeItem("hos_deleted_products");
+      localStorage.removeItem("hos_brand_styles_cache");
+      localStorage.removeItem("hos_custom_overrides_cache");
       localStorage.setItem("hos_app_cache_version", APP_CACHE_VERSION);
     }
   } catch {}
@@ -805,8 +807,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       incoming.heroSlides = currentContent.heroSlides;
     }
 
-    // Never overwrite newer content with older stale data
-    if (incomingTime > 0 && currentTime > 0 && incomingTime < currentTime && currentContent?.updatedAt) {
+    // Never overwrite newer content with older stale data unless forced by authoritative server fetch
+    if (!force && incomingTime > 0 && currentTime > 0 && incomingTime < currentTime && currentContent?.updatedAt) {
       return;
     }
 
@@ -840,8 +842,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges) && serverData.trustBadges.length > 0) {
             merged.trustBadges = serverData.trustBadges;
           }
-          // Server response is authoritative - apply if newer
-          applyContentIfNewer(merged, false);
+          // Server response is authoritative - force apply
+          applyContentIfNewer(merged, true);
           return;
         }
       }
@@ -862,7 +864,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
             merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          applyContentIfNewer(merged, false);
+          applyContentIfNewer(merged, true);
         }
       }
     } catch {}
@@ -1495,7 +1497,7 @@ export async function getAuthoritativeProducts(): Promise<Product[]> {
   } catch (err) {
     console.warn("[StoreService] Error fetching authoritative products from Firestore:", err);
   }
-  return getCachedProducts();
+  return [];
 }
 
 
@@ -1577,6 +1579,28 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
       });
       if (res.ok) {
         const apiData = await res.json();
+        if (Array.isArray(apiData) && apiData.length > 0) {
+          const deleted = getLocallyDeletedIds("products");
+          const normalized = apiData
+            .map(ensureProductVariants)
+            .filter((p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku));
+          if (normalized.length > 0) {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    // Fallback to static JSON file if server API endpoint is slow or behind proxy
+    try {
+      const resStatic = await fetch(`/data/products.json?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (resStatic.ok) {
+        const apiData = await resStatic.json();
         if (Array.isArray(apiData) && apiData.length > 0) {
           const deleted = getLocallyDeletedIds("products");
           const normalized = apiData
