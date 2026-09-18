@@ -2834,7 +2834,12 @@ function Catalog({
         ? dynamicProducts
         : products;
     const listToFilter = sourceList.filter(
-      (p) => p && p.id && !deleted.has(p.id) && !deleted.has((p as any).sku)
+      (p) =>
+        p &&
+        p.id &&
+        !deleted.has(p.id) &&
+        !deleted.has((p as any).sku) &&
+        (!p.name || !deleted.has(p.name))
     );
     let result = listToFilter.filter((product) => {
       let matchesFilter = true;

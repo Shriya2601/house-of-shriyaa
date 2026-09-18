@@ -65,12 +65,12 @@ export default function ProductDetails() {
     const deleted = getLocallyDeletedIds("products");
     if (id && (deleted.has(id) || deleted.has(id.trim()))) return null;
     const found = products.find((p) => p.id === id);
-    if (found && !deleted.has(found.id) && !deleted.has((found as any).sku)) {
+    if (found && !deleted.has(found.id) && !deleted.has((found as any).sku) && (!found.name || !deleted.has(found.name))) {
       return found;
     }
     if (loadingCatalog || products.length === 0) {
       const fallback = fallbackCatalog.find((p) => p.id === id);
-      if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku)) {
+      if (fallback && !deleted.has(fallback.id) && !deleted.has((fallback as any).sku) && (!fallback.name || !deleted.has(fallback.name))) {
         return fallback;
       }
     }
