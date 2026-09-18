@@ -532,6 +532,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setWishlist(new Set());
     };
 
+    const handleWindowMessage = (event: MessageEvent) => {
+      if (!event.data) return;
+      if (
+        event.data.type === "hos-sync-refresh" ||
+        event.data.type === "hos-catalog-refresh" ||
+        event.data.type === "hos-refresh"
+      ) {
+        if (Array.isArray(event.data.products)) {
+          setProducts(event.data.products);
+        }
+        if (Array.isArray(event.data.categories)) {
+          setCategories(event.data.categories);
+        }
+        if (event.data.siteContent) {
+          setSiteContent(event.data.siteContent);
+        }
+        // Also perform background API fetch to make sure disk state is synced
+        fetch(`/api/products?t=${Date.now()}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .then((prods) => {
+            if (Array.isArray(prods) && prods.length > 0) setProducts(prods);
+          })
+          .catch(() => {});
+        fetch(`/api/categories?t=${Date.now()}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .then((cats) => {
+            if (Array.isArray(cats) && cats.length > 0) setCategories(cats);
+          })
+          .catch(() => {});
+      }
+      if (event.data.type === "products" && Array.isArray(event.data.data)) {
+        setProducts(event.data.data);
+      }
+      if (event.data.type === "categories" && Array.isArray(event.data.data)) {
+        setCategories(event.data.data);
+      }
+    };
+
+    window.addEventListener("message", handleWindowMessage);
     window.addEventListener("hos-product-deleted", handleProdDel);
     window.addEventListener("hos-product-saved", handleProdSaved);
     window.addEventListener("hos-catalog-updated", handleCatalogUpdated);
@@ -549,6 +588,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       unsubContent();
       unsubProducts();
       unsubCategories();
+      window.removeEventListener("message", handleWindowMessage);
       window.removeEventListener("hos-product-deleted", handleProdDel);
       window.removeEventListener("hos-product-saved", handleProdSaved);
       window.removeEventListener("hos-catalog-updated", handleCatalogUpdated);

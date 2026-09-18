@@ -2840,13 +2840,22 @@ function Catalog({
       let matchesFilter = true;
       if (activeCategory === "Wishlist") {
         matchesFilter = wishlist.has(product.id);
-      } else if (activeCategory === "All Collections" || activeCategory === "All Suits") {
+      } else if (
+        !activeCategory ||
+        activeCategory === "All Collections" ||
+        activeCategory === "All Suits" ||
+        activeCategory.toLowerCase() === "all"
+      ) {
         matchesFilter = true;
       } else {
-        const productTags = product.tags || [];
+        const pCat = (product.category || "").trim().toLowerCase();
+        const activeCat = activeCategory.trim().toLowerCase();
+        const productTags = (product.tags || []).map((t) => t.trim().toLowerCase());
         matchesFilter =
-          product.category === activeCategory ||
-          productTags.includes(activeCategory);
+          pCat === activeCat ||
+          productTags.includes(activeCat) ||
+          pCat.includes(activeCat) ||
+          activeCat.includes(pCat);
       }
 
       const matchesQuery = `${product.name} ${product.description || ""} ${product.color || ""} ${product.fabricType || ""}`
@@ -2878,7 +2887,7 @@ function Catalog({
       });
     }
     return result;
-  }, [dynamicProducts, activeCategory, query, sort]);
+  }, [dynamicProducts, activeCategory, query, sort, wishlist, loadingCatalog]);
 
   return (
     <section id="catalog-section" className="catalog-section">
@@ -3517,9 +3526,39 @@ export default function Index() {
   // Sync listener when inside an iframe or preview frame
   useEffect(() => {
     const handleWindowMessage = (event: MessageEvent) => {
-      if (event.data?.type === "hos-sync-refresh") {
+      if (!event.data) return;
+      if (
+        event.data.type === "hos-sync-refresh" ||
+        event.data.type === "hos-catalog-refresh" ||
+        event.data.type === "hos-refresh"
+      ) {
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: event.data.siteContent }));
+          if (event.data.siteContent) {
+            window.dispatchEvent(new CustomEvent("hos-content-updated", { detail: event.data.siteContent }));
+          }
+          if (Array.isArray(event.data.products)) {
+            window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: event.data.products }));
+          }
+          if (Array.isArray(event.data.categories)) {
+            window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: event.data.categories }));
+          }
+          // Fetch immediately from API without cache to guarantee live sync
+          fetch(`/api/products?t=${Date.now()}`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((prods) => {
+              if (Array.isArray(prods) && prods.length > 0) {
+                window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: prods }));
+              }
+            })
+            .catch(() => {});
+          fetch(`/api/categories?t=${Date.now()}`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((cats) => {
+              if (Array.isArray(cats) && cats.length > 0) {
+                window.dispatchEvent(new CustomEvent("hos-categories-updated", { detail: cats }));
+              }
+            })
+            .catch(() => {});
         }
       }
     };

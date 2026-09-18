@@ -332,7 +332,16 @@ export default function AdminLivePreviewStudio({
   const notifyIframeRefresh = () => {
     try {
       if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({ type: "hos-sync-refresh" }, "*");
+        iframeRef.current.contentWindow.postMessage(
+          {
+            type: "hos-sync-refresh",
+            products,
+            siteContent,
+            categories,
+            timestamp: Date.now(),
+          },
+          "*"
+        );
       }
     } catch {}
     // Also trigger key bump for guaranteed rerender

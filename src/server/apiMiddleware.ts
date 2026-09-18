@@ -799,10 +799,14 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                 };
                 delete (product as any).product;
 
-                const idx = products.findIndex((p) => p.id === product.id);
+                const idx = products.findIndex(
+                  (p) =>
+                    String(p.id).trim() === String(product.id).trim() ||
+                    (p.name && product.name && p.name.trim().toLowerCase() === product.name.trim().toLowerCase())
+                );
                 if (idx > -1) {
                   const existing = products[idx];
-                  const merged = { ...existing, ...product, id: product.id, updatedAt: new Date().toISOString() };
+                  const merged = { ...existing, ...product, id: existing.id || product.id, updatedAt: new Date().toISOString() };
                   // If product.images is explicitly passed, use it directly without resurrecting old images
                   if (Array.isArray(product.images) && product.images.length > 0) {
                     merged.images = product.images;
@@ -810,7 +814,15 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                     merged.image = product.image;
                     merged.images = [product.image];
                   }
-                  if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
+                  if (product.inStock !== undefined) {
+                    merged.inStock = Boolean(product.inStock);
+                  }
+                  if (product.category !== undefined) {
+                    merged.category = product.category;
+                  }
+                  if (Array.isArray(product.colorVariants) && product.colorVariants.length > 0) {
+                    merged.colorVariants = product.colorVariants;
+                  } else if (Array.isArray(merged.colorVariants) && merged.colorVariants.length > 0) {
                     const v0 = merged.colorVariants[0];
                     merged.colorVariants[0] = {
                       ...v0,
@@ -821,7 +833,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
                       savings: product.savings || v0.savings,
                       description: product.description !== undefined ? product.description : v0.description,
                       fabricType: product.fabricType || v0.fabricType,
-                      inStock: product.inStock !== false && v0.inStock !== false,
+                      inStock: product.inStock !== undefined ? Boolean(product.inStock) : (v0.inStock !== undefined ? Boolean(v0.inStock) : true),
                       image: product.image || v0.image,
                       hoverImage: product.hoverImage || v0.hoverImage || product.image,
                       images: Array.isArray(product.images) && product.images.length > 0
