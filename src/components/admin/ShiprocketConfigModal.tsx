@@ -51,7 +51,7 @@ export default function ShiprocketConfigModal({
     if (status?.configuredEmail) {
       setEmailInput(status.configuredEmail);
     } else if (!emailInput) {
-      setEmailInput("shriyapusha01@gmail.com");
+      setEmailInput("houseofshriya.in@gmail.com");
     }
     if (!passwordInput) {
       setPasswordInput("d1Iq14dVBWxqUVZ8cJO3!f1DLhJCGDRo");

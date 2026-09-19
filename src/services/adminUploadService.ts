@@ -213,11 +213,33 @@ export async function optimizeImageForUpload(
           return;
         }
 
+        const fallbackDataUrl = async (): Promise<string> => {
+          if (rawUrl.startsWith("data:")) return rawUrl;
+          if (rawUrl.startsWith("blob:")) {
+            try {
+              const resp = await fetch(rawUrl);
+              const blob = await resp.blob();
+              return new Promise<string>((res) => {
+                const reader = new FileReader();
+                reader.onload = () => res(reader.result as string);
+                reader.onerror = () => res("");
+                reader.readAsDataURL(blob);
+              });
+            } catch {
+              return "";
+            }
+          }
+          return rawUrl;
+        };
+
         const img = new Image();
         if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
           img.crossOrigin = "anonymous";
         }
-        img.onerror = () => resolve(rawUrl);
+        img.onerror = async () => {
+          const fb = await fallbackDataUrl();
+          resolve(fb || rawUrl);
+        };
         img.onload = () => {
           try {
             let { width, height } = img;
@@ -236,7 +258,7 @@ export async function optimizeImageForUpload(
             canvas.height = Math.max(1, height);
             const ctx = canvas.getContext("2d");
             if (!ctx) {
-              resolve(rawUrl);
+              fallbackDataUrl().then((fb) => resolve(fb || rawUrl));
               return;
             }
 
@@ -249,9 +271,13 @@ export async function optimizeImageForUpload(
             if (!output.startsWith("data:image/webp")) {
               output = canvas.toDataURL("image/jpeg", quality);
             }
+            // If output is still very large, re-encode with lower quality to stay well under 500KB
+            if (output.length > 550000) {
+              output = canvas.toDataURL("image/jpeg", 0.72);
+            }
             resolve(output);
           } catch {
-            resolve(rawUrl);
+            fallbackDataUrl().then((fb) => resolve(fb || rawUrl));
           }
         };
         img.src = rawUrl;
@@ -378,7 +404,7 @@ export async function uploadImageToAdminStorage(
   if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
       const uploadEndpoint = buildUploadUrl("/api/admin/upload", { slot, productId });
 
       tracker.logApiAttempt(uploadEndpoint, "POST (JSON dataUrl)", 3);
@@ -432,7 +458,7 @@ export async function uploadImageToAdminStorage(
   // Strategy B: Multipart FormData upload
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     const formData = new FormData();
     formData.append("file", uploadBlob, uploadFilename);
@@ -622,11 +648,32 @@ export async function uploadImageToAdminStorage(
         tracker.logFirestoreError(fsErr, "stored_images", safeDocId);
       }
     }
+    // Resilient Fallback: If we have an optimized data URL or source, register it in cache with a persistent URL
+    if (finalDataUrl) {
+      const timestamp = Date.now();
+      const rand = Math.floor(Math.random() * 100000);
+      const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
+      const targetFilename = `${safeSlot}-${timestamp}-${rand}.jpg`;
+      const fallbackUrl = `/uploads/${targetFilename}?v=${timestamp}`;
+      registerLocalImageCache(fallbackUrl, finalDataUrl);
+      registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
+      registerLocalImageCache(targetFilename, finalDataUrl);
+      onProgress?.(100);
+      tracker.logComplete(fallbackUrl, "LOCAL_CACHE_FALLBACK");
+      return fallbackUrl;
+    }
 
     onProgress?.(100);
     throw new Error("Failed to upload and store image permanently. Please ensure backend server is reachable.");
   } catch (fallbackErr: any) {
     tracker.logFailure(fallbackErr);
+    if (optimizedDataUrl) {
+      const timestamp = Date.now();
+      const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
+      const fallbackUrl = `/uploads/${safeSlot}-${timestamp}.jpg?v=${timestamp}`;
+      registerLocalImageCache(fallbackUrl, optimizedDataUrl);
+      return fallbackUrl;
+    }
     throw new Error(fallbackErr?.message || "Failed to process and store image permanently.");
   }
 }

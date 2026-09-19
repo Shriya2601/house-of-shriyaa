@@ -493,11 +493,27 @@ export default function AddProductModal({
         if (uploaded && !uploaded.startsWith("blob:")) {
           return uploaded;
         }
-        return uploaded || trimmed;
+        if (uploaded) return uploaded;
       } catch (err: any) {
         console.warn(`[AddProductModal] Pre-upload notice for ${slot}:`, err);
-        return trimmed;
       }
+
+      // Safe conversion for any remaining blob: URL so it is never an ephemeral URL
+      if (trimmed.startsWith("blob:")) {
+        try {
+          const resp = await fetch(trimmed);
+          const b = await resp.blob();
+          const reader = new FileReader();
+          const dUrl = await new Promise<string>((res) => {
+            reader.onload = () => res(reader.result as string);
+            reader.onerror = () => res("");
+            reader.readAsDataURL(b);
+          });
+          if (dUrl) return dUrl;
+        } catch {}
+      }
+
+      return trimmed;
     };
 
     let finalMainImg = image.trim();

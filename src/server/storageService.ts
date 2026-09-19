@@ -96,9 +96,9 @@ export function isAuthorizedAdminRequest(
   }
 
   const validTokens = [
+    "houseofshriya.in@gmail.com",
     "houseofshriya_admin_secure_session",
     "shriyapusha01@gmail.com",
-    "houseofshriya.in@gmail.com",
     "houseofshriyaa@gmail.com",
     "crochetbyshriya01@gmail.com",
     "jshriya2001@gmail.com",
@@ -237,7 +237,8 @@ export async function persistImagePermanently(params: {
     }
   }
 
-  // 4. Save to Firestore permanent cloud storage (ensures images survive container re-creations)
+  // 4. Save to Firestore permanent cloud storage asynchronously in the background
+  // (Ensures images survive container re-creations without blocking the HTTP response)
   const db = getServerDb();
   if (db) {
     try {
@@ -247,7 +248,7 @@ export async function persistImagePermanently(params: {
       const base64Data = buffer.toString("base64");
       // Check document limit (1MB safe threshold)
       if (base64Data.length < 900000) {
-        await setDoc(
+        setDoc(
           docRef,
           {
             key,
@@ -260,11 +261,16 @@ export async function persistImagePermanently(params: {
             updatedAt: new Date().toISOString(),
           },
           { merge: true }
-        );
-        console.log(`[Storage Service] Image backed up to Firestore: ${docId}`);
+        )
+          .then(() => {
+            console.log(`[Storage Service] Image backed up to Firestore: ${docId}`);
+          })
+          .catch((fsErr) => {
+            console.warn("[Storage Service] Firestore image backup notice:", fsErr);
+          });
       }
     } catch (fsErr) {
-      console.warn("[Storage Service] Firestore image backup notice:", fsErr);
+      console.warn("[Storage Service] Firestore image backup preparation notice:", fsErr);
     }
   }
 

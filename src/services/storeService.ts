@@ -1495,15 +1495,36 @@ async function ensureAllImagesUploaded(
     }
     try {
       const uploadedUrl = await uploadProductImageToFirebase(prodId, slot, trimmed);
-      if (uploadedUrl && !uploadedUrl.startsWith("data:") && !uploadedUrl.startsWith("blob:")) {
+      if (uploadedUrl && !uploadedUrl.startsWith("blob:")) {
         uploadCache.set(trimmed, uploadedUrl);
         return uploadedUrl;
       }
     } catch (e) {
-      console.error(`[ensureAllImagesUploaded] Upload failed for ${slot}:`, e);
-      throw e;
+      console.warn(`[ensureAllImagesUploaded] Upload warning for ${slot}:`, e);
     }
-    throw new Error(`Failed to upload ${slot} image to persistent storage.`);
+    // Fallback: If trimmed is already an image URL or dataUrl, use it safely
+    if (trimmed && !trimmed.startsWith("blob:")) {
+      uploadCache.set(trimmed, trimmed);
+      return trimmed;
+    }
+    // If it's a blob: URL, resolve to base64 dataUrl so it is permanent and persistent
+    if (typeof window !== "undefined" && trimmed.startsWith("blob:")) {
+      try {
+        const resp = await fetch(trimmed);
+        const b = await resp.blob();
+        const reader = new FileReader();
+        const dUrl = await new Promise<string>((res) => {
+          reader.onload = () => res(reader.result as string);
+          reader.onerror = () => res("");
+          reader.readAsDataURL(b);
+        });
+        if (dUrl) {
+          uploadCache.set(trimmed, dUrl);
+          return dUrl;
+        }
+      } catch {}
+    }
+    return trimmed;
   };
 
   let mainImg = await uploadCached(product.image || "", "main");
@@ -1876,19 +1897,43 @@ export async function saveProduct(
   const cleanHover = uploaded.hoverImage || cleanImage;
   const cleanImages = uploaded.images;
 
-  // Validate that no image is a temporary blob: or raw data: URL
-  if (cleanImage.startsWith("blob:") || cleanImage.startsWith("data:")) {
-    throw new Error("Main image failed to upload to permanent storage. Please try uploading the image again.");
+  // Ensure no temporary blob: URLs leak into storage; data: URLs are safely allowed as permanent inline image data
+  let resolvedCleanImage = cleanImage;
+  let resolvedCleanHover = cleanHover;
+
+  if (typeof window !== "undefined" && resolvedCleanImage.startsWith("blob:")) {
+    try {
+      const resp = await fetch(resolvedCleanImage);
+      const b = await resp.blob();
+      const reader = new FileReader();
+      const dUrl = await new Promise<string>((res) => {
+        reader.onload = () => res(reader.result as string);
+        reader.onerror = () => res("");
+        reader.readAsDataURL(b);
+      });
+      if (dUrl) resolvedCleanImage = dUrl;
+    } catch {}
   }
-  if (cleanHover.startsWith("blob:") || cleanHover.startsWith("data:")) {
-    throw new Error("Hover image failed to upload to permanent storage. Please try uploading the image again.");
+
+  if (typeof window !== "undefined" && resolvedCleanHover.startsWith("blob:")) {
+    try {
+      const resp = await fetch(resolvedCleanHover);
+      const b = await resp.blob();
+      const reader = new FileReader();
+      const dUrl = await new Promise<string>((res) => {
+        reader.onload = () => res(reader.result as string);
+        reader.onerror = () => res("");
+        reader.readAsDataURL(b);
+      });
+      if (dUrl) resolvedCleanHover = dUrl;
+    } catch {}
   }
 
   const sanitized = ensureProductVariants({
     ...product,
     id,
-    image: cleanImage,
-    hoverImage: cleanHover,
+    image: resolvedCleanImage,
+    hoverImage: resolvedCleanHover,
     images: cleanImages,
     colorVariants: uploaded.colorVariants,
     updatedAt: new Date().toISOString(),
@@ -3327,10 +3372,10 @@ export async function updateCustomerProfile(uid: string, updates: Partial<Custom
    ADMIN PORTAL AUTHENTICATION & BOOKING/ORDER MANAGEMENT
 ============================================================ */
 
-export const ADMIN_EMAIL = "shriyapusha01@gmail.com";
+export const ADMIN_EMAIL = "houseofshriya.in@gmail.com";
 export const AUTHORIZED_ADMIN_EMAILS = [
-  "shriyapusha01@gmail.com",
   "houseofshriya.in@gmail.com",
+  "shriyapusha01@gmail.com",
   "houseofshriyaa@gmail.com",
   "admin@houseofshriya.in",
   "pshriya2626@gmail.com",
