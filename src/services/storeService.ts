@@ -830,8 +830,13 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
       incoming.heroSlides = currentContent.heroSlides;
     }
 
-    // Never overwrite newer content with older stale data unless forced by authoritative server fetch
-    if (!force && incomingTime > 0 && currentTime > 0 && incomingTime < currentTime && currentContent?.updatedAt) {
+    // Never overwrite newer content with older stale data
+    if (!force && incomingTime > 0 && currentTime > 0 && incomingTime < currentTime) {
+      return;
+    }
+
+    // If incoming has no timestamp but current has an updatedAt timestamp, don't overwrite!
+    if (!force && !incomingTime && currentTime > 0) {
       return;
     }
 
@@ -850,7 +855,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      if (res.ok && ct.includes("application/json") && !res.redirected) {
         const serverData = await res.json();
         if (serverData && typeof serverData === "object" && Object.keys(serverData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...serverData };
@@ -863,8 +869,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           if (Array.isArray(serverData.trustBadges)) {
             merged.trustBadges = serverData.trustBadges;
           }
-          // Server response is authoritative - force apply
-          applyContentIfNewer(merged, true);
+          applyContentIfNewer(merged, false);
           return;
         }
       }
@@ -876,7 +881,8 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (staticRes.ok) {
+      const sct = staticRes.headers.get("content-type") || "";
+      if (staticRes.ok && sct.includes("application/json")) {
         const staticData = await staticRes.json();
         if (staticData && typeof staticData === "object" && Object.keys(staticData).length > 0) {
           const merged: SiteContent = { ...defaultSiteContent, ...staticData };
@@ -885,7 +891,7 @@ export function subscribeSiteContent(callback: (content: SiteContent) => void): 
           } else if (!merged.heroSlides || merged.heroSlides.length === 0) {
             merged.heroSlides = defaultSiteContent.heroSlides || [];
           }
-          applyContentIfNewer(merged, true);
+          applyContentIfNewer(merged, false);
         }
       }
     } catch {}
@@ -1096,15 +1102,26 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      if (res.ok && ct.includes("application/json") && !res.redirected) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data
             .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
             .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(filtered);
-          callback(filtered);
+
+          const currentCached = getCachedCategories();
+          const mergedMap = new Map<string, CategoryItem>();
+          filtered.forEach((c: CategoryItem) => mergedMap.set(c.id, c));
+          currentCached.forEach((c) => {
+            if (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)) {
+              mergedMap.set(c.id, c);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          cacheCategoriesLocally(merged);
+          callback(merged);
           return;
         }
       }
@@ -1115,15 +1132,31 @@ export function subscribeCategories(callback: (categories: CategoryItem[]) => vo
       const staticRes = await fetch(`/data/categories.json?t=${Date.now()}`, {
         cache: "no-store",
       });
-      if (staticRes.ok) {
+      const sct = staticRes.headers.get("content-type") || "";
+      if (staticRes.ok && sct.includes("application/json")) {
         const data = await staticRes.json();
         if (Array.isArray(data) && data.length > 0) {
           const deleted = getLocallyDeletedIds("categories");
           const filtered = data
             .filter((c: any) => c && (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)))
             .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-          cacheCategoriesLocally(filtered);
-          callback(filtered);
+
+          const currentCached = getCachedCategories();
+          if (currentCached && currentCached.length > 0) {
+            const mergedMap = new Map<string, CategoryItem>();
+            filtered.forEach((c: CategoryItem) => mergedMap.set(c.id, c));
+            currentCached.forEach((c) => {
+              if (!deleted.has(c.id) && !deleted.has(c.slug) && !deleted.has(c.name)) {
+                mergedMap.set(c.id, c);
+              }
+            });
+            const merged = Array.from(mergedMap.values());
+            cacheCategoriesLocally(merged);
+            callback(merged);
+          } else {
+            cacheCategoriesLocally(filtered);
+            callback(filtered);
+          }
         }
       }
     } catch {}
@@ -1636,7 +1669,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json") && !res.redirected) {
         const apiData = await res.json();
         if (Array.isArray(apiData)) {
           const deleted = getLocallyDeletedIds("products");
@@ -1650,8 +1684,28 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
                 !deleted.has((p as any).sku) &&
                 (!p.name || !deleted.has(p.name))
             );
-          cacheProductsLocally(normalized);
-          callback(normalized);
+
+          const currentCached = getCachedProducts();
+          const mergedMap = new Map<string, Product>();
+          normalized.forEach((p) => mergedMap.set(p.id, p));
+          currentCached.forEach((p) => {
+            if (!deleted.has(p.id) && (!p.name || !deleted.has(p.name))) {
+              const fromServer = mergedMap.get(p.id);
+              if (!fromServer) {
+                // Product added or modified locally not yet in server payload - preserve it!
+                mergedMap.set(p.id, p);
+              } else {
+                const localTime = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+                const serverTime = fromServer.updatedAt ? new Date(fromServer.updatedAt).getTime() : 0;
+                if (localTime >= serverTime) {
+                  mergedMap.set(p.id, p);
+                }
+              }
+            }
+          });
+          const mergedList = Array.from(mergedMap.values());
+          cacheProductsLocally(mergedList);
+          callback(mergedList);
           return;
         }
       }
@@ -1663,7 +1717,8 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      if (resStatic.ok) {
+      const staticContentType = resStatic.headers.get("content-type") || "";
+      if (resStatic.ok && staticContentType.includes("application/json")) {
         const apiData = await resStatic.json();
         if (Array.isArray(apiData)) {
           const deleted = getLocallyDeletedIds("products");
@@ -1677,8 +1732,25 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
                 !deleted.has((p as any).sku) &&
                 (!p.name || !deleted.has(p.name))
             );
-          cacheProductsLocally(normalized);
-          callback(normalized);
+
+          const currentCached = getCachedProducts();
+          if (currentCached && currentCached.length > 0) {
+            const mergedMap = new Map<string, Product>();
+            // Seed static products first
+            normalized.forEach((p) => mergedMap.set(p.id, p));
+            // Local changes ALWAYS win over static file
+            currentCached.forEach((p) => {
+              if (!deleted.has(p.id) && (!p.name || !deleted.has(p.name))) {
+                mergedMap.set(p.id, p);
+              }
+            });
+            const mergedList = Array.from(mergedMap.values());
+            cacheProductsLocally(mergedList);
+            callback(mergedList);
+          } else {
+            cacheProductsLocally(normalized);
+            callback(normalized);
+          }
         }
       }
     } catch {}

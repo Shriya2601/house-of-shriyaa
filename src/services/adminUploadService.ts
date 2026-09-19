@@ -34,24 +34,63 @@ export function registerLocalImageCache(url: string, dataUrl: string) {
   if (!url || !dataUrl) return;
   const clean = url.split("?")[0];
   localImageMemoryCache.set(clean, dataUrl);
+  const baseName = clean.split("/").pop() || "";
+  if (baseName && baseName !== clean) {
+    localImageMemoryCache.set(baseName, dataUrl);
+  }
   try {
     sessionStorage.setItem(`hos_img_${clean}`, dataUrl);
   } catch {}
+  try {
+    localStorage.setItem(`hos_img_${clean}`, dataUrl);
+    if (baseName && baseName !== clean) {
+      localStorage.setItem(`hos_img_${baseName}`, dataUrl);
+    }
+  } catch {
+    // If quota exceeded, purge older hos_img keys
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("hos_img_") && k !== `hos_img_${clean}`) {
+          keysToRemove.push(k);
+          if (keysToRemove.length >= 3) break;
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(`hos_img_${clean}`, dataUrl);
+    } catch {}
+  }
 }
 
 export function getLocalCachedImage(url: string): string | null {
   if (!url) return null;
   const clean = url.split("?")[0];
+  const baseName = clean.split("/").pop() || "";
+
   if (localImageMemoryCache.has(clean)) {
     return localImageMemoryCache.get(clean)!;
   }
+  if (baseName && localImageMemoryCache.has(baseName)) {
+    return localImageMemoryCache.get(baseName)!;
+  }
+
   try {
-    const fromSession = sessionStorage.getItem(`hos_img_${clean}`);
+    const fromSession = sessionStorage.getItem(`hos_img_${clean}`) || (baseName ? sessionStorage.getItem(`hos_img_${baseName}`) : null);
     if (fromSession) {
       localImageMemoryCache.set(clean, fromSession);
       return fromSession;
     }
   } catch {}
+
+  try {
+    const fromLocal = localStorage.getItem(`hos_img_${clean}`) || (baseName ? localStorage.getItem(`hos_img_${baseName}`) : null);
+    if (fromLocal) {
+      localImageMemoryCache.set(clean, fromLocal);
+      return fromLocal;
+    }
+  } catch {}
+
   return null;
 }
 
@@ -466,9 +505,12 @@ export async function uploadImageToAdminStorage(
 
         const persistentUrl = `/uploads/${targetFilename}?v=${timestamp}`;
         registerLocalImageCache(persistentUrl, finalDataUrl);
+        registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
+        registerLocalImageCache(targetFilename, finalDataUrl);
 
         onProgress?.(100);
-        return persistentUrl;
+        // Return self-contained finalDataUrl directly so UI and storefront never face 404/405 or missing file issues
+        return finalDataUrl;
       } catch (fsErr) {
         console.warn("[AdminUploadService] Firestore mirror note:", fsErr);
       }
