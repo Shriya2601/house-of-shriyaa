@@ -273,8 +273,19 @@ function writeNewsletterList(subscribers: any[]): void {
   broadcastSseSync("newsletter_subscriptions", subscribers);
 }
 
-function setCorsHeaders(res: any) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function setCorsHeaders(res: any, req?: any) {
+  const origin = req?.headers?.origin || req?.headers?.referer;
+  if (origin && typeof origin === "string") {
+    try {
+      const parsed = new URL(origin);
+      res.setHeader("Access-Control-Allow-Origin", parsed.origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    } catch {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, PATCH, DELETE, OPTIONS"
