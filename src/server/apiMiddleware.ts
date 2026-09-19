@@ -274,21 +274,25 @@ function writeNewsletterList(subscribers: any[]): void {
 }
 
 function setCorsHeaders(res: any, req?: any) {
-  const origin = req?.headers?.origin || req?.headers?.referer;
+  let origin = req?.headers?.origin || req?.headers?.referer;
+  if (!origin && req?.headers?.host) {
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    origin = `${proto}://${req.headers.host}`;
+  }
+  let allowOrigin = "*";
   if (origin && typeof origin === "string") {
     try {
       const parsed = new URL(origin);
-      res.setHeader("Access-Control-Allow-Origin", parsed.origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    } catch {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+      allowOrigin = parsed.origin;
+    } catch {}
+  }
+  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  if (allowOrigin !== "*") {
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader(
     "Access-Control-Allow-Methods",
-    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"
   );
   res.setHeader(
     "Access-Control-Allow-Headers",

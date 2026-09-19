@@ -70,12 +70,23 @@ export async function onRequestGet(context: {
 
   // 2. Try Firestore fallback
   try {
-    const safeDocIds = [
-      key.replace(/\//g, "___"),
-      key.replace(/[^a-zA-Z0-9_-]/g, "_"),
-      `banners___${key.replace(/^banners\//, "").replace(/\//g, "___")}`,
-      `uploads___${key.replace(/^uploads\//, "").replace(/\//g, "___")}`,
-    ];
+    const keyWithoutExt = key.replace(/\.[a-zA-Z0-9]+$/, "");
+    const filename = key.split("/").pop() || "";
+    const filenameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+    const safeDocIds = Array.from(
+      new Set([
+        key.replace(/\//g, "___"),
+        key.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        keyWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        `banners___${key.replace(/^banners\//, "").replace(/\//g, "___")}`,
+        `uploads___${key.replace(/^uploads\//, "").replace(/\//g, "___")}`,
+        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+        `${filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+      ])
+    );
 
     for (const safeDocId of safeDocIds) {
       const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
@@ -86,25 +97,37 @@ export async function onRequestGet(context: {
       if (res.ok) {
         const doc = (await res.json()) as any;
         const dataUrl = doc?.fields?.dataUrl?.stringValue;
-        if (dataUrl) {
+        const dataBase64 = doc?.fields?.dataBase64?.stringValue;
+        const mimeType = doc?.fields?.mimeType?.stringValue || "image/jpeg";
+
+        let rawBase64 = "";
+        let mime = mimeType;
+
+        if (dataBase64) {
+          rawBase64 = dataBase64;
+        } else if (dataUrl) {
           const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
           if (match) {
-            const mime = match[1];
-            const binaryStr = atob(match[2]);
-            const len = binaryStr.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = binaryStr.charCodeAt(i);
-            }
-            return new Response(bytes.buffer, {
-              headers: {
-                "Content-Type": mime,
-                "Cache-Control": "no-cache, must-revalidate",
-                "Pragma": "no-cache",
-                "Access-Control-Allow-Origin": "*",
-              },
-            });
+            mime = match[1];
+            rawBase64 = match[2];
           }
+        }
+
+        if (rawBase64) {
+          const binaryStr = atob(rawBase64);
+          const len = binaryStr.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          return new Response(bytes.buffer, {
+            headers: {
+              "Content-Type": mime,
+              "Cache-Control": "no-cache, must-revalidate",
+              "Pragma": "no-cache",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
         }
       }
     }

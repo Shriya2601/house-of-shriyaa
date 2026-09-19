@@ -1942,9 +1942,10 @@ export async function saveProduct(
   // 2. Authoritative Backend Server API persistence (disk/filesystem storage)
   // MUST await backend confirmation first to ensure true persistence
   const token = getAdminAuthToken();
-  const apiRes = await fetch("/api/products", {
+  const saveUrl = `/api/products?token=${encodeURIComponent(token)}&adminToken=${encodeURIComponent(token)}&key=${encodeURIComponent(token)}`;
+  const apiRes = await fetch(saveUrl, {
     method: "POST",
-    credentials: "include",
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache",

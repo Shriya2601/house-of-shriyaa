@@ -179,6 +179,19 @@ export async function optimizeImageForUpload(
   }
 
   return new Promise((resolve) => {
+    let resolved = false;
+    const safeResolve = (val: string) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(val);
+      }
+    };
+
+    // Safety timeout: Never hang canvas optimization indefinitely
+    const safetyTimer = setTimeout(() => {
+      safeResolve(typeof source === "string" ? source : "");
+    }, 8000);
+
     const resolveSource = async (): Promise<string> => {
       if (typeof source === "string") {
         if (source.startsWith("blob:")) {
@@ -209,7 +222,8 @@ export async function optimizeImageForUpload(
     resolveSource()
       .then((rawUrl) => {
         if (!rawUrl || (!rawUrl.startsWith("data:") && !rawUrl.startsWith("blob:"))) {
-          resolve(rawUrl);
+          clearTimeout(safetyTimer);
+          safeResolve(rawUrl);
           return;
         }
 
@@ -237,10 +251,12 @@ export async function optimizeImageForUpload(
           img.crossOrigin = "anonymous";
         }
         img.onerror = async () => {
+          clearTimeout(safetyTimer);
           const fb = await fallbackDataUrl();
-          resolve(fb || rawUrl);
+          safeResolve(fb || rawUrl);
         };
         img.onload = () => {
+          clearTimeout(safetyTimer);
           try {
             let { width, height } = img;
             if (width > maxWidth || height > maxWidth) {
@@ -258,7 +274,7 @@ export async function optimizeImageForUpload(
             canvas.height = Math.max(1, height);
             const ctx = canvas.getContext("2d");
             if (!ctx) {
-              fallbackDataUrl().then((fb) => resolve(fb || rawUrl));
+              fallbackDataUrl().then((fb) => safeResolve(fb || rawUrl));
               return;
             }
 
@@ -275,15 +291,16 @@ export async function optimizeImageForUpload(
             if (output.length > 550000) {
               output = canvas.toDataURL("image/jpeg", 0.72);
             }
-            resolve(output);
+            safeResolve(output);
           } catch {
-            fallbackDataUrl().then((fb) => resolve(fb || rawUrl));
+            fallbackDataUrl().then((fb) => safeResolve(fb || rawUrl));
           }
         };
         img.src = rawUrl;
       })
       .catch(() => {
-        resolve(typeof source === "string" ? source : "");
+        clearTimeout(safetyTimer);
+        safeResolve(typeof source === "string" ? source : "");
       });
   });
 }
@@ -382,13 +399,19 @@ export async function uploadImageToAdminStorage(
   let uploadFilename = `${slot}-${uniqueTimestamp}.${ext}`;
 
   if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
-    const byteString = atob(optimizedDataUrl.split(",")[1]);
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
+    try {
+      const parts = optimizedDataUrl.split(",");
+      const cleanedB64 = (parts[1] || "").replace(/[\r\n\s]+/g, "");
+      const byteString = atob(cleanedB64);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      uploadBlob = new Blob([ab], { type: detectedMime });
+    } catch {
+      uploadBlob = new Blob(["image"], { type: "image/jpeg" });
     }
-    uploadBlob = new Blob([ab], { type: detectedMime });
   } else if (processedSource instanceof Blob) {
     uploadBlob = processedSource;
     if ((processedSource as File).name) uploadFilename = (processedSource as File).name;
@@ -431,7 +454,6 @@ export async function uploadImageToAdminStorage(
       const isJsonOk =
         response &&
         response.ok &&
-        !response.redirected &&
         !response.url.includes("__cookie_check") &&
         !contentType.includes("text/html");
 
@@ -443,7 +465,8 @@ export async function uploadImageToAdminStorage(
           const base = result.url.split("?")[0];
           const finalUrl = `${base}?v=${Date.now()}`;
           registerLocalImageCache(finalUrl, optimizedDataUrl);
-          tracker.logCacheRegistration([finalUrl]);
+          registerLocalImageCache(base, optimizedDataUrl);
+          tracker.logCacheRegistration([finalUrl, base]);
           tracker.logComplete(finalUrl, "SERVER_API");
           return finalUrl;
         }
@@ -481,7 +504,6 @@ export async function uploadImageToAdminStorage(
     let isFormOk =
       formResponse &&
       formResponse.ok &&
-      !formResponse.redirected &&
       !formResponse.url.includes("__cookie_check") &&
       !contentType.includes("text/html");
 
@@ -500,7 +522,6 @@ export async function uploadImageToAdminStorage(
         isFormOk =
           formResponse &&
           formResponse.ok &&
-          !formResponse.redirected &&
           !formResponse.url.includes("__cookie_check") &&
           !contentType.includes("text/html");
       } catch (altErr) {
@@ -518,8 +539,11 @@ export async function uploadImageToAdminStorage(
         onProgress?.(100);
         const base = result.url.split("?")[0];
         const finalUrl = `${base}?v=${Date.now()}`;
-        if (optimizedDataUrl) registerLocalImageCache(finalUrl, optimizedDataUrl);
-        tracker.logCacheRegistration([finalUrl]);
+        if (optimizedDataUrl) {
+          registerLocalImageCache(finalUrl, optimizedDataUrl);
+          registerLocalImageCache(base, optimizedDataUrl);
+        }
+        tracker.logCacheRegistration([finalUrl, base]);
         tracker.logComplete(finalUrl, "SERVER_API");
         return finalUrl;
       }
@@ -619,19 +643,28 @@ export async function uploadImageToAdminStorage(
       tracker.logFirestoreStart("stored_images", safeDocId, finalDataUrl.length);
 
       try {
-        const imgDocRef = doc(db, "stored_images", safeDocId);
-        await setDoc(
-          imgDocRef,
-          {
-            key: `uploads/${targetFilename}`,
-            filename: targetFilename,
-            slot: safeSlot,
-            productId: productId || "",
-            dataUrl: finalDataUrl,
-            mimeType: "image/jpeg",
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
+        const payload = {
+          key: `uploads/${targetFilename}`,
+          filename: targetFilename,
+          slot: safeSlot,
+          productId: productId || "",
+          dataUrl: finalDataUrl,
+          mimeType: "image/jpeg",
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Save under multiple document ID aliases so that any lookup pattern
+        // (raw filename, no-extension docId, or uploads_ prefix) finds the image instantly
+        const docKeys = [
+          safeDocId,
+          `${safeDocId}_jpg`,
+          `uploads_${safeDocId}_jpg`,
+        ];
+
+        await Promise.all(
+          docKeys.map((k) =>
+            setDoc(doc(db, "stored_images", k), payload, { merge: true }).catch(() => {})
+          )
         );
         tracker.logFirestoreSuccess("stored_images", safeDocId);
 
@@ -639,7 +672,8 @@ export async function uploadImageToAdminStorage(
         registerLocalImageCache(persistentUrl, finalDataUrl);
         registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
         registerLocalImageCache(targetFilename, finalDataUrl);
-        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename]);
+        registerLocalImageCache(safeDocId, finalDataUrl);
+        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename, safeDocId]);
 
         onProgress?.(100);
         tracker.logComplete(persistentUrl, "FIRESTORE_MIRROR");

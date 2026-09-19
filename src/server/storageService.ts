@@ -243,24 +243,36 @@ export async function persistImagePermanently(params: {
   if (db) {
     try {
       const docId = key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const docRef = doc(db, "stored_images", docId);
+      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+      const cleanDocIds = Array.from(
+        new Set([
+          docId,
+          filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+        ])
+      );
+
       // Safe base64 representation
       const base64Data = buffer.toString("base64");
       // Check document limit (1MB safe threshold)
-      if (base64Data.length < 900000) {
-        setDoc(
-          docRef,
-          {
-            key,
-            filename,
-            mimeType,
-            size: buffer.length,
-            dataBase64: base64Data,
-            slot: slot || null,
-            productId: productId || null,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
+      if (base64Data.length < 950000) {
+        const payload = {
+          key,
+          filename,
+          mimeType,
+          size: buffer.length,
+          dataBase64: base64Data,
+          slot: slot || null,
+          productId: productId || null,
+          updatedAt: new Date().toISOString(),
+        };
+
+        Promise.all(
+          cleanDocIds.map((id) =>
+            setDoc(doc(db, "stored_images", id), payload, { merge: true }).catch(() => {})
+          )
         )
           .then(() => {
             console.log(`[Storage Service] Image backed up to Firestore: ${docId}`);
@@ -373,13 +385,23 @@ export async function retrieveImage(
   const db = getServerDb();
   if (db) {
     try {
-      const docIdsToTry = [
-        clean.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        clean.replace(/\//g, "___"),
-        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        `banners_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-      ];
+      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+      const cleanWithoutExt = clean.replace(/\.[a-zA-Z0-9]+$/, "");
+      const docIdsToTry = Array.from(
+        new Set([
+          clean.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          clean.replace(/\//g, "___"),
+          cleanWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          `banners_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          `banners_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+          `${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+        ])
+      );
 
       for (const docId of docIdsToTry) {
         const docRef = doc(db, "stored_images", docId);

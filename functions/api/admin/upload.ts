@@ -32,14 +32,17 @@ function getCorsHeaders(request?: Request): Record<string, string> {
       allowOrigin = origin;
     }
   }
-  return {
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers":
       "Content-Type, Authorization, x-admin-token, x-admin-key, X-Requested-With, Cache-Control, Pragma, Range, Origin, Accept",
-    "Access-Control-Allow-Credentials": "true",
     "Access-Control-Max-Age": "86400",
   };
+  if (allowOrigin !== "*") {
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+  return headers;
 }
 
 function jsonResponse(data: any, status = 200, request?: Request): Response {
@@ -360,9 +363,13 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
 
     // 4. Mirror to Firestore stored_images for cloud durability
     try {
-      const base64Data = btoa(
-        new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
+      let binary = "";
+      const bytes = new Uint8Array(fileBuffer);
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      const base64Data = btoa(binary);
       const safeDocId = key.replace(/\//g, "___");
       const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
         safeDocId
