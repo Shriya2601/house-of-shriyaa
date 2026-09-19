@@ -1,8 +1,11 @@
 /**
  * Cloudflare Pages Function: /api/images/*
- * Serves permanent images from Cloudflare R2 and persistent Firestore fallback
+ * Serves permanent images from Cloudflare R2 and Cloudflare D1 fallback
+ * ZERO Firebase usage!
  */
-import { findR2Bucket } from "../admin/upload";
+
+import { getR2Bucket } from "../../lib/r2";
+import { executeD1Query, ensureD1Tables } from "../../lib/d1";
 
 interface Env {
   [key: string]: any;
@@ -42,7 +45,7 @@ export async function onRequestGet(context: {
   }
 
   // 1. Try Cloudflare R2 Bucket
-  const r2Bucket = findR2Bucket(env);
+  const r2Bucket = getR2Bucket(env);
   if (r2Bucket) {
     try {
       let object = await r2Bucket.get(key);
@@ -55,84 +58,70 @@ export async function onRequestGet(context: {
 
       if (object) {
         const headers = new Headers();
-        object.writeHttpMetadata(headers);
-        headers.set("etag", object.httpEtag);
-        // Anti-cache headers: ensure instant updates when photos are replaced
+        if (typeof object.writeHttpMetadata === "function") {
+          object.writeHttpMetadata(headers);
+        }
+        if (object.httpEtag) {
+          headers.set("etag", object.httpEtag);
+        }
         headers.set("Cache-Control", "no-cache, must-revalidate");
         headers.set("Pragma", "no-cache");
         headers.set("Access-Control-Allow-Origin", "*");
         return new Response(object.body, { headers });
       }
     } catch (r2Err) {
-      console.warn("[Cloudflare R2 Get Error]:", r2Err);
+      console.warn("[Cloudflare R2 Get Notice]:", r2Err);
     }
   }
 
-  // 2. Try Firestore fallback
+  // 2. Cloudflare D1 stored_images persistent fallback
   try {
-    const keyWithoutExt = key.replace(/\.[a-zA-Z0-9]+$/, "");
-    const filename = key.split("/").pop() || "";
-    const filenameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
-    const safeDocIds = Array.from(
-      new Set([
-        key.replace(/\//g, "___"),
-        key.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        keyWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        `banners___${key.replace(/^banners\//, "").replace(/\//g, "___")}`,
-        `uploads___${key.replace(/^uploads\//, "").replace(/\//g, "___")}`,
-        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-        `uploads_${filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
-        `${filenameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
-      ])
+    await ensureD1Tables(env);
+    const filename = key.split("/").pop() || key;
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+
+    const candidates = [
+      key,
+      `uploads/${key}`,
+      `banners/${key}`,
+      filename,
+      `uploads/${filename}`,
+      `banners/${filename}`,
+      nameWithoutExt,
+    ];
+
+    const placeholders = candidates.map(() => "?").join(", ");
+    const { results } = await executeD1Query(
+      env,
+      `SELECT data_url, mime_type, filename FROM stored_images WHERE key IN (${placeholders}) OR filename IN (${placeholders}) LIMIT 1`,
+      [...candidates, ...candidates]
     );
 
-    for (const safeDocId of safeDocIds) {
-      const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
-        safeDocId
-      )}?key=AIzaSyDh8_32I7BS4sjBSjeydj7vhAaSbvdO6w8`;
+    if (results && results.length > 0 && results[0].data_url) {
+      const row = results[0];
+      const dataUrl = row.data_url;
+      const mime = row.mime_type || "image/jpeg";
 
-      const res = await fetch(firestoreUrl);
-      if (res.ok) {
-        const doc = (await res.json()) as any;
-        const dataUrl = doc?.fields?.dataUrl?.stringValue;
-        const dataBase64 = doc?.fields?.dataBase64?.stringValue;
-        const mimeType = doc?.fields?.mimeType?.stringValue || "image/jpeg";
-
-        let rawBase64 = "";
-        let mime = mimeType;
-
-        if (dataBase64) {
-          rawBase64 = dataBase64;
-        } else if (dataUrl) {
-          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mime = match[1];
-            rawBase64 = match[2];
-          }
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const binaryStr = atob(match[2]);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
         }
-
-        if (rawBase64) {
-          const binaryStr = atob(rawBase64);
-          const len = binaryStr.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryStr.charCodeAt(i);
-          }
-          return new Response(bytes.buffer, {
-            headers: {
-              "Content-Type": mime,
-              "Cache-Control": "no-cache, must-revalidate",
-              "Pragma": "no-cache",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
-        }
+        return new Response(bytes.buffer, {
+          headers: {
+            "Content-Type": match[1] || mime,
+            "Cache-Control": "no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
       }
     }
-  } catch (fsErr) {
-    console.warn("[Cloudflare Image Firestore Fallback Notice]:", fsErr);
+  } catch (d1Err) {
+    console.warn("[Cloudflare Image D1 Fallback Notice]:", d1Err);
   }
 
   return new Response(

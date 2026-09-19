@@ -1,13 +1,11 @@
 /**
  * Admin Production Image Upload Service
  * Provides robust multi-tier image uploads:
- * Tier 1: Production endpoint /api/admin/upload & /api/upload (R2 & server disk)
- * Tier 2: Direct resilient cloud & Firestore persistent storage fallback (stored_images collection)
+ * Tier 1: Production endpoint /api/admin/upload & /api/upload (Cloudflare R2 & D1)
+ * Tier 2: Resilient Base64 & Local Cache Fallback
+ * ZERO Firebase usage!
  */
 
-import { db, storage } from "../lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { UploadLifecycleTracker } from "../utils/adminUploadLogger";
 
 export interface AdminUploadOptions {
@@ -555,152 +553,32 @@ export async function uploadImageToAdminStorage(
   }
 
   // =========================================================================
-  // STAGE 4: TIER 2 - Direct Firebase Storage (Fast Non-Blocking Probe)
-  // Only attempted if storage is available; capped at 2.5s to avoid 2-minute hangs
-  // =========================================================================
-  if (storage) {
-    const targetStoragePath = productId
-      ? `products/${productId}/${slot}-${uniqueTimestamp}.${ext}`
-      : `uploads/${slot}-${uniqueTimestamp}.${ext}`;
-    const bucketName = storage.app?.options?.storageBucket || "house-of-shriya-d49d6.firebasestorage.app";
-
-    try {
-      tracker.logFirebaseStorageStart(bucketName, targetStoragePath);
-      const sRef = storageRef(storage, targetStoragePath);
-
-      const uploadTask = uploadBytesResumable(sRef, uploadBlob, {
-        contentType: detectedMime,
-        customMetadata: {
-          slot,
-          productId: productId || "",
-          uploadedAt: new Date().toISOString(),
-          app: "House of Shriya",
-        },
-      });
-
-      // Strict 2500ms timeout prevents Firebase Storage from locking up the browser on 404 buckets
-      const storageDownloadUrl = await Promise.race([
-        new Promise<string>((resolve, reject) => {
-          uploadTask.on(
-            "state_changed",
-            (snapshot) => {
-              const progress = snapshot.totalBytes > 0
-                ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-                : 0;
-              onProgress?.(Math.min(95, Math.max(30, progress)));
-              tracker.logFirebaseStorageProgress(progress, snapshot.bytesTransferred, snapshot.totalBytes);
-            },
-            (storageErr) => {
-              tracker.logFirebaseStorageError(storageErr, bucketName, targetStoragePath);
-              reject(storageErr);
-            },
-            async () => {
-              try {
-                const url = await getDownloadURL(uploadTask.snapshot.ref);
-                tracker.logFirebaseStorageSuccess(url);
-                resolve(url);
-              } catch (urlErr) {
-                tracker.logFirebaseStorageError(urlErr, bucketName, targetStoragePath);
-                reject(urlErr);
-              }
-            }
-          );
-        }),
-        new Promise<string>((_, reject) =>
-          setTimeout(() => {
-            try { uploadTask.cancel(); } catch {}
-            reject(new Error("Firebase Storage bucket timeout (unprovisioned bucket)"));
-          }, 2500)
-        ),
-      ]);
-
-      if (storageDownloadUrl) {
-        onProgress?.(100);
-        registerLocalImageCache(storageDownloadUrl, optimizedDataUrl);
-        tracker.logCacheRegistration([storageDownloadUrl]);
-        tracker.logComplete(storageDownloadUrl, "FIREBASE_STORAGE");
-        return storageDownloadUrl;
-      }
-    } catch (storageException: any) {
-      // Gracefully continue to Tier 3 (Firestore persistent mirror)
-    }
-  }
-
-  // =========================================================================
-  // STAGE 5: TIER 2 - Resilient Cloud & Firestore Persistent Storage Mirror
+  // STAGE 4: Resilient Local Cache & Memory Registration
   // =========================================================================
   try {
-    onProgress?.(90);
+    onProgress?.(95);
     const finalDataUrl = optimizedDataUrl || (typeof processedSource === "string" ? processedSource : "");
 
-    if (finalDataUrl && finalDataUrl.startsWith("data:")) {
-      const timestamp = Date.now();
-      const rand = Math.floor(Math.random() * 100000);
-      const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
-      const safeDocId = `${safeSlot}-${timestamp}-${rand}`;
-      const targetFilename = `${safeDocId}.jpg`;
-
-      tracker.logFirestoreStart("stored_images", safeDocId, finalDataUrl.length);
-
-      try {
-        const payload = {
-          key: `uploads/${targetFilename}`,
-          filename: targetFilename,
-          slot: safeSlot,
-          productId: productId || "",
-          dataUrl: finalDataUrl,
-          mimeType: "image/jpeg",
-          updatedAt: new Date().toISOString(),
-        };
-
-        // Save under multiple document ID aliases so that any lookup pattern
-        // (raw filename, no-extension docId, or uploads_ prefix) finds the image instantly
-        const docKeys = [
-          safeDocId,
-          `${safeDocId}_jpg`,
-          `uploads_${safeDocId}_jpg`,
-        ];
-
-        await Promise.all(
-          docKeys.map((k) =>
-            setDoc(doc(db, "stored_images", k), payload, { merge: true }).catch(() => {})
-          )
-        );
-        tracker.logFirestoreSuccess("stored_images", safeDocId);
-
-        const persistentUrl = `/uploads/${targetFilename}?v=${timestamp}`;
-        registerLocalImageCache(persistentUrl, finalDataUrl);
-        registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
-        registerLocalImageCache(targetFilename, finalDataUrl);
-        registerLocalImageCache(safeDocId, finalDataUrl);
-        registerLocalImageCache(finalDataUrl, finalDataUrl);
-        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename, safeDocId, finalDataUrl]);
-
-        onProgress?.(100);
-        tracker.logComplete(finalDataUrl, "FIRESTORE_MIRROR");
-        return finalDataUrl;
-      } catch (fsErr) {
-        tracker.logFirestoreError(fsErr, "stored_images", safeDocId);
-      }
-    }
-    // Resilient Fallback: If we have an optimized data URL or source, register it in cache
     if (finalDataUrl) {
       const timestamp = Date.now();
       const rand = Math.floor(Math.random() * 100000);
       const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
       const targetFilename = `${safeSlot}-${timestamp}-${rand}.jpg`;
-      const fallbackUrl = `/uploads/${targetFilename}?v=${timestamp}`;
-      registerLocalImageCache(fallbackUrl, finalDataUrl);
+      const persistentUrl = `/uploads/${targetFilename}?v=${timestamp}`;
+
+      registerLocalImageCache(persistentUrl, finalDataUrl);
       registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
       registerLocalImageCache(targetFilename, finalDataUrl);
       registerLocalImageCache(finalDataUrl, finalDataUrl);
+      tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename, finalDataUrl]);
+
       onProgress?.(100);
       tracker.logComplete(finalDataUrl, "LOCAL_CACHE_FALLBACK");
       return finalDataUrl;
     }
 
     onProgress?.(100);
-    throw new Error("Failed to upload and store image permanently. Please ensure backend server is reachable.");
+    throw new Error("Failed to process image. Please verify backend server is reachable.");
   } catch (fallbackErr: any) {
     tracker.logFailure(fallbackErr);
     if (optimizedDataUrl) {
@@ -711,7 +589,7 @@ export async function uploadImageToAdminStorage(
       registerLocalImageCache(optimizedDataUrl, optimizedDataUrl);
       return optimizedDataUrl;
     }
-    throw new Error(fallbackErr?.message || "Failed to process and store image permanently.");
+    throw new Error(fallbackErr?.message || "Failed to process and store image.");
   }
 }
 

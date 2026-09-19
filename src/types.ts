@@ -13,6 +13,17 @@ export interface ColorVariant {
   inStock?: boolean; // Independent in-stock status for this color
 }
 
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL?: string | null;
+  phoneNumber?: string | null;
+  emailVerified?: boolean;
+}
+
+export type User = AuthUser;
+
 export interface Product {
   id: string;
   name: string;

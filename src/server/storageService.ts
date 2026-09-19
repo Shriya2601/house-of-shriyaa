@@ -1,36 +1,33 @@
 import fs from "fs";
 import path from "path";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, collection } from "firebase/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
 
 // In-memory binary cache for instant zero-latency serving
 const memoryBinaryCache = new Map<string, { buffer: Buffer; mimeType: string; timestamp: number }>();
 
-// Lazy-initialized Firebase client for server-side persistent image backing
-let serverDb: ReturnType<typeof getFirestore> | null = null;
+// Persistent file-backed store for image records (survives restarts without Firebase)
+const STORED_IMAGES_FILE = path.resolve(process.cwd(), "public/data/stored_images.json");
 
-function getServerDb() {
-  if (!serverDb) {
-    try {
-      const app =
-        getApps().length > 0
-          ? getApp()
-          : initializeApp({
-              apiKey: firebaseConfig.apiKey,
-              authDomain: firebaseConfig.authDomain,
-              projectId: firebaseConfig.projectId,
-              storageBucket: firebaseConfig.storageBucket,
-              messagingSenderId: firebaseConfig.messagingSenderId,
-              appId: firebaseConfig.appId,
-            });
-      serverDb = getFirestore(app);
-    } catch (err) {
-      console.warn("[Storage Service] Server Firestore init notice:", err);
+function readStoredImagesMap(): Record<string, any> {
+  try {
+    if (fs.existsSync(STORED_IMAGES_FILE)) {
+      const raw = fs.readFileSync(STORED_IMAGES_FILE, "utf-8");
+      return JSON.parse(raw);
     }
+  } catch {}
+  return {};
+}
+
+function writeStoredImagesRecord(id: string, record: any): void {
+  try {
+    const dir = path.dirname(STORED_IMAGES_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const map = readStoredImagesMap();
+    map[id] = record;
+    fs.writeFileSync(STORED_IMAGES_FILE, JSON.stringify(map, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[Storage Service] Stored images write error:", err);
   }
-  return serverDb;
 }
 
 // Lazy-initialized Cloudflare R2 / S3 client
@@ -237,53 +234,39 @@ export async function persistImagePermanently(params: {
     }
   }
 
-  // 4. Save to Firestore permanent cloud storage asynchronously in the background
-  // (Ensures images survive container re-creations without blocking the HTTP response)
-  const db = getServerDb();
-  if (db) {
-    try {
-      const docId = key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
-      const cleanDocIds = Array.from(
-        new Set([
-          docId,
-          filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
-        ])
-      );
+  // 4. Save to persistent stored_images store (Cloudflare D1 mirror & server disk)
+  try {
+    const docId = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+    const cleanDocIds = Array.from(
+      new Set([
+        docId,
+        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+      ])
+    );
 
-      // Safe base64 representation
-      const base64Data = buffer.toString("base64");
-      // Check document limit (1MB safe threshold)
-      if (base64Data.length < 950000) {
-        const payload = {
-          key,
-          filename,
-          mimeType,
-          size: buffer.length,
-          dataBase64: base64Data,
-          slot: slot || null,
-          productId: productId || null,
-          updatedAt: new Date().toISOString(),
-        };
+    const base64Data = buffer.toString("base64");
+    const payload = {
+      key,
+      filename,
+      mimeType,
+      size: buffer.length,
+      dataBase64: base64Data,
+      dataUrl: `data:${mimeType};base64,${base64Data}`,
+      slot: slot || null,
+      productId: productId || null,
+      r2Url: r2PublicUrl || null,
+      updatedAt: new Date().toISOString(),
+    };
 
-        Promise.all(
-          cleanDocIds.map((id) =>
-            setDoc(doc(db, "stored_images", id), payload, { merge: true }).catch(() => {})
-          )
-        )
-          .then(() => {
-            console.log(`[Storage Service] Image backed up to Firestore: ${docId}`);
-          })
-          .catch((fsErr) => {
-            console.warn("[Storage Service] Firestore image backup notice:", fsErr);
-          });
-      }
-    } catch (fsErr) {
-      console.warn("[Storage Service] Firestore image backup preparation notice:", fsErr);
+    for (const id of cleanDocIds) {
+      writeStoredImagesRecord(id, payload);
     }
+  } catch (storeErr) {
+    console.warn("[Storage Service] Stored image record error:", storeErr);
   }
 
   // Determine authoritative public URL
@@ -303,7 +286,7 @@ export async function persistImagePermanently(params: {
  * 1. Memory cache
  * 2. Disk filesystem
  * 3. Cloudflare R2
- * 4. Firestore stored_images
+ * 4. Stored images record
  */
 export async function retrieveImage(
   keyOrFilename: string
@@ -377,58 +360,54 @@ export async function retrieveImage(
         } catch {}
       }
     } catch {
-      // Fall through to Firestore
+      // Fall through
     }
   }
 
-  // 4. Firestore stored_images
-  const db = getServerDb();
-  if (db) {
-    try {
-      const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
-      const cleanWithoutExt = clean.replace(/\.[a-zA-Z0-9]+$/, "");
-      const docIdsToTry = Array.from(
-        new Set([
-          clean.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          clean.replace(/\//g, "___"),
-          cleanWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          `banners_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-          `banners_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-          `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-          `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
-          `${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
-        ])
-      );
+  // 4. Stored images record fallback
+  try {
+    const nameWithoutExt = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+    const cleanWithoutExt = clean.replace(/\.[a-zA-Z0-9]+$/, "");
+    const docIdsToTry = Array.from(
+      new Set([
+        clean.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        clean.replace(/\//g, "___"),
+        cleanWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        filename.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        `banners_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `banners_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        `uploads_${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+        `${nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, "_")}_jpg`,
+      ])
+    );
 
-      for (const docId of docIdsToTry) {
-        const docRef = doc(db, "stored_images", docId);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data?.dataBase64) {
-            const buf = Buffer.from(data.dataBase64, "base64");
-            const mime = data.mimeType || "image/jpeg";
+    const storedMap = readStoredImagesMap();
+    for (const docId of docIdsToTry) {
+      const data = storedMap[docId];
+      if (data) {
+        if (data.dataBase64) {
+          const buf = Buffer.from(data.dataBase64, "base64");
+          const mime = data.mimeType || "image/jpeg";
+          memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
+          writeImageToDisk(filename, buf);
+          return { buffer: buf, mimeType: mime };
+        } else if (data.dataUrl) {
+          const match = data.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const buf = Buffer.from(match[2], "base64");
+            const mime = match[1] || "image/jpeg";
             memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
             writeImageToDisk(filename, buf);
             return { buffer: buf, mimeType: mime };
-          } else if (data?.dataUrl) {
-            const match = data.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              const buf = Buffer.from(match[2], "base64");
-              const mime = match[1] || "image/jpeg";
-              memoryBinaryCache.set(clean, { buffer: buf, mimeType: mime, timestamp: Date.now() });
-              writeImageToDisk(filename, buf);
-              return { buffer: buf, mimeType: mime };
-            }
           }
         }
       }
-    } catch (fsErr) {
-      console.warn("[Storage Service] Firestore fetch notice:", fsErr);
     }
+  } catch (err) {
+    console.warn("[Storage Service] Stored image retrieval notice:", err);
   }
 
   return null;

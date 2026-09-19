@@ -1,15 +1,14 @@
 /**
  * Cloudflare Pages Function: /api/site-content
- * Reads and persists site content (Hero Slideshow, Features, Trust Badges)
- * directly to Firestore so updates persist on Cloudflare Pages and broadcast live.
+ * Cloudflare D1 Database Powered Site Content
+ * ZERO Firebase usage!
  */
+
+import { ensureD1Tables, executeD1Query, getD1Binding } from "../lib/d1";
 
 interface Env {
   [key: string]: any;
 }
-
-const FIRESTORE_PROJECT_ID = "house-of-shriya-d49d6";
-const SITE_CONTENT_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents/site_content/main`;
 
 function jsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -26,67 +25,6 @@ function jsonResponse(data: any, status = 200): Response {
   });
 }
 
-/**
- * Converts a JS object/primitive to Firestore REST format
- */
-function jsToFirestoreValue(val: any): any {
-  if (val === null || val === undefined) return { nullValue: null };
-  if (typeof val === "boolean") return { booleanValue: val };
-  if (typeof val === "number") {
-    return Number.isInteger(val) ? { integerValue: val.toString() } : { doubleValue: val };
-  }
-  if (typeof val === "string") return { stringValue: val };
-  if (Array.isArray(val)) {
-    return {
-      arrayValue: {
-        values: val.map(jsToFirestoreValue),
-      },
-    };
-  }
-  if (typeof val === "object") {
-    const fields: Record<string, any> = {};
-    for (const [k, v] of Object.entries(val)) {
-      if (v !== undefined) {
-        fields[k] = jsToFirestoreValue(v);
-      }
-    }
-    return { mapValue: { fields } };
-  }
-  return { stringValue: String(val) };
-}
-
-/**
- * Converts a Firestore REST value back to standard JS
- */
-function firestoreValueToJs(val: any): any {
-  if (!val) return null;
-  if ("stringValue" in val) return val.stringValue;
-  if ("booleanValue" in val) return val.booleanValue;
-  if ("integerValue" in val) return parseInt(val.integerValue, 10);
-  if ("doubleValue" in val) return parseFloat(val.doubleValue);
-  if ("nullValue" in val) return null;
-  if ("arrayValue" in val) {
-    return (val.arrayValue.values || []).map(firestoreValueToJs);
-  }
-  if ("mapValue" in val) {
-    const obj: Record<string, any> = {};
-    for (const [k, v] of Object.entries(val.mapValue.fields || {})) {
-      obj[k] = firestoreValueToJs(v);
-    }
-    return obj;
-  }
-  return null;
-}
-
-function firestoreDocToJs(doc: any): any {
-  if (!doc?.fields) return {};
-  const obj: Record<string, any> = {};
-  for (const [k, v] of Object.entries(doc.fields)) {
-    obj[k] = firestoreValueToJs(v);
-  }
-  return obj;
-}
-
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
     status: 204,
@@ -99,65 +37,106 @@ export async function onRequestOptions(): Promise<Response> {
   });
 }
 
-export async function onRequestGet(context: { request: Request; env: Env }): Promise<Response> {
-  try {
-    const res = await fetch(SITE_CONTENT_URL, {
-      headers: { Accept: "application/json" },
-    });
+export async function onRequestGet(context: {
+  request: Request;
+  env: Env;
+}): Promise<Response> {
+  const { env } = context;
 
-    if (res.ok) {
-      const doc = await res.json();
-      const content = firestoreDocToJs(doc);
-      if (content && Object.keys(content).length > 0) {
-        return jsonResponse(content, 200);
-      }
+  try {
+    await ensureD1Tables(env);
+
+    const { results } = await executeD1Query(
+      env,
+      "SELECT content_json FROM site_content WHERE id = 'main' LIMIT 1"
+    );
+
+    if (results && results.length > 0 && results[0].content_json) {
+      try {
+        const parsed = JSON.parse(results[0].content_json);
+        return jsonResponse(parsed);
+      } catch {}
     }
 
-    // Fallback: Return empty object so frontend uses its cached or default slides
-    return jsonResponse({}, 200);
-  } catch (err: any) {
-    console.warn("[Cloudflare site-content GET]:", err);
-    return jsonResponse({}, 200);
-  }
-}
-
-export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
-  try {
-    const body = await context.request.json() as any;
-    if (!body || typeof body !== "object") {
-      return jsonResponse({ error: "Invalid JSON body" }, 400);
-    }
-
-    const updated = {
-      ...body,
-      updatedAt: new Date().toISOString(),
+    // Default fallback content
+    const defaultContent = {
+      heroTitle: "Elegance in Every Thread",
+      heroSubtitle: "House of Shriya brings you curated ethnic luxury with bespoke craftsmanship.",
+      heroSlides: [
+        {
+          id: "slide-1",
+          image: "/uploads/banners/hero-slide-1789586249703-57784.jpg",
+          title: "The Royal Festive Edit",
+          subtitle: "Hand-finished satin ensembles tailored for effortless festive grace.",
+          ctaText: "Shop Collection",
+          ctaLink: "/shop",
+        },
+      ],
+      announcementBar: {
+        text: "✨ Exclusive Inaugural Offers Across All Festive Silhouettes | Complimentary Shipping Across India",
+        link: "/shop",
+      },
     };
 
-    // Construct Firestore fields
-    const fields: Record<string, any> = {};
-    for (const [k, v] of Object.entries(updated)) {
-      if (v !== undefined) {
-        fields[k] = jsToFirestoreValue(v);
-      }
-    }
-
-    const res = await fetch(SITE_CONTENT_URL, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.warn("[Cloudflare site-content PATCH warning]:", errText);
-    }
-
-    return jsonResponse({ success: true, siteContent: updated }, 200);
+    return jsonResponse(defaultContent);
   } catch (err: any) {
-    console.error("[Cloudflare site-content POST error]:", err);
-    return jsonResponse({ error: err?.message || "Failed to update site content" }, 500);
+    console.error("[D1 Site Content GET Error]:", err);
+    return jsonResponse({}, 200);
   }
 }
 
-export const onRequestPut = onRequestPost;
-export const onRequestPatch = onRequestPost;
+export async function onRequestPost(context: {
+  request: Request;
+  env: Env;
+}): Promise<Response> {
+  const { request, env } = context;
+
+  try {
+    await ensureD1Tables(env);
+
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ success: false, error: "Invalid JSON body" }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const contentToSave = {
+      ...body,
+      updatedAt: now,
+    };
+
+    const contentJson = JSON.stringify(contentToSave);
+
+    const db = getD1Binding(env);
+    if (db) {
+      await db
+        .prepare(
+          `INSERT INTO site_content (id, content_json, updated_at)
+           VALUES ('main', ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             content_json = excluded.content_json,
+             updated_at = excluded.updated_at`
+        )
+        .bind(contentJson, now)
+        .run();
+    } else {
+      await executeD1Query(
+        env,
+        `INSERT OR REPLACE INTO site_content (id, content_json, updated_at)
+         VALUES ('main', ?, ?)`,
+        [contentJson, now]
+      );
+    }
+
+    return jsonResponse({
+      success: true,
+      message: "Site content persisted to Cloudflare D1 successfully",
+      content: contentToSave,
+    });
+  } catch (err: any) {
+    console.error("[D1 Site Content POST Error]:", err);
+    return jsonResponse({ success: false, error: err?.message || String(err) }, 500);
+  }
+}

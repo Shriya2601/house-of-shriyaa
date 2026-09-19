@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { User } from "firebase/auth";
 import {
+  AuthUser as User,
   Product,
   SiteContent,
   CategoryItem,
@@ -43,8 +43,6 @@ import {
   factoryResetCatalog,
   type FactoryResetResult,
 } from "../services/storeService";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import { db } from "../lib/firebase";
 import { products as initialFallbackProducts } from "../data/products";
 
 interface StoreContextType {
@@ -221,40 +219,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     if (currentUser?.email || currentUser?.uid) {
       try {
-        const colRef = collection(db, "orders");
         const remoteOrders: Order[] = [];
 
-        // 1. Query by customer.email (without requiring composite index)
+        // 1. Query by customer email from Cloudflare D1 /api/orders
         if (currentUser.email) {
           try {
-            const q = query(
-              colRef,
-              where("customer.email", "==", currentUser.email.trim().toLowerCase())
-            );
-            const snap = await getDocs(q);
-            snap.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
+            const res = await fetch(`/api/orders?email=${encodeURIComponent(currentUser.email.trim().toLowerCase())}`);
+            if (res.ok) {
+              const ordersData = await res.json();
+              if (Array.isArray(ordersData)) {
+                remoteOrders.push(...ordersData);
+              }
+            }
           } catch (err) {
-            console.warn("Error querying orders by email:", err);
-          }
-        }
-
-        // 2. Query by userId
-        if (currentUser.uid) {
-          try {
-            const qUser = query(colRef, where("userId", "==", currentUser.uid));
-            const snapUser = await getDocs(qUser);
-            snapUser.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
-          } catch (err) {
-            console.warn("Error querying orders by userId:", err);
-          }
-
-          // 3. Query patron's personal bookings subcollection
-          try {
-            const userSubCol = collection(db, "customers", currentUser.uid, "bookings");
-            const subSnap = await getDocs(userSubCol);
-            subSnap.docs.forEach((d) => remoteOrders.push({ id: d.id, ...d.data() } as Order));
-          } catch (err) {
-            console.warn("Error querying patron bookings subcollection:", err);
+            console.warn("Error fetching orders by email:", err);
           }
         }
 

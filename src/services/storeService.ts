@@ -11,17 +11,16 @@ import {
   orderBy,
   where,
   limit,
-} from "firebase/firestore";
-import {
+  db,
+  auth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
-  type User,
   updateProfile,
-} from "firebase/auth";
-import { db, auth } from "../lib/firebase";
+} from "./cloudflareBridge";
+import { AuthUser as User } from "../types";
 import { uploadImageToAdminStorage, getAdminAuthToken } from "./adminUploadService";
 import {
   Product,
@@ -76,13 +75,9 @@ export function handleFirestoreError(
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
+      isAnonymous: false,
+      tenantId: null,
+      providerInfo: [],
     },
     operationType,
     path,
@@ -3004,7 +2999,7 @@ export async function creditReferrer(referrerCode: string): Promise<void> {
       const data = docSnap.data() as CustomerProfile;
       const updatedCount = (data.referralCount || 0) + 1;
       const updatedEarnings = (data.referralEarnings || 0) + 100;
-      await updateDoc(docSnap.ref, {
+      await updateDoc(doc(db, "customers", docSnap.id), {
         referralCount: updatedCount,
         referralEarnings: updatedEarnings,
         updatedAt: new Date().toISOString(),

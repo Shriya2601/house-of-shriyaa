@@ -11,7 +11,6 @@ import {
   CloudCheck,
   ShieldCheck,
 } from "lucide-react";
-import { app, auth } from "../../lib/firebase";
 import { uploadImageToAdminStorage } from "../../services/adminUploadService";
 
 interface StorageDiagnosticModalProps {
@@ -34,8 +33,8 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [fileSizeKb, setFileSizeKb] = useState(25);
 
-  const projectId = app?.options?.projectId || "house-of-shriya-d49d6";
-  const currentAuthUser = auth?.currentUser;
+  const databaseEngine = "Cloudflare D1";
+  const storageEngine = "Cloudflare R2";
 
   const appendLog = (type: LogEntry["type"], text: string) => {
     const time = new Date().toLocaleTimeString();
@@ -76,7 +75,8 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
     setLogs([]);
 
     appendLog("info", "--- STARTING PRODUCTION STORAGE DIAGNOSTIC ---");
-    appendLog("info", `Project ID: ${projectId}`);
+    appendLog("info", `Database: ${databaseEngine}`);
+    appendLog("info", `Storage: ${storageEngine}`);
     appendLog("info", `Target endpoint: /api/admin/upload`);
 
     try {
@@ -120,12 +120,9 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
   useEffect(() => {
     if (isOpen && logs.length === 0) {
       appendLog("info", `Diagnostic module initialized.`);
-      appendLog("info", `Engine: Direct Admin Production Storage`);
-      appendLog("info", `Firestore Database: Active`);
-      appendLog(
-        currentAuthUser ? "success" : "info",
-        `Admin Session: ${currentAuthUser ? currentAuthUser.email : "Local Admin Active"}`
-      );
+      appendLog("info", `Database: Cloudflare D1`);
+      appendLog("info", `Object Storage: Cloudflare R2`);
+      appendLog("success", `Admin Session: Active`);
     }
   }, [isOpen]);
 
@@ -142,7 +139,7 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
             </div>
             <div>
               <h2 className="text-lg font-serif font-bold text-stone-100">Production Storage Diagnostic</h2>
-              <p className="text-xs text-stone-400">Direct Admin Image Persistence Engine</p>
+              <p className="text-xs text-stone-400">Cloudflare D1 & R2 Architecture</p>
             </div>
           </div>
           <button
@@ -162,9 +159,9 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
                 <Database className="w-3.5 h-3.5 text-stone-500" />
               </div>
               <p className="font-mono font-semibold text-stone-100 text-sm truncate">
-                /api/admin/upload
+                Cloudflare R2
               </p>
-              <p className="text-[11px] text-stone-500">Persistent Cloud & Object Store</p>
+              <p className="text-[11px] text-stone-500">Persistent Cloud Object Store</p>
             </div>
 
             <div className="bg-stone-950/80 border border-stone-800/80 rounded-xl p-3.5 space-y-1">
@@ -173,7 +170,7 @@ export default function StorageDiagnosticModal({ isOpen, onClose }: StorageDiagn
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               </div>
               <p className="font-mono font-semibold text-emerald-400 text-sm truncate">
-                {projectId}
+                Cloudflare D1
               </p>
               <p className="text-[11px] text-stone-500">Authoritative Catalog</p>
             </div>

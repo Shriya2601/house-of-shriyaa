@@ -87,46 +87,17 @@ export function handleImageError(
     return;
   }
 
-  // Resilient Cloud Recovery: If image was an /uploads/ URL that 404s on static CDN, fetch directly from Firestore stored_images
-  if (target.src && (target.src.includes("/uploads/") || target.src.includes("uploads/")) && !target.dataset.fsRetried) {
-    target.dataset.fsRetried = "true";
+  // Cloudflare R2 / D1 Recovery: If image was an /uploads/ URL that 404s on static CDN, fetch directly from /api/images/
+  if (target.src && (target.src.includes("/uploads/") || target.src.includes("uploads/")) && !target.dataset.apiRetried) {
+    target.dataset.apiRetried = "true";
     try {
       const urlObj = new URL(target.src, window.location.href);
       const pathname = urlObj.pathname;
       const filename = pathname.split("/").pop() || "";
-      const docId = filename.replace(/\.[a-zA-Z0-9]+$/, "");
 
-      if (docId) {
-        import("../lib/firebase").then(({ db }) => {
-          import("firebase/firestore").then(({ doc, getDoc }) => {
-            const keysToTry = [docId, `${docId}_jpg`, `uploads_${docId}_jpg`, filename];
-            Promise.all(keysToTry.map((k) => getDoc(doc(db, "stored_images", k)).catch(() => null)))
-              .then((results) => {
-                const found = results.find((snap) => snap && snap.exists());
-                if (found) {
-                  const dataUrl = found.data()?.dataUrl;
-                  if (dataUrl) {
-                    target.src = dataUrl;
-                    registerLocalImageCache(target.src, dataUrl);
-                    registerLocalImageCache(pathname, dataUrl);
-                    return;
-                  }
-                }
-                if (!target.src.includes("unsplash.com") && target.src !== fallback) {
-                  target.src = fallback;
-                }
-              })
-              .catch(() => {
-                if (!target.src.includes("unsplash.com") && target.src !== fallback) {
-                  target.src = fallback;
-                }
-              });
-          });
-        }).catch(() => {
-          if (!target.src.includes("unsplash.com") && target.src !== fallback) {
-            target.src = fallback;
-          }
-        });
+      if (filename) {
+        const apiFallbackUrl = `/api/images/${filename}`;
+        target.src = apiFallbackUrl;
         return;
       }
     } catch {}
