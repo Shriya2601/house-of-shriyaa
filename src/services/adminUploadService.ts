@@ -616,27 +616,18 @@ export async function uploadImageToAdminStorage(
         tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename]);
 
         onProgress?.(100);
-        tracker.logComplete(finalDataUrl, "FIRESTORE_MIRROR");
-        return finalDataUrl;
+        tracker.logComplete(persistentUrl, "FIRESTORE_MIRROR");
+        return persistentUrl;
       } catch (fsErr) {
         tracker.logFirestoreError(fsErr, "stored_images", safeDocId);
       }
     }
 
     onProgress?.(100);
-    if (finalDataUrl && finalDataUrl.startsWith("data:")) {
-      tracker.logComplete(finalDataUrl, "LOCAL_DATA_URL");
-      return finalDataUrl;
-    }
-    if (typeof fileOrDataUrl === "string") {
-      tracker.logComplete(fileOrDataUrl, "LOCAL_DATA_URL");
-      return fileOrDataUrl;
-    }
-    throw new Error("Failed to process and store image.");
+    throw new Error("Failed to upload and store image permanently. Please ensure backend server is reachable.");
   } catch (fallbackErr: any) {
     tracker.logFailure(fallbackErr);
-    if (typeof fileOrDataUrl === "string") return fileOrDataUrl;
-    throw new Error(fallbackErr?.message || "Failed to process and store image.");
+    throw new Error(fallbackErr?.message || "Failed to process and store image permanently.");
   }
 }
 

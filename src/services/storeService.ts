@@ -22,7 +22,7 @@ import {
   updateProfile,
 } from "firebase/auth";
 import { db, auth } from "../lib/firebase";
-import { uploadImageToAdminStorage } from "./adminUploadService";
+import { uploadImageToAdminStorage, getAdminAuthToken } from "./adminUploadService";
 import {
   Product,
   ColorVariant,
@@ -1495,14 +1495,15 @@ async function ensureAllImagesUploaded(
     }
     try {
       const uploadedUrl = await uploadProductImageToFirebase(prodId, slot, trimmed);
-      if (uploadedUrl) {
+      if (uploadedUrl && !uploadedUrl.startsWith("data:") && !uploadedUrl.startsWith("blob:")) {
         uploadCache.set(trimmed, uploadedUrl);
         return uploadedUrl;
       }
     } catch (e) {
-      console.warn(`[ensureAllImagesUploaded] Upload notice for ${slot}:`, e);
+      console.error(`[ensureAllImagesUploaded] Upload failed for ${slot}:`, e);
+      throw e;
     }
-    return trimmed;
+    throw new Error(`Failed to upload ${slot} image to persistent storage.`);
   };
 
   let mainImg = await uploadCached(product.image || "", "main");
@@ -1685,27 +1686,10 @@ export function subscribeProducts(callback: (products: Product[]) => void): () =
                 (!p.name || !deleted.has(p.name))
             );
 
-          const currentCached = getCachedProducts();
-          const mergedMap = new Map<string, Product>();
-          normalized.forEach((p) => mergedMap.set(p.id, p));
-          currentCached.forEach((p) => {
-            if (!deleted.has(p.id) && (!p.name || !deleted.has(p.name))) {
-              const fromServer = mergedMap.get(p.id);
-              if (!fromServer) {
-                // Product added or modified locally not yet in server payload - preserve it!
-                mergedMap.set(p.id, p);
-              } else {
-                const localTime = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
-                const serverTime = fromServer.updatedAt ? new Date(fromServer.updatedAt).getTime() : 0;
-                if (localTime >= serverTime) {
-                  mergedMap.set(p.id, p);
-                }
-              }
-            }
-          });
-          const mergedList = Array.from(mergedMap.values());
-          cacheProductsLocally(mergedList);
-          callback(mergedList);
+          // Backend API is the single authoritative source of truth.
+          // Directly update local cache with verified server data and notify subscribers.
+          cacheProductsLocally(normalized);
+          callback(normalized);
           return;
         }
       }
@@ -1885,12 +1869,20 @@ export async function saveProduct(
   if (product.name) unrecordLocallyDeletedId("products", product.name);
   if ((product as any).sku) unrecordLocallyDeletedId("products", (product as any).sku);
 
-  // 1. Ensure all data URLs are uploaded to Firebase Storage BEFORE saving to Firestore
+  // 1. Ensure all images are uploaded to persistent storage BEFORE writing to backend
   const uploaded = await ensureAllImagesUploaded(id, product);
 
   const cleanImage = uploaded.image;
   const cleanHover = uploaded.hoverImage || cleanImage;
   const cleanImages = uploaded.images;
+
+  // Validate that no image is a temporary blob: or raw data: URL
+  if (cleanImage.startsWith("blob:") || cleanImage.startsWith("data:")) {
+    throw new Error("Main image failed to upload to permanent storage. Please try uploading the image again.");
+  }
+  if (cleanHover.startsWith("blob:") || cleanHover.startsWith("data:")) {
+    throw new Error("Hover image failed to upload to permanent storage. Please try uploading the image again.");
+  }
 
   const sanitized = ensureProductVariants({
     ...product,
@@ -1902,23 +1894,56 @@ export async function saveProduct(
     updatedAt: new Date().toISOString(),
   });
 
-  const firestoreData = sanitizeForFirestore(sanitized);
+  // 2. Authoritative Backend Server API persistence (disk/filesystem storage)
+  // MUST await backend confirmation first to ensure true persistence
+  const token = getAdminAuthToken();
+  const apiRes = await fetch("/api/products", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      "x-admin-token": token,
+      "x-admin-key": token,
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(sanitized),
+  });
 
-  // 2. Immediately update local cache and dispatch real-time events for 0ms live UI updates
+  if (!apiRes.ok) {
+    let errDetail = "";
+    try {
+      const errJson = await apiRes.json();
+      errDetail = errJson.error || errJson.message || "";
+    } catch {
+      errDetail = await apiRes.text().catch(() => "");
+    }
+    throw new Error(`Failed to save product to persistent backend (${apiRes.status}): ${errDetail || apiRes.statusText}`);
+  }
+
+  const apiJson = await apiRes.json().catch(() => ({ success: true }));
+  if (apiJson.success === false) {
+    throw new Error(`Backend rejected product save: ${apiJson.error || "Unknown error"}`);
+  }
+
+  const savedProduct: Product = apiJson.product ? ensureProductVariants(apiJson.product) : sanitized;
+
+  // 3. Update local cache with verified saved product
   const current = getCachedProducts();
   const existingIdx = current.findIndex((p) => p.id === id);
-  const updated = existingIdx > -1 ? [...current] : [sanitized, ...current];
-  if (existingIdx > -1) updated[existingIdx] = sanitized;
+  const updated = existingIdx > -1 ? [...current] : [savedProduct, ...current];
+  if (existingIdx > -1) updated[existingIdx] = savedProduct;
   cacheProductsLocally(updated);
 
-  // 3. Clear any stale Canva text/style overrides for this product so edits are visible immediately
+  // 4. Clear any stale Canva text/style overrides for this product so edits are visible immediately
   try {
     const rawOverrides = localStorage.getItem("hos_custom_overrides");
     if (rawOverrides) {
       const parsed = JSON.parse(rawOverrides);
       let changed = false;
       for (const k of Object.keys(parsed)) {
-        if (k.startsWith(`product_${id}_`) || k === id || (sanitized.name && k.includes(sanitized.name))) {
+        if (k.startsWith(`product_${id}_`) || k === id || (savedProduct.name && k.includes(savedProduct.name))) {
           delete parsed[k];
           changed = true;
         }
@@ -1927,65 +1952,30 @@ export async function saveProduct(
         localStorage.setItem("hos_custom_overrides", JSON.stringify(parsed));
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("hos-overrides-updated", { detail: parsed }));
+          window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: parsed }));
         }
       }
     }
   } catch {}
 
-  // 4. Dispatch real-time events for instant local & cross-device updates
+  // 5. Dispatch real-time events for instant local & cross-device updates
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: sanitized }));
+    window.dispatchEvent(new CustomEvent("hos-product-saved", { detail: savedProduct }));
     window.dispatchEvent(new CustomEvent("hos-catalog-updated", { detail: updated }));
   }
   broadcastCrossDeviceSync("products", updated);
 
-  // 5. Backend Server API persistence (disk / Cloudflare Functions storage)
+  // 6. Firestore Cloud Persistence mirror (best effort)
   try {
-    await fetch("/api/products", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-      },
-      body: JSON.stringify(sanitized),
-    });
-  } catch (apiErr) {
-    console.warn("[StoreService] Server /api/products save notice:", apiErr);
-  }
-
-  // 6. Clear any stale custom overrides for this product so updated name/price/description always show
-  try {
-    const rawOverrides = localStorage.getItem("hos_custom_overrides");
-    if (rawOverrides) {
-      const overrides = JSON.parse(rawOverrides);
-      let changed = false;
-      for (const k of Object.keys(overrides)) {
-        if (k.startsWith(`product_${id}_`)) {
-          delete overrides[k];
-          changed = true;
-        }
-      }
-      if (changed) {
-        localStorage.setItem("hos_custom_overrides", JSON.stringify(overrides));
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("hos-custom-overrides-updated", { detail: overrides }));
-        }
-      }
-    }
-  } catch {}
-
-  // 7. Firestore Cloud Persistence with Admin Auth assurance
-  const finalProduct: Product = sanitized;
-  try {
+    const firestoreData = sanitizeForFirestore(savedProduct);
     await ensureAdminFirebaseAuth().catch(() => null);
     const docRef = doc(db, "products", id);
     await setDoc(docRef, firestoreData, { merge: true });
   } catch (fsErr: any) {
-    console.warn("[StoreService] Firestore product save notice for", id, fsErr?.message || fsErr);
+    console.warn("[StoreService] Firestore mirror notice for", id, fsErr?.message || fsErr);
   }
 
-  return { id, success: true, product: finalProduct };
+  return { id, success: true, product: savedProduct };
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -2030,7 +2020,7 @@ export async function deleteProduct(id: string): Promise<void> {
     }
   } catch {}
 
-  // 1. Immediately dispatch real-time events for instant local & cross-device updates (0ms responsiveness)
+  // 1. Immediately dispatch real-time events
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("hos-product-deleted", {
@@ -2041,10 +2031,31 @@ export async function deleteProduct(id: string): Promise<void> {
   }
   broadcastCrossDeviceSync("products", current);
 
-  // 2. Central Backend API deletion
+  // 2. Central Backend API deletion - await confirmation
+  const token = getAdminAuthToken();
+  try {
+    await fetch(`/api/products?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: {
+        "x-admin-token": token,
+        "x-admin-key": token,
+        authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (delErr) {
+    console.warn("[StoreService] Error calling DELETE /api/products:", delErr);
+  }
+
   try {
     await fetch(`/api/products/${encodeURIComponent(id)}`, {
       method: "DELETE",
+      credentials: "include",
+      headers: {
+        "x-admin-token": token,
+        "x-admin-key": token,
+        authorization: `Bearer ${token}`,
+      },
     });
   } catch {}
 
@@ -2064,7 +2075,7 @@ export async function deleteProduct(id: string): Promise<void> {
     }
   } catch {}
 
-  // 4. Authoritative Firestore deletion: await deleteDoc directly
+  // 4. Firestore deletion
   try {
     const docRef = doc(db, "products", id);
     await deleteDoc(docRef);

@@ -522,8 +522,11 @@ export default function AddProductModal({
         finalHoverImage = finalMainImg;
       }
       resolvedExtraImages = extraRes.filter(Boolean) as string[];
-    } catch (uploadErr) {
-      console.warn("[AddProductModal] Notice during parallel upload:", uploadErr);
+    } catch (uploadErr: any) {
+      console.error("[AddProductModal] Error uploading images:", uploadErr);
+      setError(`Image upload failed: ${uploadErr?.message || "Please check your network and try again."}`);
+      setSubmitting(false);
+      return;
     }
 
     const finalImages = [
