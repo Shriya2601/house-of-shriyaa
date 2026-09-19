@@ -913,7 +913,7 @@ export default function AdminPortal() {
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   className="w-full bg-[#111816] border border-[#2d3a35] text-stone-200 text-sm rounded-lg pl-10 pr-3.5 py-2.5 focus:border-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]"
-                  placeholder="houseofshriya.in@gmail.com"
+                  placeholder="shriyapusha01@gmail.com"
                 />
               </div>
             </div>

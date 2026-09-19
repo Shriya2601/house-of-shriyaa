@@ -97,13 +97,13 @@ export function isAuthorizedAdminRequest(
 
   const validTokens = [
     "houseofshriya_admin_secure_session",
+    "shriyapusha01@gmail.com",
     "houseofshriya.in@gmail.com",
     "houseofshriyaa@gmail.com",
     "crochetbyshriya01@gmail.com",
     "jshriya2001@gmail.com",
     "pshriya2626@gmail.com",
     "kshriya2626@gmail.com",
-    "shriyapusha01@gmail.com",
     "shriyapusha2001@gmail.com",
     "shriya14301@gmail.com",
     "ethnicbyshriya@gmail.com",

@@ -3327,14 +3327,14 @@ export async function updateCustomerProfile(uid: string, updates: Partial<Custom
    ADMIN PORTAL AUTHENTICATION & BOOKING/ORDER MANAGEMENT
 ============================================================ */
 
-export const ADMIN_EMAIL = "houseofshriya.in@gmail.com";
+export const ADMIN_EMAIL = "shriyapusha01@gmail.com";
 export const AUTHORIZED_ADMIN_EMAILS = [
+  "shriyapusha01@gmail.com",
   "houseofshriya.in@gmail.com",
   "houseofshriyaa@gmail.com",
   "admin@houseofshriya.in",
   "pshriya2626@gmail.com",
   "kshriya2626@gmail.com",
-  "shriyapusha01@gmail.com",
   "shriyapusha2001@gmail.com",
   "shriya14301@gmail.com",
   "ethnicbyshriya@gmail.com",
