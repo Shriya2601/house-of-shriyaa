@@ -5,8 +5,10 @@
  * Tier 2: Direct resilient cloud & Firestore persistent storage fallback (stored_images collection)
  */
 
-import { db } from "../lib/firebase";
+import { db, storage } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { UploadLifecycleTracker } from "../utils/adminUploadLogger";
 
 export interface AdminUploadOptions {
   slot?: string;
@@ -289,21 +291,32 @@ export async function uploadImageToAdminStorage(
     }
   }
 
-  onProgress?.(15);
+  // Initialize Lifecycle Tracker
+  const tracker = new UploadLifecycleTracker(fileOrDataUrl, slot, productId);
+  tracker.logStart();
+
+  onProgress?.(10);
   const token = getAdminAuthToken();
 
   // Resolve blob: URLs into real Blob if needed
   let processedSource: File | Blob | string = fileOrDataUrl;
-  if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("blob:")) {
-    try {
-      const resp = await fetch(fileOrDataUrl);
-      processedSource = await resp.blob();
-    } catch (e) {
-      console.warn("[AdminUploadService] Fetch blob note:", e);
+  let originalBytes = 0;
+  if (fileOrDataUrl instanceof Blob) {
+    originalBytes = fileOrDataUrl.size;
+  } else if (typeof fileOrDataUrl === "string") {
+    originalBytes = fileOrDataUrl.length;
+    if (fileOrDataUrl.startsWith("blob:")) {
+      try {
+        const resp = await fetch(fileOrDataUrl);
+        processedSource = await resp.blob();
+        originalBytes = (processedSource as Blob).size;
+      } catch (e) {
+        console.warn("[AdminUploadService] Fetch blob note:", e);
+      }
     }
   }
 
-  // Pre-optimize image client-side to ensure swift upload and minimal payload
+  // Stage 2: Client-side Image Pre-processing & Canvas Optimization
   let optimizedDataUrl: string;
   try {
     optimizedDataUrl = await optimizeImageForUpload(processedSource, 1400, 0.85);
@@ -322,21 +335,115 @@ export async function uploadImageToAdminStorage(
     }
   }
 
-  onProgress?.(35);
+  const mimeMatch = optimizedDataUrl.match(/^data:([^;]+);/);
+  const detectedMime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const compressedBytes = optimizedDataUrl ? Math.round((optimizedDataUrl.length * 3) / 4) : 0;
+  tracker.logPreprocessing(originalBytes, compressedBytes, detectedMime);
 
-  // Common authentication headers for all endpoints
+  onProgress?.(30);
+
+  // Common authentication headers for API endpoints
   const authHeaders: Record<string, string> = {
     "x-admin-token": MASTER_ADMIN_TOKEN,
     "authorization": `Bearer ${token || MASTER_ADMIN_TOKEN}`,
     "x-admin-key": MASTER_ADMIN_TOKEN,
   };
 
-  // Tier 1 - Strategy A: Post optimized dataUrl as JSON
+  // Convert optimizedDataUrl into a binary Blob for direct cloud & storage uploads
+  let uploadBlob: Blob;
+  const ext = detectedMime.includes("webp") ? "webp" : "jpg";
+  const uniqueTimestamp = Date.now();
+  let uploadFilename = `${slot}-${uniqueTimestamp}.${ext}`;
+
+  if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
+    const byteString = atob(optimizedDataUrl.split(",")[1]);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    uploadBlob = new Blob([ab], { type: detectedMime });
+  } else if (processedSource instanceof Blob) {
+    uploadBlob = processedSource;
+    if ((processedSource as File).name) uploadFilename = (processedSource as File).name;
+  } else {
+    uploadBlob = new Blob(["image"], { type: "image/jpeg" });
+  }
+
+  // =========================================================================
+  // STAGE 3: TIER 1A - Direct Firebase Storage Upload & Real-Time Lifecycle
+  // =========================================================================
+  if (storage) {
+    const targetStoragePath = productId
+      ? `products/${productId}/${slot}-${uniqueTimestamp}.${ext}`
+      : `uploads/${slot}-${uniqueTimestamp}.${ext}`;
+    const bucketName = storage.app?.options?.storageBucket || "house-of-shriya-d49d6.firebasestorage.app";
+
+    try {
+      tracker.logFirebaseStorageStart(bucketName, targetStoragePath);
+      const sRef = storageRef(storage, targetStoragePath);
+
+      const uploadTask = uploadBytesResumable(sRef, uploadBlob, {
+        contentType: detectedMime,
+        customMetadata: {
+          slot,
+          productId: productId || "",
+          uploadedAt: new Date().toISOString(),
+          app: "House of Shriya",
+        },
+      });
+
+      const storageDownloadUrl = await new Promise<string>((resolve, reject) => {
+        uploadTask.on(
+          "state_changed",
+          (snapshot) => {
+            const progress = snapshot.totalBytes > 0
+              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+              : 0;
+            onProgress?.(Math.min(90, Math.max(30, progress)));
+            tracker.logFirebaseStorageProgress(progress, snapshot.bytesTransferred, snapshot.totalBytes);
+          },
+          (storageErr) => {
+            tracker.logFirebaseStorageError(storageErr, bucketName, targetStoragePath);
+            reject(storageErr);
+          },
+          async () => {
+            try {
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              tracker.logFirebaseStorageSuccess(url);
+              resolve(url);
+            } catch (urlErr) {
+              tracker.logFirebaseStorageError(urlErr, bucketName, targetStoragePath);
+              reject(urlErr);
+            }
+          }
+        );
+      });
+
+      if (storageDownloadUrl) {
+        onProgress?.(100);
+        registerLocalImageCache(storageDownloadUrl, optimizedDataUrl);
+        tracker.logCacheRegistration([storageDownloadUrl]);
+        tracker.logComplete(storageDownloadUrl, "FIREBASE_STORAGE");
+        return storageDownloadUrl;
+      }
+    } catch (storageException: any) {
+      // Firebase Storage error was logged in detail by tracker.logFirebaseStorageError
+      // Gracefully continue to Tier 1B and Tier 2
+    }
+  }
+
+  // =========================================================================
+  // STAGE 4: TIER 1B - Server Production Upload API (/api/admin/upload, /api/upload)
+  // =========================================================================
+  // Strategy A: JSON dataUrl POST
   if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       const uploadEndpoint = buildUploadUrl("/api/admin/upload", { slot, productId });
+
+      tracker.logApiAttempt(uploadEndpoint, "POST (JSON dataUrl)", 3);
 
       const response = await fetch(uploadEndpoint, {
         method: "POST",
@@ -367,56 +474,37 @@ export async function uploadImageToAdminStorage(
       if (isJsonOk) {
         const result: AdminUploadResponse = await response.json();
         if (result.success && result.url) {
+          tracker.logApiResult(uploadEndpoint, response.status, contentType, result);
           onProgress?.(100);
           const base = result.url.split("?")[0];
           const finalUrl = `${base}?v=${Date.now()}`;
           registerLocalImageCache(finalUrl, optimizedDataUrl);
+          tracker.logCacheRegistration([finalUrl]);
+          tracker.logComplete(finalUrl, "SERVER_API");
           return finalUrl;
         }
       } else {
-        console.warn(
-          `[AdminUploadService] JSON upload returned HTTP ${response?.status} (${contentType}). Trying FormData fallback.`
-        );
+        tracker.logApiResult(uploadEndpoint, response?.status || 0, contentType);
       }
     } catch (jsonErr: any) {
-      console.warn("[AdminUploadService] JSON upload notice:", jsonErr?.message || jsonErr);
+      tracker.logApiError("/api/admin/upload", jsonErr);
     }
   }
 
-  // Tier 1 - Strategy B: Multipart FormData upload
+  // Strategy B: Multipart FormData upload
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    let blob: Blob;
-    let filename = `${slot}-${Date.now()}.jpg`;
-
-    if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
-      const byteString = atob(optimizedDataUrl.split(",")[1]);
-      const mimeMatch = optimizedDataUrl.match(/^data:([^;]+);/);
-      const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
-      }
-      blob = new Blob([ab], { type: mime });
-      const ext = mime.includes("webp") ? "webp" : "jpg";
-      filename = `${slot}-${Date.now()}.${ext}`;
-    } else if (processedSource instanceof Blob) {
-      blob = processedSource;
-      if ((processedSource as File).name) filename = (processedSource as File).name;
-    } else {
-      blob = new Blob(["image"], { type: "image/jpeg" });
-    }
-
     const formData = new FormData();
-    formData.append("file", blob, filename);
-    formData.append("image", blob, filename);
+    formData.append("file", uploadBlob, uploadFilename);
+    formData.append("image", uploadBlob, uploadFilename);
     formData.append("slot", slot);
     if (productId) formData.append("productId", productId);
 
     const uploadEndpoint = buildUploadUrl("/api/admin/upload", { slot, productId });
+    tracker.logApiAttempt(uploadEndpoint, "POST (Multipart FormData)", 3);
+
     let formResponse = await fetch(uploadEndpoint, {
       method: "POST",
       credentials: "include",
@@ -437,6 +525,7 @@ export async function uploadImageToAdminStorage(
     if (!isFormOk) {
       try {
         const altEndpoint = buildUploadUrl("/api/upload", { slot, productId });
+        tracker.logApiAttempt(altEndpoint, "POST (Multipart FormData Fallback)", 3);
         formResponse = await fetch(altEndpoint, {
           method: "POST",
           credentials: "include",
@@ -450,7 +539,9 @@ export async function uploadImageToAdminStorage(
           !formResponse.redirected &&
           !formResponse.url.includes("__cookie_check") &&
           !contentType.includes("text/html");
-      } catch {}
+      } catch (altErr) {
+        tracker.logApiError("/api/upload", altErr);
+      }
     }
 
     clearTimeout(timeoutId);
@@ -459,22 +550,25 @@ export async function uploadImageToAdminStorage(
     if (isFormOk) {
       const result: AdminUploadResponse = await formResponse.json();
       if (result.success && result.url) {
+        tracker.logApiResult(uploadEndpoint, formResponse.status, contentType, result);
         onProgress?.(100);
         const base = result.url.split("?")[0];
         const finalUrl = `${base}?v=${Date.now()}`;
         if (optimizedDataUrl) registerLocalImageCache(finalUrl, optimizedDataUrl);
+        tracker.logCacheRegistration([finalUrl]);
+        tracker.logComplete(finalUrl, "SERVER_API");
         return finalUrl;
       }
     } else {
-      console.warn(
-        `[AdminUploadService] FormData upload returned HTTP ${formResponse?.status}. Initiating direct cloud fallback.`
-      );
+      tracker.logApiResult(uploadEndpoint, formResponse?.status || 0, contentType);
     }
   } catch (formErr: any) {
-    console.warn("[AdminUploadService] FormData upload notice:", formErr?.message || formErr);
+    tracker.logApiError("/api/admin/upload", formErr);
   }
 
-  // Tier 2: Resilient Cloud & Firestore Persistent Storage Fallback (stored_images collection)
+  // =========================================================================
+  // STAGE 5: TIER 2 - Resilient Cloud & Firestore Persistent Storage Mirror
+  // =========================================================================
   try {
     onProgress?.(90);
     const finalDataUrl = optimizedDataUrl || (typeof processedSource === "string" ? processedSource : "");
@@ -485,6 +579,8 @@ export async function uploadImageToAdminStorage(
       const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
       const safeDocId = `${safeSlot}-${timestamp}-${rand}`;
       const targetFilename = `${safeDocId}.jpg`;
+
+      tracker.logFirestoreStart("stored_images", safeDocId, finalDataUrl.length);
 
       try {
         const imgDocRef = doc(db, "stored_images", safeDocId);
@@ -501,29 +597,34 @@ export async function uploadImageToAdminStorage(
           },
           { merge: true }
         );
-        console.log(`[AdminUploadService] Saved image persistent backup to Firestore: stored_images/${safeDocId}`);
+        tracker.logFirestoreSuccess("stored_images", safeDocId);
 
         const persistentUrl = `/uploads/${targetFilename}?v=${timestamp}`;
         registerLocalImageCache(persistentUrl, finalDataUrl);
         registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
         registerLocalImageCache(targetFilename, finalDataUrl);
+        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename]);
 
         onProgress?.(100);
-        // Return self-contained finalDataUrl directly so UI and storefront never face 404/405 or missing file issues
+        tracker.logComplete(finalDataUrl, "FIRESTORE_MIRROR");
         return finalDataUrl;
       } catch (fsErr) {
-        console.warn("[AdminUploadService] Firestore mirror note:", fsErr);
+        tracker.logFirestoreError(fsErr, "stored_images", safeDocId);
       }
     }
 
     onProgress?.(100);
     if (finalDataUrl && finalDataUrl.startsWith("data:")) {
+      tracker.logComplete(finalDataUrl, "LOCAL_DATA_URL");
       return finalDataUrl;
     }
-    if (typeof fileOrDataUrl === "string") return fileOrDataUrl;
+    if (typeof fileOrDataUrl === "string") {
+      tracker.logComplete(fileOrDataUrl, "LOCAL_DATA_URL");
+      return fileOrDataUrl;
+    }
     throw new Error("Failed to process and store image.");
   } catch (fallbackErr: any) {
-    console.error("[AdminUploadService] Fallback error:", fallbackErr);
+    tracker.logFailure(fallbackErr);
     if (typeof fileOrDataUrl === "string") return fileOrDataUrl;
     throw new Error(fallbackErr?.message || "Failed to process and store image.");
   }

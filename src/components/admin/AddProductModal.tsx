@@ -289,7 +289,12 @@ export default function AddProductModal({
 
   // Handle Main Image File Select
   const handleMainFileChange = async (file: File) => {
-    console.log("[Upload 1] File selected:", file.name, file.size, file.type);
+    console.log(
+      `%c[AdminPortal:AddProductModal] %c📁 [Main Photo Selected] %c${file.name} (${formatBytes(file.size)}, ${file.type})`,
+      "color: #4338ca; font-weight: bold;",
+      "background: #4338ca; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+      "color: #1e293b; font-weight: 600;"
+    );
     lastMainFileRef.current = file;
     setMainUploadState("uploading");
     setMainUploadProgress(0);
@@ -314,7 +319,12 @@ export default function AddProductModal({
       setImage(downloadUrl);
       setMainUploadState("uploaded");
       setMainUploadError(null);
-      console.log("[Upload SUCCESS]", downloadUrl);
+      console.log(
+        `%c[AdminPortal:AddProductModal] %c✅ [Main Photo Upload Succeeded] %cResolved to: ${downloadUrl}`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #16a34a; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        "color: #15803d; font-weight: 600;"
+      );
 
       if (!hoverImage || hoverImage === image || (productToEdit && hoverImage === productToEdit.image)) {
         setHoverImage(downloadUrl);
@@ -323,7 +333,12 @@ export default function AddProductModal({
         setHoverUploadError(null);
       }
     } catch (error: any) {
-      console.error(error);
+      console.error(
+        `%c[AdminPortal:AddProductModal] %c❌ [Main Photo Upload Error]`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #dc2626; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        error
+      );
       const message = error instanceof Error ? error.message : String(error);
       setMainUploadError(message);
       setMainUploadState("error");
@@ -336,7 +351,12 @@ export default function AddProductModal({
 
   // Handle Hover Image File Select
   const handleHoverFileChange = async (file: File) => {
-    console.log("[Upload 1] File selected (hover):", file.name, file.size, file.type);
+    console.log(
+      `%c[AdminPortal:AddProductModal] %c📁 [Hover Photo Selected] %c${file.name} (${formatBytes(file.size)}, ${file.type})`,
+      "color: #4338ca; font-weight: bold;",
+      "background: #4338ca; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+      "color: #1e293b; font-weight: 600;"
+    );
     lastHoverFileRef.current = file;
     setHoverUploadState("uploading");
     setHoverUploadProgress(0);
@@ -359,9 +379,19 @@ export default function AddProductModal({
       setHoverImage(downloadUrl);
       setHoverUploadState("uploaded");
       setHoverUploadError(null);
-      console.log("[Upload SUCCESS] (hover)", downloadUrl);
+      console.log(
+        `%c[AdminPortal:AddProductModal] %c✅ [Hover Photo Upload Succeeded] %cResolved to: ${downloadUrl}`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #16a34a; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        "color: #15803d; font-weight: 600;"
+      );
     } catch (error: any) {
-      console.error(error);
+      console.error(
+        `%c[AdminPortal:AddProductModal] %c❌ [Hover Photo Upload Error]`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #dc2626; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        error
+      );
       const message = error instanceof Error ? error.message : String(error);
       setHoverUploadError(message);
       setHoverUploadState("error");
@@ -373,7 +403,12 @@ export default function AddProductModal({
 
   // Handle Additional Gallery Image File Select
   const handleExtraFileChange = async (file: File) => {
-    console.log("[Upload 1] File selected (gallery):", file.name, file.size, file.type);
+    console.log(
+      `%c[AdminPortal:AddProductModal] %c📁 [Gallery Photo Selected] %c${file.name} (${formatBytes(file.size)}, ${file.type})`,
+      "color: #4338ca; font-weight: bold;",
+      "background: #4338ca; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+      "color: #1e293b; font-weight: 600;"
+    );
     setExtraUploadState("uploading");
     setExtraUploadProgress(0);
     setExtraUploadError(null);
@@ -391,9 +426,19 @@ export default function AddProductModal({
       setExtraImages((prev) => [...prev, downloadUrl]);
       setExtraUploadState("uploaded");
       setExtraUploadError(null);
-      console.log("[Upload SUCCESS] (gallery)", downloadUrl);
+      console.log(
+        `%c[AdminPortal:AddProductModal] %c✅ [Gallery Photo Upload Succeeded] %cResolved to: ${downloadUrl}`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #16a34a; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        "color: #15803d; font-weight: 600;"
+      );
     } catch (error: any) {
-      console.error(error);
+      console.error(
+        `%c[AdminPortal:AddProductModal] %c❌ [Gallery Photo Upload Error]`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #dc2626; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        error
+      );
       const message = error instanceof Error ? error.message : String(error);
       setExtraUploadError(message);
       setExtraUploadState("error");

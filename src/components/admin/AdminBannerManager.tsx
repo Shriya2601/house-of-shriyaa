@@ -682,6 +682,13 @@ export default function AdminBannerManager({
   /* ------------------------------------------------------------------------ */
 
   const processAndUploadFile = async (file: File) => {
+    console.log(
+      `%c[AdminPortal:BannerManager] %c🎨 [Banner Photo Selected] %c${file.name} (${file.size} bytes, ${file.type}) for Slide #${activeSlideIndex + 1}`,
+      "color: #4338ca; font-weight: bold;",
+      "background: #4338ca; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+      "color: #1e293b; font-weight: 600;"
+    );
+
     const isImage =
       file.type.startsWith("image/") ||
       /\.(jpe?g|png|webp|gif|avif|bmp|svg)$/i.test(
@@ -689,6 +696,7 @@ export default function AdminBannerManager({
       );
 
     if (!isImage) {
+      console.warn(`[AdminPortal:BannerManager] Invalid file format rejected: ${file.name}`);
       showToast(
         "Please upload a valid image file such as JPG, PNG or WebP.",
         "error"
@@ -738,6 +746,12 @@ export default function AdminBannerManager({
         finalImageUrl = await uploadImageToAdminStorage(compressedDataUrl, {
           slot: `hero-slide-${targetIndex + 1}`,
         });
+        console.log(
+          `%c[AdminPortal:BannerManager] %c✅ [Banner Upload Succeeded] %cResolved URL: ${finalImageUrl}`,
+          "color: #4338ca; font-weight: bold;",
+          "background: #16a34a; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+          "color: #15803d; font-weight: 600;"
+        );
       } catch (uploadError) {
         console.warn("[Production Upload Note]", uploadError);
       }

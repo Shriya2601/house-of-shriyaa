@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import firebaseConfig from "../../firebase-applet-config.json";
 
@@ -28,6 +29,9 @@ export const db =
   firebaseConfig.firestoreDatabaseId !== "(default)"
     ? getFirestore(app, (firebaseConfig as { firestoreDatabaseId: string }).firestoreDatabaseId)
     : getFirestore(app);
+
+// Initialize Firebase Storage
+export const storage = getStorage(app);
 
 // Safely initialize Analytics if supported in browser environment
 export let analytics: ReturnType<typeof getAnalytics> | null = null;

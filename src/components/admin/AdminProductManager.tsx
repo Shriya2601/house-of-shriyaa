@@ -82,11 +82,23 @@ export default function AdminProductManager({
     setUploadingProductId(p.id);
 
     try {
-      console.log("[FirebaseStorage] 1. Quick photo selected for product:", p.id, file.name);
+      console.log(
+        `%c[AdminPortal:ProductManager] %c📸 [Quick Photo Selected] %cProduct: ${p.name} (ID: ${p.id}), File: ${file.name} (${file.size} bytes)`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #4338ca; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        "color: #1e293b; font-weight: 600;"
+      );
 
-      // Upload directly to Firebase Storage using resumable upload
+      // Upload directly through the multi-tier production storage pipeline
       const finalUrl = await uploadProductFileToFirebase(file, p.id, "main");
       const oldImage = p.image;
+
+      console.log(
+        `%c[AdminPortal:ProductManager] %c✅ [Quick Photo Upload Succeeded] %cResolved URL: ${finalUrl}`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #16a34a; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        "color: #15803d; font-weight: 600;"
+      );
 
       // 3. Save and persist permanently across store and database
       const updatedProduct: Product = {
@@ -121,7 +133,12 @@ export default function AdminProductManager({
       onProductUpdated(savedProd);
       showToast(`Photo for "${p.name}" updated successfully!`, "success");
     } catch (err: any) {
-      console.error(err);
+      console.error(
+        `%c[AdminPortal:ProductManager] %c❌ [Quick Photo Upload Failed]`,
+        "color: #4338ca; font-weight: bold;",
+        "background: #dc2626; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold;",
+        err
+      );
       const message = err instanceof Error ? err.message : String(err);
       showToast(message, "error");
     } finally {
