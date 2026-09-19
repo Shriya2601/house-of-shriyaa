@@ -673,16 +673,17 @@ export async function uploadImageToAdminStorage(
         registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
         registerLocalImageCache(targetFilename, finalDataUrl);
         registerLocalImageCache(safeDocId, finalDataUrl);
-        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename, safeDocId]);
+        registerLocalImageCache(finalDataUrl, finalDataUrl);
+        tracker.logCacheRegistration([persistentUrl, `/uploads/${targetFilename}`, targetFilename, safeDocId, finalDataUrl]);
 
         onProgress?.(100);
-        tracker.logComplete(persistentUrl, "FIRESTORE_MIRROR");
-        return persistentUrl;
+        tracker.logComplete(finalDataUrl, "FIRESTORE_MIRROR");
+        return finalDataUrl;
       } catch (fsErr) {
         tracker.logFirestoreError(fsErr, "stored_images", safeDocId);
       }
     }
-    // Resilient Fallback: If we have an optimized data URL or source, register it in cache with a persistent URL
+    // Resilient Fallback: If we have an optimized data URL or source, register it in cache
     if (finalDataUrl) {
       const timestamp = Date.now();
       const rand = Math.floor(Math.random() * 100000);
@@ -692,9 +693,10 @@ export async function uploadImageToAdminStorage(
       registerLocalImageCache(fallbackUrl, finalDataUrl);
       registerLocalImageCache(`/uploads/${targetFilename}`, finalDataUrl);
       registerLocalImageCache(targetFilename, finalDataUrl);
+      registerLocalImageCache(finalDataUrl, finalDataUrl);
       onProgress?.(100);
-      tracker.logComplete(fallbackUrl, "LOCAL_CACHE_FALLBACK");
-      return fallbackUrl;
+      tracker.logComplete(finalDataUrl, "LOCAL_CACHE_FALLBACK");
+      return finalDataUrl;
     }
 
     onProgress?.(100);
@@ -706,7 +708,8 @@ export async function uploadImageToAdminStorage(
       const safeSlot = (slot || "img").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 32);
       const fallbackUrl = `/uploads/${safeSlot}-${timestamp}.jpg?v=${timestamp}`;
       registerLocalImageCache(fallbackUrl, optimizedDataUrl);
-      return fallbackUrl;
+      registerLocalImageCache(optimizedDataUrl, optimizedDataUrl);
+      return optimizedDataUrl;
     }
     throw new Error(fallbackErr?.message || "Failed to process and store image permanently.");
   }

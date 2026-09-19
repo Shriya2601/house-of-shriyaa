@@ -1939,41 +1939,39 @@ export async function saveProduct(
     updatedAt: new Date().toISOString(),
   });
 
-  // 2. Authoritative Backend Server API persistence (disk/filesystem storage)
-  // MUST await backend confirmation first to ensure true persistence
+  // 2. Authoritative Backend Server API persistence (when backend endpoint is available)
+  let savedProduct: Product = sanitized;
+  let backendSucceeded = false;
   const token = getAdminAuthToken();
   const saveUrl = `/api/products?token=${encodeURIComponent(token)}&adminToken=${encodeURIComponent(token)}&key=${encodeURIComponent(token)}`;
-  const apiRes = await fetch(saveUrl, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
-      "x-admin-token": token,
-      "x-admin-key": token,
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(sanitized),
-  });
 
-  if (!apiRes.ok) {
-    let errDetail = "";
-    try {
-      const errJson = await apiRes.json();
-      errDetail = errJson.error || errJson.message || "";
-    } catch {
-      errDetail = await apiRes.text().catch(() => "");
+  try {
+    const apiRes = await fetch(saveUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        "x-admin-token": token,
+        "x-admin-key": token,
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(sanitized),
+    });
+
+    if (apiRes.ok) {
+      const apiJson = await apiRes.json().catch(() => ({ success: true }));
+      if (apiJson && apiJson.success !== false) {
+        backendSucceeded = true;
+        savedProduct = apiJson.product ? ensureProductVariants(apiJson.product) : sanitized;
+      }
+    } else {
+      console.warn(`[StoreService] Server API returned HTTP ${apiRes.status} for product; saving authoritatively to Firestore.`);
     }
-    throw new Error(`Failed to save product to persistent backend (${apiRes.status}): ${errDetail || apiRes.statusText}`);
+  } catch (apiErr: any) {
+    console.warn("[StoreService] Server API /api/products unreachable; saving to Firestore:", apiErr?.message || apiErr);
   }
-
-  const apiJson = await apiRes.json().catch(() => ({ success: true }));
-  if (apiJson.success === false) {
-    throw new Error(`Backend rejected product save: ${apiJson.error || "Unknown error"}`);
-  }
-
-  const savedProduct: Product = apiJson.product ? ensureProductVariants(apiJson.product) : sanitized;
 
   // 3. Update local cache with verified saved product
   const current = getCachedProducts();
@@ -2011,14 +2009,18 @@ export async function saveProduct(
   }
   broadcastCrossDeviceSync("products", updated);
 
-  // 6. Firestore Cloud Persistence mirror (best effort)
+  // 6. Firestore Cloud Persistence (Authoritative cross-session and cross-device storage)
   try {
     const firestoreData = sanitizeForFirestore(savedProduct);
     await ensureAdminFirebaseAuth().catch(() => null);
     const docRef = doc(db, "products", id);
     await setDoc(docRef, firestoreData, { merge: true });
+    console.log(`[StoreService] ✅ Product ${id} saved to Firestore successfully.`);
   } catch (fsErr: any) {
-    console.warn("[StoreService] Firestore mirror notice for", id, fsErr?.message || fsErr);
+    console.warn("[StoreService] Firestore save notice for", id, fsErr?.message || fsErr);
+    if (!backendSucceeded) {
+      throw new Error(`Failed to save product: ${fsErr?.message || "Could not reach database."}`);
+    }
   }
 
   return { id, success: true, product: savedProduct };
