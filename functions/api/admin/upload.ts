@@ -21,19 +21,33 @@ interface Env {
   [key: string]: any;
 }
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token, x-admin-key, X-Requested-With, Cache-Control",
-  "Access-Control-Max-Age": "86400",
-};
+function getCorsHeaders(request?: Request): Record<string, string> {
+  const origin = request?.headers.get("origin") || request?.headers.get("referer");
+  let allowOrigin = "*";
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      allowOrigin = url.origin;
+    } catch {
+      allowOrigin = origin;
+    }
+  }
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, x-admin-token, x-admin-key, X-Requested-With, Cache-Control, Pragma, Range, Origin, Accept",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Max-Age": "86400",
+  };
+}
 
-function jsonResponse(data: any, status = 200): Response {
+function jsonResponse(data: any, status = 200, request?: Request): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      ...CORS_HEADERS,
+      ...getCorsHeaders(request),
     },
   });
 }
@@ -150,10 +164,10 @@ export function findR2Bucket(env: Env): any {
  * Handles HTTP OPTIONS (Preflight Requests)
  * Ensures 204 No Content with permissive CORS headers.
  */
-export async function onRequestOptions(): Promise<Response> {
+export async function onRequestOptions(context?: { request?: Request }): Promise<Response> {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context?.request),
   });
 }
 
@@ -352,7 +366,7 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
       const safeDocId = key.replace(/\//g, "___");
       const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
         safeDocId
-      )}`;
+      )}?key=AIzaSyDh8_32I7BS4sjBSjeydj7vhAaSbvdO6w8`;
 
       await fetch(firestoreUrl, {
         method: "PATCH",
@@ -425,7 +439,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   const method = context.request.method.toUpperCase();
 
   if (method === "OPTIONS") {
-    return onRequestOptions();
+    return onRequestOptions(context);
   }
   if (method === "GET") {
     return onRequestGet(context);

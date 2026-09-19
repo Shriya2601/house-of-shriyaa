@@ -678,14 +678,6 @@ export function NavigationDrawer({
           </a>
           <div className="text-center text-[0.62rem] text-[#8c827a] mt-2 flex items-center justify-center gap-2">
             <span>House of Shriya · 100% Authentic Handlooms</span>
-            <span>·</span>
-            <Link
-              to="/admin"
-              onClick={onClose}
-              className="text-[#c5a059] hover:text-[#0d4f3c] font-semibold underline underline-offset-2 transition-colors"
-            >
-              Admin Portal
-            </Link>
           </div>
         </div>
       </aside>
@@ -3508,15 +3500,6 @@ export function Footer({ onOpenModal }: { onOpenModal?: (type: string) => void }
           <BuilderText as="span" text={siteContent?.footerNote ? siteContent.footerNote.replace(/\s*·?\s*(?:SURAT|WORLDWIDE SHIPPING).*$/i, "").trim() : "© House of Shriya. Made for your forever wardrobe."} />
           <div className="flex items-center gap-4">
             <BuilderText as="span" text={`${siteContent?.atelierCity || "Patiala, Punjab, India"} · Worldwide Shipping`} />
-            <span className="text-stone-300">|</span>
-            <Link
-              to="/admin"
-              className="text-[0.72rem] text-stone-500 hover:text-[#0d4f3c] transition-colors flex items-center gap-1 font-medium"
-              title="Boutique Admin & Product Management"
-            >
-              <ShieldCheck size={13} className="text-[#c5a059]" />
-              <span>Admin Portal</span>
-            </Link>
           </div>
         </div>
       </div>

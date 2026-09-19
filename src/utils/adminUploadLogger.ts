@@ -457,7 +457,7 @@ export class UploadLifecycleTracker {
   /**
    * Log Final Summary: Completion & Storage Provider Selected
    */
-  public logComplete(finalUrl: string, provider: "FIREBASE_STORAGE" | "SERVER_API" | "FIRESTORE_MIRROR" | "LOCAL_DATA_URL"): void {
+  public logComplete(finalUrl: string, provider: "FIREBASE_STORAGE" | "SERVER_API" | "FIRESTORE_MIRROR" | "LOCAL_DATA_URL" | "LOCAL_CACHE_FALLBACK"): void {
     const totalDuration = Date.now() - this.metadata.startTime;
 
     const providerBadges: Record<string, { bg: string; text: string }> = {
@@ -465,6 +465,7 @@ export class UploadLifecycleTracker {
       SERVER_API: { bg: "#6366f1", text: "Production Server API / R2" },
       FIRESTORE_MIRROR: { bg: "#0891b2", text: "Firestore Document Mirror" },
       LOCAL_DATA_URL: { bg: "#16a34a", text: "Optimized Self-Contained Data URL" },
+      LOCAL_CACHE_FALLBACK: { bg: "#8b5cf6", text: "Local Cache Fallback" },
     };
 
     const badge = providerBadges[provider] || { bg: "#4338ca", text: provider };

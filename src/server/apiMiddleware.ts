@@ -351,7 +351,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
         urlWithoutQuery.startsWith("/uploads/") ||
         urlWithoutQuery.startsWith("/public/uploads/")
       ) {
-        setCorsHeaders(res);
+        setCorsHeaders(res, req);
         if (method === "OPTIONS") {
           res.statusCode = 204;
           res.end();
@@ -532,7 +532,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
       return next();
     }
 
-    setCorsHeaders(res);
+    setCorsHeaders(res, req);
 
         // Preflight OPTIONS requests
         if (method === "OPTIONS") {
@@ -1191,7 +1191,7 @@ export const apiHandler: Connect.NextHandleFunction = async (req, res, next) => 
           urlWithoutQuery === "/api/upload/"
         ) {
           setAntiCacheHeaders(res);
-          setCorsHeaders(res);
+          setCorsHeaders(res, req);
 
           if (method === "OPTIONS") {
             res.statusCode = 204;

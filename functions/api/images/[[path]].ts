@@ -80,7 +80,7 @@ export async function onRequestGet(context: {
     for (const safeDocId of safeDocIds) {
       const firestoreUrl = `https://firestore.googleapis.com/v1/projects/house-of-shriya-d49d6/databases/(default)/documents/stored_images/${encodeURIComponent(
         safeDocId
-      )}`;
+      )}?key=AIzaSyDh8_32I7BS4sjBSjeydj7vhAaSbvdO6w8`;
 
       const res = await fetch(firestoreUrl);
       if (res.ok) {

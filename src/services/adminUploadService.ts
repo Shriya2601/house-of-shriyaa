@@ -411,7 +411,7 @@ export async function uploadImageToAdminStorage(
 
       const response = await fetch(uploadEndpoint, {
         method: "POST",
-        credentials: "include",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
           ...authHeaders,
@@ -471,7 +471,7 @@ export async function uploadImageToAdminStorage(
 
     let formResponse = await fetch(uploadEndpoint, {
       method: "POST",
-      credentials: "include",
+      credentials: "same-origin",
       headers: authHeaders,
       body: formData,
       signal: controller.signal,
@@ -492,7 +492,7 @@ export async function uploadImageToAdminStorage(
         tracker.logApiAttempt(altEndpoint, "POST (Multipart FormData Fallback)", 3);
         formResponse = await fetch(altEndpoint, {
           method: "POST",
-          credentials: "include",
+          credentials: "same-origin",
           headers: authHeaders,
           body: formData,
         });
