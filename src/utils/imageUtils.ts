@@ -3,6 +3,7 @@
  * Converts external share links (Kommodo, Google Drive, Dropbox) into direct, embeddable image URLs.
  */
 import type React from "react";
+import { getLocalCachedImage } from "../services/adminUploadService";
 
 const KNOWN_KOMMODO_MAP: Record<string, string> = {
   "eA9kgNNZCuEDbWDBS8JI": "https://plain-apac-prod-public.komododecks.com/202609/05/eA9kgNNZCuEDbWDBS8JI/image.jpg",
@@ -71,6 +72,12 @@ export function handleImageError(
   if (target.src && target.src.includes("?v=") && !target.dataset.retried) {
     target.dataset.retried = "true";
     target.src = target.src.split("?")[0];
+    return;
+  }
+  // Check if we have an immediate local/session cached dataUrl for this uploaded image
+  const cached = getLocalCachedImage(target.src);
+  if (cached && target.src !== cached) {
+    target.src = cached;
     return;
   }
   if (!target.src.includes("unsplash.com") && target.src !== fallback) {
