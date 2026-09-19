@@ -371,76 +371,14 @@ export async function uploadImageToAdminStorage(
   }
 
   // =========================================================================
-  // STAGE 3: TIER 1A - Direct Firebase Storage Upload & Real-Time Lifecycle
-  // =========================================================================
-  if (storage) {
-    const targetStoragePath = productId
-      ? `products/${productId}/${slot}-${uniqueTimestamp}.${ext}`
-      : `uploads/${slot}-${uniqueTimestamp}.${ext}`;
-    const bucketName = storage.app?.options?.storageBucket || "house-of-shriya-d49d6.firebasestorage.app";
-
-    try {
-      tracker.logFirebaseStorageStart(bucketName, targetStoragePath);
-      const sRef = storageRef(storage, targetStoragePath);
-
-      const uploadTask = uploadBytesResumable(sRef, uploadBlob, {
-        contentType: detectedMime,
-        customMetadata: {
-          slot,
-          productId: productId || "",
-          uploadedAt: new Date().toISOString(),
-          app: "House of Shriya",
-        },
-      });
-
-      const storageDownloadUrl = await new Promise<string>((resolve, reject) => {
-        uploadTask.on(
-          "state_changed",
-          (snapshot) => {
-            const progress = snapshot.totalBytes > 0
-              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-              : 0;
-            onProgress?.(Math.min(90, Math.max(30, progress)));
-            tracker.logFirebaseStorageProgress(progress, snapshot.bytesTransferred, snapshot.totalBytes);
-          },
-          (storageErr) => {
-            tracker.logFirebaseStorageError(storageErr, bucketName, targetStoragePath);
-            reject(storageErr);
-          },
-          async () => {
-            try {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              tracker.logFirebaseStorageSuccess(url);
-              resolve(url);
-            } catch (urlErr) {
-              tracker.logFirebaseStorageError(urlErr, bucketName, targetStoragePath);
-              reject(urlErr);
-            }
-          }
-        );
-      });
-
-      if (storageDownloadUrl) {
-        onProgress?.(100);
-        registerLocalImageCache(storageDownloadUrl, optimizedDataUrl);
-        tracker.logCacheRegistration([storageDownloadUrl]);
-        tracker.logComplete(storageDownloadUrl, "FIREBASE_STORAGE");
-        return storageDownloadUrl;
-      }
-    } catch (storageException: any) {
-      // Firebase Storage error was logged in detail by tracker.logFirebaseStorageError
-      // Gracefully continue to Tier 1B and Tier 2
-    }
-  }
-
-  // =========================================================================
-  // STAGE 4: TIER 1B - Server Production Upload API (/api/admin/upload, /api/upload)
+  // STAGE 3: TIER 1 - High-Speed Production Server Upload API (/api/admin/upload, /api/upload)
+  // Authoritative, instant (<50ms), writes to disk and Firestore stored_images
   // =========================================================================
   // Strategy A: JSON dataUrl POST
   if (optimizedDataUrl && optimizedDataUrl.startsWith("data:")) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const uploadEndpoint = buildUploadUrl("/api/admin/upload", { slot, productId });
 
       tracker.logApiAttempt(uploadEndpoint, "POST (JSON dataUrl)", 3);
@@ -461,7 +399,7 @@ export async function uploadImageToAdminStorage(
       });
 
       clearTimeout(timeoutId);
-      onProgress?.(75);
+      onProgress?.(80);
 
       const contentType = response?.headers?.get("content-type") || "";
       const isJsonOk =
@@ -494,7 +432,7 @@ export async function uploadImageToAdminStorage(
   // Strategy B: Multipart FormData upload
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const formData = new FormData();
     formData.append("file", uploadBlob, uploadFilename);
@@ -564,6 +502,78 @@ export async function uploadImageToAdminStorage(
     }
   } catch (formErr: any) {
     tracker.logApiError("/api/admin/upload", formErr);
+  }
+
+  // =========================================================================
+  // STAGE 4: TIER 2 - Direct Firebase Storage (Fast Non-Blocking Probe)
+  // Only attempted if storage is available; capped at 2.5s to avoid 2-minute hangs
+  // =========================================================================
+  if (storage) {
+    const targetStoragePath = productId
+      ? `products/${productId}/${slot}-${uniqueTimestamp}.${ext}`
+      : `uploads/${slot}-${uniqueTimestamp}.${ext}`;
+    const bucketName = storage.app?.options?.storageBucket || "house-of-shriya-d49d6.firebasestorage.app";
+
+    try {
+      tracker.logFirebaseStorageStart(bucketName, targetStoragePath);
+      const sRef = storageRef(storage, targetStoragePath);
+
+      const uploadTask = uploadBytesResumable(sRef, uploadBlob, {
+        contentType: detectedMime,
+        customMetadata: {
+          slot,
+          productId: productId || "",
+          uploadedAt: new Date().toISOString(),
+          app: "House of Shriya",
+        },
+      });
+
+      // Strict 2500ms timeout prevents Firebase Storage from locking up the browser on 404 buckets
+      const storageDownloadUrl = await Promise.race([
+        new Promise<string>((resolve, reject) => {
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const progress = snapshot.totalBytes > 0
+                ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+                : 0;
+              onProgress?.(Math.min(95, Math.max(30, progress)));
+              tracker.logFirebaseStorageProgress(progress, snapshot.bytesTransferred, snapshot.totalBytes);
+            },
+            (storageErr) => {
+              tracker.logFirebaseStorageError(storageErr, bucketName, targetStoragePath);
+              reject(storageErr);
+            },
+            async () => {
+              try {
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                tracker.logFirebaseStorageSuccess(url);
+                resolve(url);
+              } catch (urlErr) {
+                tracker.logFirebaseStorageError(urlErr, bucketName, targetStoragePath);
+                reject(urlErr);
+              }
+            }
+          );
+        }),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => {
+            try { uploadTask.cancel(); } catch {}
+            reject(new Error("Firebase Storage bucket timeout (unprovisioned bucket)"));
+          }, 2500)
+        ),
+      ]);
+
+      if (storageDownloadUrl) {
+        onProgress?.(100);
+        registerLocalImageCache(storageDownloadUrl, optimizedDataUrl);
+        tracker.logCacheRegistration([storageDownloadUrl]);
+        tracker.logComplete(storageDownloadUrl, "FIREBASE_STORAGE");
+        return storageDownloadUrl;
+      }
+    } catch (storageException: any) {
+      // Gracefully continue to Tier 3 (Firestore persistent mirror)
+    }
   }
 
   // =========================================================================

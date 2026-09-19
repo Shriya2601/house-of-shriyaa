@@ -483,7 +483,13 @@ export default function AddProductModal({
         return trimmed;
       }
       try {
-        const uploaded = await uploadProductImageToFirebase(prodId, slot, trimmed);
+        const fileSource =
+          slot === "main" && lastMainFileRef.current
+            ? lastMainFileRef.current
+            : slot === "hover" && lastHoverFileRef.current
+            ? lastHoverFileRef.current
+            : trimmed;
+        const uploaded = await uploadProductImageToFirebase(prodId, slot, fileSource);
         if (uploaded && !uploaded.startsWith("blob:")) {
           return uploaded;
         }
@@ -750,7 +756,7 @@ export default function AddProductModal({
                       <div className="py-2 flex flex-col items-center gap-2 text-stone-700">
                         <RefreshCw size={22} className="animate-spin text-[#0d4f3c]" />
                         <p className="text-xs font-bold text-stone-900">
-                          Uploading to Firebase Storage ({mainUploadProgress}%)
+                          Uploading & Securing Photo ({mainUploadProgress}%)
                         </p>
                         <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden mt-1">
                           <div
@@ -927,7 +933,7 @@ export default function AddProductModal({
                     <div className="p-3.5 border border-dashed border-amber-300 bg-amber-50/50 rounded-xl text-center">
                       <div className="py-1 flex items-center justify-center gap-2 text-stone-700 text-xs font-semibold">
                         <RefreshCw size={14} className="animate-spin text-[#0d4f3c]" />
-                        <span>Uploading to Firebase Storage ({hoverUploadProgress}%)</span>
+                        <span>Uploading & Securing Photo ({hoverUploadProgress}%)</span>
                       </div>
                     </div>
                   ) : hoverImage ? (
